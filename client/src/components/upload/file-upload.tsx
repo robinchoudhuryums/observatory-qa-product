@@ -26,13 +26,28 @@ export default function FileUpload() {
     queryKey: ["/api/employees"],
   });
 
-  const uploadMutation = useMutation({
+const uploadMutation = useMutation({
     mutationFn: async ({ file, employeeId }: { file: File; employeeId: string }) => {
       const formData = new FormData();
-      formData.append('audio', file);
+      // NOTE: Your server expects the file with the key "audioFile", not "audio".
+      // Let's correct that based on our previous discussions.
+      formData.append('audioFile', file); 
       formData.append('employeeId', employeeId);
 
-      const response = await apiRequest('POST', '/api/calls/upload', formData);
+      // SOLUTION: Use the standard `fetch` API directly for file uploads.
+      // The browser will automatically set the correct Content-Type header.
+      const response = await fetch('/api/calls/upload', {
+        method: 'POST',
+        body: formData,
+      });
+
+      if (!response.ok) {
+        // If the server returns an error, parse it and throw an error
+        // so that React Query knows the mutation failed.
+        const errorData = await response.json();
+        throw new Error(errorData.message || 'Upload failed');
+      }
+
       return response.json();
     },
     onSuccess: () => {
