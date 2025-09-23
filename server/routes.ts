@@ -308,6 +308,25 @@ app.get("/api/performance", async (req, res) => {
   }
 });
 
+  app.get("/api/reports/summary", async (req, res) => {
+  try {
+    const metrics = await storage.getDashboardMetrics();
+    const sentiment = await storage.getSentimentDistribution();
+    const performers = await storage.getTopPerformers(5);
+
+    const reportData = {
+      metrics,
+      sentiment,
+      performers,
+    };
+    
+    res.json(reportData);
+  } catch (error) {
+    console.error("Failed to generate report data:", error);
+    res.status(500).json({ message: "Failed to generate report data" });
+  }
+});
+
   const httpServer = createServer(app);
   return httpServer;
 }
