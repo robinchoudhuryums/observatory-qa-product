@@ -187,44 +187,56 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   }
 
-  // Process audio file with AssemblyAI
-  async function processAudioFile(callId: string, filePath: string, audioBuffer: Buffer) {
-    try {
-      // Upload to AssemblyAI
-      const audioUrl = await assemblyAIService.uploadAudioFile(audioBuffer, path.basename(filePath));
-      
-      // Start transcription
-      const transcriptId = await assemblyAIService.transcribeAudio(audioUrl);
-      
-      // Update call with AssemblyAI ID
-      await storage.updateCall(callId, { assemblyAiId: transcriptId });
-      
-      // Poll for completion
-      const response = await assemblyAIService.pollTranscript(transcriptId);
-      
-      // Process results
-      const { transcript, sentiment, analysis } = assemblyAIService.processTranscriptData(response, callId);
-      
-      // Store results
-      await storage.createTranscript(transcript);
-      await storage.createSentimentAnalysis(sentiment);
-      await storage.createCallAnalysis(analysis);
-      
-      // Update call status
-      await storage.updateCall(callId, { 
-        status: "completed",
-        duration: Math.floor((response.words?.[response.words.length - 1]?.end || 0) / 1000)
-      });
-      
-      // Cleanup uploaded file
-      await cleanupFile(filePath);
-      
-    } catch (error) {
-      console.error('Failed to process audio:', error);
-      await storage.updateCall(callId, { status: "failed" });
-      await cleanupFile(filePath);
-    }
+// Process audio file with AssemblyAI
+async function processAudioFile(callId: string, filePath: string, audioBuffer: Buffer) {
+  console.log(`[${callId}] Starting audio processing...`); // LOG 1: Job started
+  try {
+    // Upload to AssemblyAI
+    console.log(`[${callId}] Step 1/5: Uploading audio file to AssemblyAI...`);
+    const audioUrl = await assemblyAIService.uploadAudioFile(audioBuffer, path.basename(filePath));
+    console.log(`[${callId}] Step 1/5: Upload successful. Audio URL: ${audioUrl}`);
+
+    // Start transcription
+    console.log(`[${callId}] Step 2/5: Submitting for transcription...`);
+    const transcriptId = await assemblyAIService.transcribeAudio(audioUrl);
+    console.log(`[${callId}] Step 2/5: Transcription submitted. Transcript ID: ${transcriptId}`);
+
+    // Update call with AssemblyAI ID
+    await storage.updateCall(callId, { assemblyAiId: transcriptId });
+
+    // Poll for completion
+    console.log(`[${callId}] Step 3/5: Polling for results... (This may take some time)`);
+    const response = await assemblyAIService.pollTranscript(transcriptId);
+    console.log(`[${callId}] Step 3/5: Polling complete. Status: ${response.status}`);
+
+    // Process results
+    console.log(`[${callId}] Step 4/5: Processing transcript data...`);
+    const { transcript, sentiment, analysis } = assemblyAIService.processTranscriptData(response, callId);
+    console.log(`[${callId}] Step 4/5: Data processing complete.`);
+
+    // Store results
+    console.log(`[${callId}] Step 5/5: Saving results to the database...`);
+    await storage.createTranscript(transcript);
+    await storage.createSentimentAnalysis(sentiment);
+    await storage.createCallAnalysis(analysis);
+
+    // Update call status
+    await storage.updateCall(callId, {
+      status: "completed",
+      duration: Math.floor((response.words?.[response.words.length - 1]?.end || 0) / 1000)
+    });
+    console.log(`[${callId}] Step 5/5: Database updated. Status is now 'completed'.`);
+
+    // Cleanup uploaded file
+    await cleanupFile(filePath);
+    console.log(`[${callId}] Processing finished successfully.`);
+
+  } catch (error) {
+    console.error(`[${callId}] A critical error occurred during audio processing:`, error);
+    await storage.updateCall(callId, { status: "failed" });
+    await cleanupFile(filePath);
   }
+}
 
   // Get transcript for a call
   app.get("/api/calls/:id/transcript", async (req, res) => {
