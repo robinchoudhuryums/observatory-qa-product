@@ -296,6 +296,18 @@ async function processAudioFile(callId: string, filePath: string, audioBuffer: B
     }
   });
 
+  // This new route will handle requests for the Performance page
+app.get("/api/performance", async (req, res) => {
+  try {
+    // We can reuse the existing function to get top performers
+    const performers = await storage.getTopPerformers(10); // Get top 10
+    res.json(performers);
+  } catch (error) {
+    console.error("Failed to get performance data:", error);
+    res.status(500).json({ message: "Failed to get performance data" });
+  }
+});
+
   const httpServer = createServer(app);
   return httpServer;
 }
