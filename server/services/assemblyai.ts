@@ -54,10 +54,11 @@ export class AssemblyAIService {
   async uploadAudioFile(audioBuffer: Buffer, fileName: string): Promise<string> {
     const response = await fetch(`${this.config.baseUrl}/upload`, {
       method: 'POST',
+// Inside the uploadAudioFile function...
       headers: {
-        'Authorization': `Bearer ${this.config.apiKey}`,
-        'Content-Type': 'application/octet-stream'
-      },
+        'Authorization': this.config.apiKey, // Correctly sends the key directly
+        'Content-Type': 'application/octet-stream'
+      },
       body: audioBuffer
     });
 
@@ -79,7 +80,7 @@ export class AssemblyAIService {
     const response = await fetch(`${this.config.baseUrl}/transcript`, {
       method: 'POST',
       headers: {
-        'Authorization': `Bearer ${this.config.apiKey}`,
+        'Authorization': this.config.apiKey,
         'Content-Type': 'application/json'
       },
       body: JSON.stringify({
@@ -106,7 +107,7 @@ export class AssemblyAIService {
     const response = await fetch(`${this.config.baseUrl}/transcript/${transcriptId}`, {
       method: 'GET',
       headers: {
-        'Authorization': `Bearer ${this.config.apiKey}`
+        'Authorization': this.config.apiKey
       }
     });
 
