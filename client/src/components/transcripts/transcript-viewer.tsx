@@ -197,6 +197,18 @@ export default function TranscriptViewer({ callId }: TranscriptViewerProps) {
               ) : 'Unknown'}</p>
               <p><strong>Performance Score:</strong> {call.analysis?.performanceScore?.toFixed(1) || 'N/A'}/10</p>
             </div>
+
+                  {call.analysis?.summary && (
+          <div className="bg-muted rounded-lg p-4">
+            <h4 className="font-semibold text-foreground mb-3">Key Points</h4>
+            <ul className="list-disc list-inside space-y-1 text-sm text-muted-foreground">
+              {call.analysis.summary.split('\n').map((point, index) => (
+                // Filter out empty lines that can result from splitting
+                point.trim() && <li key={index}>{point.trim().replace(/^- /, '')}</li>
+              ))}
+            </ul>
+          </div>
+        )}
           </div>
           
           {call.analysis?.topics && call.analysis.topics.length > 0 && (
