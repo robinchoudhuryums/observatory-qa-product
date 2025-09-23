@@ -68,44 +68,42 @@ export default function TranscriptViewer({ callId }: TranscriptViewerProps) {
     }
   };
 
-  // Mock transcript segments for demonstration
-  const transcriptSegments = call.transcript?.words ? 
-    generateSegmentsFromWords(call.transcript.words as TranscriptWord[]) : 
+  const transcriptSegments = call.transcript?.words ?
+    generateSegmentsFromWords(call.transcript.words as TranscriptWord[]) :
     [];
 
   function generateSegmentsFromWords(words: TranscriptWord[]) {
-    // Group words into segments by speaker or time gaps
-    const segments = [];
-    let currentSegment = { 
-      start: 0, 
-      end: 0, 
-      text: '', 
-      speaker: 'Agent',
-      sentiment: 'positive' as const
-    };
+    const segments: any[] = [];
+    if (!words || words.length === 0) return segments;
     
-    words.forEach((word, index) => {
-      if (index === 0 || word.start - currentSegment.end > 5) {
-        if (currentSegment.text) {
-          segments.push({ ...currentSegment });
-        }
+    let currentSegment = {
+      start: words[0].start,
+      end: words[0].end,
+      text: words[0].text,
+      speaker: words[0].speaker || 'Agent',
+      sentiment: 'neutral' as const
+    };
+
+    words.slice(1).forEach(word => {
+      const timeGap = word.start - currentSegment.end;
+      const speakerChange = word.speaker && word.speaker !== currentSegment.speaker;
+
+      if (timeGap > 2 || speakerChange) {
+        segments.push({ ...currentSegment });
         currentSegment = {
           start: word.start,
           end: word.end,
           text: word.text,
-          speaker: word.speaker || (segments.length % 2 === 0 ? 'Agent' : 'Customer'),
-          sentiment: 'positive' as const
+          speaker: word.speaker || currentSegment.speaker,
+          sentiment: 'neutral' as const
         };
       } else {
         currentSegment.text += ' ' + word.text;
         currentSegment.end = word.end;
       }
     });
-    
-    if (currentSegment.text) {
-      segments.push(currentSegment);
-    }
-    
+
+    segments.push(currentSegment);
     return segments;
   }
 
@@ -147,7 +145,7 @@ export default function TranscriptViewer({ callId }: TranscriptViewerProps) {
             ) : call.transcript?.text ? (
               <div className="space-y-3">
                 {transcriptSegments.map((segment, index) => (
-                  <div 
+                  <div
                     key={index}
                     className="transcript-line p-2 rounded cursor-pointer"
                     onClick={() => jumpToTime(segment.start)}
@@ -162,9 +160,7 @@ export default function TranscriptViewer({ callId }: TranscriptViewerProps) {
                         {formatTimestamp(segment.start)}
                       </button>
                       <div className="flex-1">
-                        <p className={`text-sm font-medium ${
-                          segment.speaker === 'Agent' ? 'text-primary' : 'text-gray-600'
-                        }`}>
+                        <p className={`text-sm font-medium ${segment.speaker === 'Agent' ? 'text-primary' : 'text-gray-600'}`}>
                           {segment.speaker === 'Agent' ? `Agent (${call.employee?.name}):` : 'Customer:'}
                         </p>
                         <p className="text-foreground">{segment.text}</p>
@@ -184,34 +180,32 @@ export default function TranscriptViewer({ callId }: TranscriptViewerProps) {
           </div>
         </div>
         
-      <div className="space-y-4">
-        {/* --- Section 1: Call Summary --- */}
-        <div className="bg-muted rounded-lg p-4">
-          <h4 className="font-semibold text-foreground mb-3">Call Summary</h4>
-          <div className="space-y-2 text-sm">
-            <p><strong>Duration:</strong> {call.duration ? `${Math.floor(call.duration / 60)}m ${call.duration % 60}s` : 'Unknown'}</p>
-            <p><strong>Status:</strong> <Badge>{call.status}</Badge></p>
-            <p><strong>Sentiment:</strong> {call.sentiment?.overallSentiment ? (
-              <Badge className={getSentimentColor(call.sentiment.overallSentiment)}>
-                {call.sentiment.overallSentiment.charAt(0).toUpperCase() + call.sentiment.overallSentiment.slice(1)}
-              </Badge>
-            ) : 'Unknown'}</p>
-            <p><strong>Performance Score:</strong> {call.analysis?.performanceScore?.toFixed(1) || 'N/A'}/10</p>
+        <div className="space-y-4">
+          <div className="bg-muted rounded-lg p-4">
+            <h4 className="font-semibold text-foreground mb-3">Call Summary</h4>
+            <div className="space-y-2 text-sm">
+              <p><strong>Duration:</strong> {call.duration ? `${Math.floor(call.duration / 60)}m ${call.duration % 60}s` : 'Unknown'}</p>
+              <p><strong>Status:</strong> <Badge>{call.status}</Badge></p>
+              <p><strong>Sentiment:</strong> {call.sentiment?.overallSentiment ? (
+                <Badge className={getSentimentColor(call.sentiment.overallSentiment)}>
+                  {call.sentiment.overallSentiment.charAt(0).toUpperCase() + call.sentiment.overallSentiment.slice(1)}
+                </Badge>
+              ) : 'Unknown'}</p>
+              <p><strong>Performance Score:</strong> {call.analysis?.performanceScore?.toFixed(1) || 'N/A'}/10</p>
+            </div>
           </div>
 
-      {call.analysis?.summary && (
-          <div className="bg-muted rounded-lg p-4">
-            <h4 className="font-semibold text-foreground mb-3">Key Points</h4>
-            <ul className="list-disc list-inside space-y-1 text-sm text-muted-foreground">
-              {call.analysis.summary.split('\n').map((point, index) => (
-                // Filter out empty lines that can result from splitting
-                point.trim() && <li key={index}>{point.trim().replace(/^- /, '')}</li>
-              ))}
-            </ul>
-          </div>
-        )}
-          </div>
-          
+          {call.analysis?.summary && (
+            <div className="bg-muted rounded-lg p-4">
+              <h4 className="font-semibold text-foreground mb-3">Key Points</h4>
+              <ul className="list-disc list-inside space-y-1 text-sm text-muted-foreground">
+                {call.analysis.summary.split('\n').map((point, index) => (
+                  point.trim() && <li key={index}>{point.trim().replace(/^- /, '')}</li>
+                ))}
+              </ul>
+            </div>
+          )}
+
           {call.analysis?.topics && call.analysis.topics.length > 0 && (
             <div className="bg-muted rounded-lg p-4">
               <h4 className="font-semibold text-foreground mb-3">Key Topics</h4>
@@ -224,7 +218,7 @@ export default function TranscriptViewer({ callId }: TranscriptViewerProps) {
               </div>
             </div>
           )}
-          
+
           {call.analysis?.actionItems && call.analysis.actionItems.length > 0 && (
             <div className="bg-muted rounded-lg p-4">
               <h4 className="font-semibold text-foreground mb-3">Action Items</h4>
@@ -238,7 +232,7 @@ export default function TranscriptViewer({ callId }: TranscriptViewerProps) {
               </ul>
             </div>
           )}
-          
+
           {call.analysis?.feedback && (
             <div className="bg-muted rounded-lg p-4">
               <h4 className="font-semibold text-foreground mb-3">AI Feedback</h4>
