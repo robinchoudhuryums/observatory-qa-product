@@ -135,7 +135,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Upload call recording
-  app.post("/api/calls/upload", upload.single('audio'), async (req, res) => {
+  app.post("/api/calls/upload", upload.single('audioFile'), async (req, res) => {
     try {
       if (!req.file) {
         res.status(400).json({ message: "No audio file provided" });
