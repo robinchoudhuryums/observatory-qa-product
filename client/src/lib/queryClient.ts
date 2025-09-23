@@ -24,12 +24,36 @@ export async function apiRequest(
 }
 
 type UnauthorizedBehavior = "returnNull" | "throw";
-export const getQueryFn: <T>(options: {
-  on401: UnauthorizedBehavior;
+// Replace your old getQueryFn with this new one
+export const getQueryFn: <T>(options?: {
+  on401?: "returnNull" | "throw";
 }) => QueryFunction<T> =
-  ({ on401: unauthorizedBehavior }) =>
+  ({ on401: unauthorizedBehavior = "throw" } = {}) =>
   async ({ queryKey }) => {
-    const res = await fetch(queryKey.join("/") as string, {
+    // The first part of the key is always the base URL
+    let url = queryKey[0] as string;
+    const params = queryKey.length > 1 ? queryKey[1] : undefined;
+
+    // Check if the second part is for a specific ID or for query parameters
+    if (params) {
+      if (typeof params === 'object' && params !== null) {
+        // It's an object for query parameters (like in your table)
+        // Filters out empty string values
+        const filteredParams = Object.fromEntries(
+          Object.entries(params).filter(([, value]) => value !== '')
+        );
+        const searchParams = new URLSearchParams(filteredParams as Record<string, string>);
+        const queryString = searchParams.toString();
+        if (queryString) {
+          url += `?${queryString}`;
+        }
+      } else {
+        // It's an ID for a specific resource (like in your transcript viewer)
+        url += `/${params}`;
+      }
+    }
+
+    const res = await fetch(url, {
       credentials: "include",
     });
 
