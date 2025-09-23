@@ -146,6 +146,8 @@ export class AssemblyAIService {
     throw new Error('Transcription timed out');
   }
 
+// Replace your old function with this new one in server/services/assemblyai.ts
+
   processTranscriptData(response: AssemblyAIResponse, callId: string): {
     transcript: InsertTranscript;
     sentiment: InsertSentimentAnalysis;
@@ -155,7 +157,7 @@ export class AssemblyAIService {
       throw new Error('No transcript text available');
     }
 
-    // Process transcript
+    // Process transcript (this part remains the same)
     const transcript: InsertTranscript = {
       callId,
       text: response.text,
@@ -163,7 +165,7 @@ export class AssemblyAIService {
       words: response.words || []
     };
 
-    // Process sentiment analysis
+    // Process sentiment analysis (this part remains the same)
     const sentimentResults = response.sentiment_analysis_results || [];
     const overallSentiment = this.calculateOverallSentiment(sentimentResults);
     
@@ -180,19 +182,27 @@ export class AssemblyAIService {
       }))
     };
 
-    // Process call analysis
-    const chapters = response.auto_chapters || [];
-    const categories = response.iab_categories_result?.summary || {};
-    
     const analysis: InsertCallAnalysis = {
       callId,
+      // Use the new, high-quality summary directly from the API response
+      summary: response.summary || this.generateSummary(response.text), 
+      
+      // Extract topics from the detected entities
+      topics: response.entities
+        ?.filter(entity => entity.entity_type === 'topic')
+        .map(entity => entity.text)
+        .slice(0, 5) || [], // Get the top 5 topics
+
+      // Extract action items using auto_highlights
+      actionItems: response.auto_highlights
+        ?.filter(h => h.text.toLowerCase().includes('follow up') || h.text.toLowerCase().includes('schedule'))
+        .map(h => h.text) || [],
+
+      // The rest of your analysis calculations can remain
       performanceScore: this.calculatePerformanceScore(response),
       talkTimeRatio: this.calculateTalkTimeRatio(response),
       responseTime: this.calculateResponseTime(response),
       keywords: this.extractKeywords(response.text),
-      topics: Object.keys(categories).slice(0, 5), // Top 5 categories
-      summary: chapters.length > 0 ? chapters[0].summary : this.generateSummary(response.text),
-      actionItems: this.extractActionItems(response.text),
       feedback: this.generateFeedback(response)
     };
 
