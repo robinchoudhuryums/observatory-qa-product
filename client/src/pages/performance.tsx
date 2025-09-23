@@ -1,6 +1,7 @@
 import { useQuery } from "@tanstack/react-query";
 import { Star, TrendingUp, UserCheck } from "lucide-react";
 import type { Employee } from "@shared/schema";
+import { AudioWaveform } from "lucide-react";
 
 // Define a type for our performance data for clarity
 interface Performer extends Employee {
@@ -14,9 +15,14 @@ export default function PerformancePage() {
     queryKey: ["/api/performance"],
   });
 
-  if (isLoading) {
-    return <div>Loading performance data...</div>;
-  }
+if (isLoading) {
+  return (
+    <div className="flex items-center justify-center h-64">
+      <AudioWaveform className="w-8 h-8 animate-spin text-primary" />
+      <p className="ml-2 text-muted-foreground">Analyzing performance...</p>
+    </div>
+  );
+}
 
   return (
     <div className="min-h-screen" data-testid="performance-page">
