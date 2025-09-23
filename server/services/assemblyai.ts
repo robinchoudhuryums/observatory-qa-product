@@ -194,7 +194,7 @@ export class AssemblyAIService {
         .slice(0, 5) || [], // Get the top 5 topics
 
       // Extract action items using auto_highlights
-      actionItems: response.auto_highlights
+      actionItems: response.auto_highlights?.results // Correctly access the .results array
         ?.filter(h => h.text.toLowerCase().includes('follow up') || h.text.toLowerCase().includes('schedule'))
         .map(h => h.text) || [],
 
