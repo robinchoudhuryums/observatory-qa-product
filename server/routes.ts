@@ -327,6 +327,22 @@ app.get("/api/performance", async (req, res) => {
   }
 });
 
+  app.delete("/api/calls/:id", async (req, res) => {
+  try {
+    const callId = req.params.id;
+    
+    // You'll need to implement deleteCall in your storage/db logic
+    await storage.deleteCall(callId); 
+    
+    console.log(`Successfully deleted call ID: ${callId}`);
+    // Send a 204 No Content response for a successful deletion
+    res.status(204).send(); 
+  } catch (error) {
+    console.error("Failed to delete call:", error);
+    res.status(500).json({ message: "Failed to delete call" });
+  }
+});
+
   const httpServer = createServer(app);
   return httpServer;
 }
