@@ -4,6 +4,7 @@ import { Play, Download, Clock } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import type { CallWithDetails } from "@shared/schema";
+import { AudioWaveform } from "lucide-react";
 
 interface TranscriptViewerProps {
   callId: string;
@@ -24,25 +25,14 @@ export default function TranscriptViewer({ callId }: TranscriptViewerProps) {
     queryKey: ["/api/calls", callId],
   });
 
-  if (isLoading) {
-    return (
-      <div className="bg-card rounded-lg border border-border p-6">
-        <div className="animate-pulse space-y-4">
-          <div className="h-6 bg-muted rounded w-1/3"></div>
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-            <div className="lg:col-span-2">
-              <div className="h-96 bg-muted rounded"></div>
-            </div>
-            <div className="space-y-4">
-              <div className="h-32 bg-muted rounded"></div>
-              <div className="h-24 bg-muted rounded"></div>
-              <div className="h-24 bg-muted rounded"></div>
-            </div>
-          </div>
-        </div>
-      </div>
-    );
-  }
+if (isLoading) {
+  return (
+    <div className="flex items-center justify-center h-64">
+      <AudioWaveform className="w-8 h-8 animate-spin text-primary" />
+      <p className="ml-2 text-muted-foreground">Analyzing performance...</p>
+    </div>
+  );
+}
 
   if (!call) {
     return (
