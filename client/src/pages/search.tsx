@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react"; // Ensure useEffect is imported
+import { useState, useEffect } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Search, Filter, Calendar, User, Heart } from "lucide-react";
 import { Input } from "@/components/ui/input";
@@ -19,16 +19,12 @@ export default function SearchPage() {
   const [debouncedQuery, setDebouncedQuery] = useState("");
   const { toast } = useToast();
 
-  // --- THIS IS THE CORRECTED DEBOUNCE LOGIC ---
   useEffect(() => {
     const timer = setTimeout(() => {
       setDebouncedQuery(searchQuery);
-    }, 500); // Wait 500ms after the user stops typing
-
-    return () => {
-      clearTimeout(timer); // Clear the timer if the user types again
-    };
-  }, [searchQuery]); // This effect re-runs whenever searchQuery changes
+    }, 500);
+    return () => clearTimeout(timer);
+  }, [searchQuery]);
 
   const { data: employees } = useQuery<Employee[]>({
     queryKey: ["/api/employees"],
@@ -108,7 +104,25 @@ export default function SearchPage() {
                   {employees?.map((employee) => (<SelectItem key={employee.id} value={employee.id}>{employee.name}</SelectItem>))}
                 </SelectContent>
               </Select>
-              {/* Other filters */}
+              <Select value={sentimentFilter} onValueChange={setSentimentFilter}>
+                <SelectTrigger><Heart className="w-4 h-4 mr-2" /><SelectValue placeholder="All Sentiment" /></SelectTrigger>
+                <SelectContent>
+                    <SelectItem value="all">All Sentiment</SelectItem>
+                    <SelectItem value="positive">Positive</SelectItem>
+                    <SelectItem value="neutral">Neutral</SelectItem>
+                    <SelectItem value="negative">Negative</SelectItem>
+                </SelectContent>
+              </Select>
+              <Select value={statusFilter} onValueChange={setStatusFilter}>
+                <SelectTrigger><Filter className="w-4 h-4 mr-2" /><SelectValue placeholder="All Status" /></SelectTrigger>
+                <SelectContent>
+                    <SelectItem value="all">All Status</SelectItem>
+                    <SelectItem value="completed">Completed</SelectItem>
+                    <SelectItem value="processing">Processing</SelectItem>
+                    <SelectItem value="failed">Failed</SelectItem>
+                </SelectContent>
+              </Select>
+              <Button variant="outline" onClick={clearFilters}>Clear Filters</Button>
             </div>
           </CardContent>
         </Card>
@@ -123,12 +137,12 @@ export default function SearchPage() {
             ) : !displayCalls?.length ? (
               <div className="text-center py-12">
                 <Search className="w-12 h-12 text-muted-foreground mx-auto mb-4" />
-                <h3 className="text-lg font-medium text-foreground mb-2">{debouncedQuery.length > 0 ? 'No matching calls found' : 'No calls available'}</h3>
+                <h3 className="text-lg font-medium text-foreground mb-2">{debouncedQuery.length > 2 ? 'No matching calls found' : 'No calls available'}</h3>
                 <Link href="/upload"><Button>Upload Call Recording</Button></Link>
               </div>
             ) : (
               <div className="space-y-4">
-                {displayCalls.map((call, index) => (
+                {displayCalls && displayCalls.map((call, index) => (
                   <Card key={call.id} className="hover:shadow-md transition-shadow">
                     <CardContent className="p-6">
                       <div className="flex items-start justify-between mb-4">
