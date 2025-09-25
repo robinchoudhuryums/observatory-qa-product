@@ -9,7 +9,7 @@ import { Badge } from "@/components/ui/badge";
 import { Link } from "wouter";
 import type { CallWithDetails, Employee } from "@shared/schema";
 import { useToast } from "@/hooks/use-toast";
-import { AudioWaveform } from "lucide-react"; // Import your loader icon
+import { AudioWaveform } from "lucide-react";
 
 export default function SearchPage() {
   const [searchQuery, setSearchQuery] = useState("");
@@ -19,13 +19,16 @@ export default function SearchPage() {
   const [debouncedQuery, setDebouncedQuery] = useState("");
   const { toast } = useToast();
 
-  // Debounce search query
+  // --- CORRECTED DEBOUNCE LOGIC ---
   useEffect(() => {
     const timer = setTimeout(() => {
       setDebouncedQuery(searchQuery);
-    }, 300);
-    return () => clearTimeout(timer);
-  }, [searchQuery]);
+    }, 500); // Wait 500ms after the user stops typing
+
+    return () => {
+      clearTimeout(timer); // Clear the timer if the user types again
+    };
+  }, [searchQuery]); // This effect re-runs whenever searchQuery changes
 
   const { data: employees } = useQuery<Employee[]>({
     queryKey: ["/api/employees"],
@@ -33,7 +36,7 @@ export default function SearchPage() {
 
   const { data: searchResults, isLoading: isLoadingSearch } = useQuery<CallWithDetails[]>({
     queryKey: ["/api/search", { q: debouncedQuery }],
-    enabled: debouncedQuery.length > 2, // Only search if query is longer than 2 chars
+    enabled: debouncedQuery.length > 2,
     onError: (error) => {
       toast({
         title: "Search Failed",
@@ -55,31 +58,16 @@ export default function SearchPage() {
   const displayCalls = debouncedQuery.length > 2 ? searchResults : allCalls;
   const isLoading = isLoadingSearch || isLoadingCalls;
 
-  // --- SAFE DATA DISPLAY FUNCTIONS ---
   const getSentimentBadge = (sentiment?: string) => {
     if (!sentiment) return <Badge variant="secondary">Unknown</Badge>;
-    const variants: Record<string, any> = {
-      positive: "default", neutral: "secondary", negative: "destructive",
-    };
-    return (
-      <Badge variant={variants[sentiment] || "secondary"}>
-        {sentiment.charAt(0).toUpperCase() + sentiment.slice(1)}
-      </Badge>
-    );
+    const variants: Record<string, any> = { positive: "default", neutral: "secondary", negative: "destructive" };
+    return <Badge variant={variants[sentiment] || "secondary"}>{sentiment.charAt(0).toUpperCase() + sentiment.slice(1)}</Badge>;
   };
 
   const getStatusBadge = (status?: string) => {
     if (!status) return <Badge variant="secondary">Unknown</Badge>;
-    const colors: Record<string, string> = {
-      completed: "bg-green-100 text-green-800",
-      processing: "bg-blue-100 text-blue-800",
-      failed: "bg-red-100 text-red-800",
-    };
-    return (
-      <Badge className={colors[status] || "bg-gray-100 text-gray-800"}>
-        {status.charAt(0).toUpperCase() + status.slice(1)}
-      </Badge>
-    );
+    const colors: Record<string, string> = { completed: "bg-green-100 text-green-800", processing: "bg-blue-100 text-blue-800", failed: "bg-red-100 text-red-800" };
+    return <Badge className={colors[status] || "bg-gray-100 text-gray-800"}>{status.charAt(0).toUpperCase() + status.slice(1)}</Badge>;
   };
 
   const formatDuration = (seconds?: number) => {
@@ -90,11 +78,7 @@ export default function SearchPage() {
   };
 
   const clearFilters = () => {
-    setSearchQuery("");
-    setEmployeeFilter("all");
-    setSentimentFilter("all");
-    setStatusFilter("all");
-    setDebouncedQuery("");
+    setSearchQuery(""); setEmployeeFilter("all"); setSentimentFilter("all"); setStatusFilter("all"); setDebouncedQuery("");
   };
 
   return (
@@ -112,7 +96,20 @@ export default function SearchPage() {
             <CardTitle className="flex items-center gap-2"><Search className="w-5 h-5" /> Search & Filter</CardTitle>
           </CardHeader>
           <CardContent className="space-y-4">
-            {/* ... Filters JSX (remains the same) ... */}
+            <div className="relative">
+              <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-muted-foreground w-4 h-4" />
+              <Input type="text" placeholder="Search by keywords, transcript content..." value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} className="pl-10"/>
+            </div>
+            <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+              <Select value={employeeFilter} onValueChange={setEmployeeFilter}>
+                <SelectTrigger><User className="w-4 h-4 mr-2" /><SelectValue placeholder="All Employees" /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All Employees</SelectItem>
+                  {employees?.map((employee) => (<SelectItem key={employee.id} value={employee.id}>{employee.name}</SelectItem>))}
+                </SelectContent>
+              </Select>
+              {/* Other filters */}
+            </div>
           </CardContent>
         </Card>
 
@@ -122,15 +119,11 @@ export default function SearchPage() {
           </CardHeader>
           <CardContent>
             {isLoading ? (
-              <div className="flex items-center justify-center h-64">
-                <AudioWaveform className="w-8 h-8 animate-spin text-primary" />
-              </div>
+              <div className="flex items-center justify-center h-64"><AudioWaveform className="w-8 h-8 animate-spin text-primary" /></div>
             ) : !displayCalls?.length ? (
               <div className="text-center py-12">
                 <Search className="w-12 h-12 text-muted-foreground mx-auto mb-4" />
-                <h3 className="text-lg font-medium text-foreground mb-2">
-                  {debouncedQuery.length > 0 ? 'No matching calls found' : 'No calls available'}
-                </h3>
+                <h3 className="text-lg font-medium text-foreground mb-2">{debouncedQuery.length > 0 ? 'No matching calls found' : 'No calls available'}</h3>
                 <Link href="/upload"><Button>Upload Call Recording</Button></Link>
               </div>
             ) : (
@@ -139,28 +132,21 @@ export default function SearchPage() {
                   <Card key={call.id} className="hover:shadow-md transition-shadow">
                     <CardContent className="p-6">
                       <div className="flex items-start justify-between mb-4">
-                        {/* --- CORRECTED EMPLOYEE DISPLAY --- */}
                         <div className="flex items-center space-x-3">
                           {call.employee ? (
                             <>
                               <div className="w-10 h-10 bg-primary/10 rounded-full flex items-center justify-center">
-                                <span className="text-primary font-semibold text-sm">
-                                  {call.employee.initials ?? 'N/A'}
-                                </span>
+                                <span className="text-primary font-semibold text-sm">{call.employee.initials ?? 'N/A'}</span>
                               </div>
                               <div>
                                 <h3 className="font-semibold text-foreground">{call.employee.name ?? 'Unknown'}</h3>
-                                <p className="text-sm text-muted-foreground">
-                                  {new Date(call.uploadedAt).toLocaleDateString()} • {formatDuration(call.duration)}
-                                </p>
+                                <p className="text-sm text-muted-foreground">{new Date(call.uploadedAt).toLocaleDateString()} • {formatDuration(call.duration)}</p>
                               </div>
                             </>
                           ) : (
                             <div>
-                               <h3 className="font-semibold text-foreground">Unassigned</h3>
-                               <p className="text-sm text-muted-foreground">
-                                {new Date(call.uploadedAt).toLocaleDateString()} • {formatDuration(call.duration)}
-                               </p>
+                              <h3 className="font-semibold text-foreground">Unassigned</h3>
+                              <p className="text-sm text-muted-foreground">{new Date(call.uploadedAt).toLocaleDateString()} • {formatDuration(call.duration)}</p>
                             </div>
                           )}
                         </div>
@@ -169,15 +155,13 @@ export default function SearchPage() {
                           {getStatusBadge(call.status)}
                         </div>
                       </div>
-                      
-                      {/* ... Rest of the card content ... */}
-                      
+                      {call.transcript?.text && (
+                        <div className="mb-4">
+                          <p className="text-sm text-muted-foreground line-clamp-2">{call.transcript.text}</p>
+                        </div>
+                      )}
                       <div className="flex items-center justify-end">
-                        <Link href={`/transcripts/${call.id}`}>
-                          <Button variant="outline" size="sm" disabled={call.status !== 'completed'}>
-                            View Details
-                          </Button>
-                        </Link>
+                        <Link href={`/transcripts/${call.id}`}><Button variant="outline" size="sm" disabled={call.status !== 'completed'}>View Details</Button></Link>
                       </div>
                     </CardContent>
                   </Card>
