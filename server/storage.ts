@@ -24,6 +24,7 @@ export interface IStorage {
   getEmployee(id: string): Promise<Employee | undefined>;
   getEmployeeByEmail(email: string): Promise<Employee | undefined>;
   createEmployee(employee: InsertEmployee): Promise<Employee>;
+  updateEmployee(id: string, updates: Partial<Employee>): Promise<Employee | undefined>;
   getAllEmployees(): Promise<Employee[]>;
 
   // Call operations
@@ -86,6 +87,14 @@ export class DbStorage implements IStorage {
     
     // 3. Save the complete object (with an ID) to the database
     const result = await this.db.insert(schema.employees).values(newEmployee).returning();
+    return result[0];
+  }
+
+  async updateEmployee(id: string, updates: Partial<Employee>): Promise<Employee | undefined> {
+    const result = await this.db.update(schema.employees)
+      .set(updates)
+      .where(eq(schema.employees.id, id))
+      .returning();
     return result[0];
   }
 async getAllEmployees() {
