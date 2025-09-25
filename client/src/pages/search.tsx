@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect } from "react"; // Ensure useEffect is imported
 import { useQuery } from "@tanstack/react-query";
 import { Search, Filter, Calendar, User, Heart } from "lucide-react";
 import { Input } from "@/components/ui/input";
@@ -19,7 +19,7 @@ export default function SearchPage() {
   const [debouncedQuery, setDebouncedQuery] = useState("");
   const { toast } = useToast();
 
-  // --- CORRECTED DEBOUNCE LOGIC ---
+  // --- THIS IS THE CORRECTED DEBOUNCE LOGIC ---
   useEffect(() => {
     const timer = setTimeout(() => {
       setDebouncedQuery(searchQuery);
