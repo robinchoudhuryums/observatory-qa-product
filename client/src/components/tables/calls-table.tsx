@@ -72,16 +72,16 @@ if (isLoading) {
     );
   };
 
-  const getStatusBadge = (status: string) => {
-    const variants: Record<string, any> = {
-      completed: "default",
-      processing: "secondary",
-      failed: "destructive",
-    };
+const getStatusBadge = (status?: string) => { // Allow status to be optional
+    // Add this safety check at the top
+    if (!status) {
+      return <Badge variant="secondary">Unknown</Badge>;
+    }
     
+    // ... the rest of your color logic stays the same
     const colors: Record<string, string> = {
       completed: "bg-green-100 text-green-800",
-      processing: "bg-blue-100 text-blue-800", 
+      processing: "bg-blue-100 text-blue-800",
       failed: "bg-red-100 text-red-800",
     };
     
