@@ -13,12 +13,12 @@ async function syncFromCSV() {
     .pipe(csv())
     .on('data', (row) => {
       // Reads from the "Name", "Department", and "Extension" columns in your CSV
-      employeesFromCSV.push({
-        name: row.Name,
-        role: row.Department, // Using "Department" for the role field
-        email: `${row.Extension}@company.com`, // Generating a unique email
-        initials: row.Name ? row.Name.split(' ').map((n: string) => n[0]).join('') : 'XX',
-      });
+    employeesFromCSV.push({
+    name: row["Agent Name"], // This now correctly reads the "Agent Name" column
+    role: row.Department,
+    email: `${row.Extension}@company.com`,
+    initials: row["Agent Name"] ? row["Agent Name"].split(' ').map((n: string) => n[0]).join('') : 'XX',
+    });
     })
     .on('end', async () => {
       console.log('CSV file successfully processed. Starting database sync...');
