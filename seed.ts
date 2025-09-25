@@ -31,7 +31,10 @@ async function syncFromCSV() {
         name: row["Agent Name"],
         role: row.Department,
         email: `${row.Extension}@company.com`,
-        initials: row["Agent Name"] ? row["Agent Name"].split(' ').map((n: string) => n[0]).join('') : 'XX',
+        initials: row["Agent Name"] ? (
+  (parts => parts.length > 1 ? `${parts[0][0]}${parts[parts.length - 1][0]}` : parts[0].slice(0, 2))
+  (row["Agent Name"].split(' '))
+).toUpperCase() : 'XX',
       });
     })
     .on('end', async () => {
