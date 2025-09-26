@@ -97,7 +97,7 @@ export class AssemblyAIService {
 
   async getLeMURAnalysis(transcriptId: string) {
     console.log(`[${transcriptId}] Requesting LeMUR analysis...`);
-    const response = await fetch(`${this.config.baseUrl}/lemur`, {
+   const response = await fetch(`https://api.assemblyai.com/lemur/v3`, {
       method: 'POST',
       headers: {
         'Authorization': this.config.apiKey,
