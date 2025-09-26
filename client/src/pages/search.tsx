@@ -1,12 +1,13 @@
 import { useState, useEffect } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { Search, Filter, User, Heart } from "lucide-react";
+import { Search, Filter, Calendar, Heart } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
 import { Link } from "wouter";
-import type { CallWithDetails, Employee } from "@shared/schema";
+import type { CallWithDetails } from "@shared/schema";
 import { useToast } from "@/hooks/use-toast";
 import { AudioWaveform } from "lucide-react";
 import { ErrorBoundary } from "@/components/lib/error-boundary";
@@ -14,7 +15,6 @@ import { CallCard } from "@/components/search/call-card";
 
 export default function SearchPage() {
   const [searchQuery, setSearchQuery] = useState("");
-  const [employeeFilter, setEmployeeFilter] = useState("all");
   const [sentimentFilter, setSentimentFilter] = useState("all");
   const [statusFilter, setStatusFilter] = useState("all");
   const [debouncedQuery, setDebouncedQuery] = useState("");
@@ -27,19 +27,14 @@ export default function SearchPage() {
     return () => clearTimeout(timer);
   }, [searchQuery]);
 
-  const { data: employees } = useQuery<Employee[]>({
-    queryKey: ["/api/employees"],
-  });
-
   const { data: searchResults, isLoading: isLoadingSearch } = useQuery<CallWithDetails[]>({
     queryKey: ["/api/search", { q: debouncedQuery }],
     enabled: debouncedQuery.length > 2,
-    onError: (error) => toast({ title: "Search Failed", description: error.message || "Could not connect to server.", variant: "destructive" }),
+    onError: (error) => toast({ title: "Search Failed", description: error.message, variant: "destructive" }),
   });
 
   const { data: allCalls, isLoading: isLoadingCalls } = useQuery<CallWithDetails[]>({
     queryKey: ["/api/calls", {
-      employee: employeeFilter === "all" ? "" : employeeFilter,
       sentiment: sentimentFilter === "all" ? "" : sentimentFilter,
       status: statusFilter === "all" ? "" : statusFilter
     }],
@@ -51,7 +46,6 @@ export default function SearchPage() {
 
   const clearFilters = () => {
     setSearchQuery("");
-    setEmployeeFilter("all");
     setSentimentFilter("all");
     setStatusFilter("all");
     setDebouncedQuery("");
@@ -77,20 +71,7 @@ export default function SearchPage() {
               <Input type="text" placeholder="Search by keywords, transcript content..." value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} className="pl-10"/>
             </div>
             <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-              <Select value={employeeFilter} onValueChange={setEmployeeFilter}>
-                <SelectTrigger><User className="w-4 h-4 mr-2" /><SelectValue placeholder="All Employees" /></SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">All Employees</SelectItem>
-                  {/* --- FINAL SAFETY CHECK ADDED HERE --- */}
-                  {employees
-                    ?.filter(e => e && e.id && e.name) // This ensures no invalid data is rendered
-                    .map((employee) => (
-                      <SelectItem key={employee.id} value={employee.id}>
-                        {employee.name}
-                      </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+              {/* Employee Filter Removed */}
               <Select value={sentimentFilter} onValueChange={setSentimentFilter}>
                   <SelectTrigger><Heart className="w-4 h-4 mr-2" /><SelectValue placeholder="All Sentiment" /></SelectTrigger>
                   <SelectContent>
