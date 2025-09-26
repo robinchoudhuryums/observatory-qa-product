@@ -183,36 +183,39 @@ async function processAudioFile(callId: string, filePath: string, audioBuffer: B
   console.log(`[${callId}] Starting audio processing...`);
   try {
     // Step 1: Upload to AssemblyAI (No change)
-    console.log(`[${callId}] Step 1/6: Uploading audio file to AssemblyAI...`);
+    console.log(`[${callId}] Step 1/7: Uploading audio file to AssemblyAI...`);
     const audioUrl = await assemblyAIService.uploadAudioFile(audioBuffer, path.basename(filePath));
-    console.log(`[${callId}] Step 1/6: Upload successful. Audio URL: ${audioUrl}`);
+    console.log(`[${callId}] Step 1/7: Upload successful. Audio URL: ${audioUrl}`);
 
     // Step 2: Start transcription (No change)
-    console.log(`[${callId}] Step 2/6: Submitting for transcription...`);
+    console.log(`[${callId}] Step 2/7: Submitting for transcription...`);
     const transcriptId = await assemblyAIService.transcribeAudio(audioUrl);
-    console.log(`[${callId}] Step 2/6: Transcription submitted. Transcript ID: ${transcriptId}`);
+    console.log(`[${callId}] Step 2/7: Transcription submitted. Transcript ID: ${transcriptId}`);
 
     // Update call with AssemblyAI ID
     await storage.updateCall(callId, { assemblyAiId: transcriptId });
 
-    // Step 3: Poll for completion (No change)
-    console.log(`[${callId}] Step 3/6: Polling for results... (This may take some time)`);
+    // Step 3: Poll for transcription completion (No change)
+    console.log(`[${callId}] Step 3/7: Polling for transcript results...`);
     const transcriptResponse = await assemblyAIService.pollTranscript(transcriptId);
-    console.log(`[${callId}] Step 3/6: Polling complete. Status: ${transcriptResponse.status}`);
+    console.log(`[${callId}] Step 3/7: Polling complete. Status: ${transcriptResponse.status}`);
 
-    // --- NEW LeMUR STEP ---
-    // Step 4: Get advanced analysis from LeMUR
-    console.log(`[${callId}] Step 4/6: Starting LeMUR analysis...`);
-    const lemurResponse = await assemblyAIService.getLeMURAnalysis(transcriptId);
-    console.log(`[${callId}] Step 4/6: LeMUR analysis successful.`);
+    // --- NEW LeMUR STEPS ---
+    // Step 4: Submit task to LeMUR
+    console.log(`[${callId}] Step 4/7: Submitting task to LeMUR...`);
+    const lemurTaskId = await assemblyAIService.submitLeMURTask(transcriptId);
 
-    // Step 5: Process combined results
-    console.log(`[${callId}] Step 5/6: Processing combined transcript and LeMUR data...`);
+    // Step 5: Poll for LeMUR results
+    console.log(`[${callId}] Step 5/7: Polling for LeMUR results...`);
+    const lemurResponse = await assemblyAIService.pollLeMURResult(lemurTaskId);
+    
+    // Step 6: Process combined results
+    console.log(`[${callId}] Step 6/7: Processing combined transcript and LeMUR data...`);
     const { transcript, sentiment, analysis } = assemblyAIService.processTranscriptData(transcriptResponse, lemurResponse, callId);
-    console.log(`[${callId}] Step 5/6: Data processing complete.`);
+    console.log(`[${callId}] Step 6/7: Data processing complete.`);
 
-    // Step 6: Store results
-    console.log(`[${callId}] Step 6/6: Saving rich analysis to the database...`);
+    // Step 7: Store rich results
+    console.log(`[${callId}] Step 7/7: Saving rich analysis to the database...`);
     await storage.createTranscript(transcript);
     await storage.createSentimentAnalysis(sentiment);
     await storage.createCallAnalysis(analysis);
@@ -222,7 +225,7 @@ async function processAudioFile(callId: string, filePath: string, audioBuffer: B
       status: "completed",
       duration: Math.floor((transcriptResponse.words?.[transcriptResponse.words.length - 1]?.end || 0) / 1000)
     });
-    console.log(`[${callId}] Step 6/6: Database updated. Status is now 'completed'.`);
+    console.log(`[${callId}] Step 7/7: Database updated. Status is now 'completed'.`);
 
     // Cleanup uploaded file
     await cleanupFile(filePath);
