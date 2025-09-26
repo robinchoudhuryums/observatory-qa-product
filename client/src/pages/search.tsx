@@ -51,7 +51,7 @@ export default function SearchPage() {
     enabled: debouncedQuery.length === 0,
   });
 
-  const displayCalls = debouncedQuery.length > 2 ? searchResults : allCalls;
+  const displayCalls = (debouncedQuery.length > 2 ? searchResults : allCalls) ?? [];
   const isLoading = isLoadingSearch || isLoadingCalls;
 
   const getSentimentBadge = (sentiment?: string) => {
