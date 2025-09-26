@@ -173,8 +173,10 @@ async getAllEmployees() {
   async getTranscript(callId: string) {
     return await this.db.query.transcripts.findFirst({ where: eq(schema.transcripts.callId, callId) });
   }
-  async createTranscript(transcript: InsertTranscript) {
-    const result = await this.db.insert(schema.transcripts).values(transcript).returning();
+  async createTranscript(transcript: InsertTranscript): Promise<Transcript> {
+    const newId = randomUUID();
+    const newTranscript = { ...transcript, id: newId };
+    const result = await this.db.insert(schema.transcripts).values(newTranscript).returning();
     return result[0];
   }
 
@@ -182,8 +184,10 @@ async getAllEmployees() {
   async getSentimentAnalysis(callId: string) {
     return await this.db.query.sentiments.findFirst({ where: eq(schema.sentiments.callId, callId) });
   }
-  async createSentimentAnalysis(sentiment: InsertSentimentAnalysis) {
-    const result = await this.db.insert(schema.sentiments).values(sentiment).returning();
+  async createSentimentAnalysis(sentiment: InsertSentimentAnalysis): Promise<SentimentAnalysis> {
+    const newId = randomUUID();
+    const newSentiment = { ...sentiment, id: newId };
+    const result = await this.db.insert(schema.sentiments).values(newSentiment).returning();
     return result[0];
   }
 
@@ -191,8 +195,10 @@ async getAllEmployees() {
   async getCallAnalysis(callId: string) {
     return await this.db.query.analyses.findFirst({ where: eq(schema.analyses.callId, callId) });
   }
-  async createCallAnalysis(analysis: InsertCallAnalysis) {
-    const result = await this.db.insert(schema.analyses).values(analysis).returning();
+  async createCallAnalysis(analysis: InsertCallAnalysis): Promise<CallAnalysis> {
+    const newId = randomUUID();
+    const newAnalysis = { ...analysis, id: newId };
+    const result = await this.db.insert(schema.analyses).values(newAnalysis).returning();
     return result[0];
   }
   
