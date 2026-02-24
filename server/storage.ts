@@ -235,7 +235,6 @@ async getAllEmployees() {
   }
 
   async getTopPerformers(limit = 3) {
-    // This is a more complex query that joins calls, analyses, and employees
     const performers = await this.db
       .select({
         id: schema.employees.id,
@@ -251,7 +250,11 @@ async getAllEmployees() {
       .orderBy(desc(avg(schema.analyses.performanceScore)))
       .limit(limit);
 
-    return performers;
+    // Convert string aggregates to numbers for frontend consumption
+    return performers.map(p => ({
+      ...p,
+      avgPerformanceScore: p.avgPerformanceScore ? parseFloat(p.avgPerformanceScore) : null,
+    }));
   }
   
   async searchCalls(query: string): Promise<CallWithDetails[]> {

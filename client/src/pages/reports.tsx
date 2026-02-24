@@ -85,7 +85,7 @@ if (isLoading) {
                 
                 {/* This check prevents the crash if the score is missing */}
                 <span className="font-bold text-green-500">
-                  {p.avgPerformanceScore ? p.avgPerformanceScore.toFixed(1) : 'N/A'}
+                  {p.avgPerformanceScore ? Number(p.avgPerformanceScore).toFixed(1) : 'N/A'}
                 </span>
               </li>
               ))}

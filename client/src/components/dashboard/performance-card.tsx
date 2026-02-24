@@ -70,7 +70,7 @@ export default function PerformanceCard() {
             </div>
             <div className="text-right">
               <p className="font-bold text-green-600" data-testid={`performer-score-${index}`}>
-                {(employee.score ?? employee.avgPerformanceScore)?.toFixed(1) ?? 'N/A'}
+                {Number(employee.score ?? employee.avgPerformanceScore ?? 0).toFixed(1) || 'N/A'}
               </p>
               <p className="text-xs text-muted-foreground">Score</p>
             </div>
