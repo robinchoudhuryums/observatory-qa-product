@@ -1,4 +1,6 @@
 import {
+  type User,
+  type InsertUser,
   type Employee,
   type InsertEmployee,
   type Call,
@@ -20,6 +22,11 @@ import { eq, desc, count, avg, sql } from 'drizzle-orm';
 import { randomUUID } from 'crypto';
 
 export interface IStorage {
+  // User operations
+  getUser(id: string): Promise<User | undefined>;
+  getUserByUsername(username: string): Promise<User | undefined>;
+  createUser(user: InsertUser): Promise<User>;
+
   // Employee operations
   getEmployee(id: string): Promise<Employee | undefined>;
   getEmployeeByEmail(email: string): Promise<Employee | undefined>;
@@ -68,6 +75,19 @@ export class DbStorage implements IStorage {
 
     const pool = new Pool({ connectionString });
     this.db = drizzle(pool, { schema });
+  }
+
+  // --- User Methods ---
+  async getUser(id: string) {
+    return await this.db.query.users.findFirst({ where: eq(schema.users.id, id) });
+  }
+  async getUserByUsername(username: string) {
+    return await this.db.query.users.findFirst({ where: eq(schema.users.username, username) });
+  }
+  async createUser(user: InsertUser): Promise<User> {
+    const newId = randomUUID();
+    const result = await this.db.insert(schema.users).values({ ...user, id: newId }).returning();
+    return result[0];
   }
 
   // --- Employee Methods ---

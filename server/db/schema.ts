@@ -1,6 +1,16 @@
 import { relations } from 'drizzle-orm';
 import { pgTable, text, timestamp, varchar, jsonb, integer, decimal } from 'drizzle-orm/pg-core';
 
+// --- USERS TABLE (authentication) ---
+export const users = pgTable('users', {
+  id: varchar('id').primaryKey(),
+  username: text('username').notNull().unique(),
+  passwordHash: text('password_hash').notNull(),
+  name: text('name').notNull(),
+  role: text('role').default('viewer').notNull(), // admin, manager, viewer
+  createdAt: timestamp('created_at').defaultNow(),
+});
+
 // --- EMPLOYEES TABLE ---
 export const employees = pgTable('employees', {
   id: varchar('id').primaryKey(),

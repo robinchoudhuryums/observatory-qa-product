@@ -1,6 +1,6 @@
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
-import { employees, calls, transcripts, sentiments, analyses } from "../server/db/schema";
+import { users, employees, calls, transcripts, sentiments, analyses } from "../server/db/schema";
 
 // Insert schemas (validation for creating new records)
 export const insertEmployeeSchema = createInsertSchema(employees).omit({
@@ -28,7 +28,16 @@ export const insertCallAnalysisSchema = createInsertSchema(analyses).omit({
   createdAt: true,
 });
 
+// User schema
+export const insertUserSchema = createInsertSchema(users).omit({
+  id: true,
+  createdAt: true,
+});
+
 // Types inferred from the actual DB schema
+export type InsertUser = z.infer<typeof insertUserSchema>;
+export type User = typeof users.$inferSelect;
+
 export type InsertEmployee = z.infer<typeof insertEmployeeSchema>;
 export type Employee = typeof employees.$inferSelect;
 
