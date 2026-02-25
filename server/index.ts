@@ -7,9 +7,6 @@ const app = express();
 app.use(express.json());
 app.use(express.urlencoded({ extended: false }));
 
-// Authentication (must come before routes)
-setupAuth(app);
-
 // HIPAA: Security headers
 app.use((req, res, next) => {
   res.setHeader('X-Content-Type-Options', 'nosniff');
@@ -41,6 +38,9 @@ app.use((req, res, next) => {
 });
 
 (async () => {
+  // Authentication (must come before routes) - async to hash env var passwords on startup
+  await setupAuth(app);
+
   const server = await registerRoutes(app);
 
   app.use((err: any, _req: Request, res: Response, _next: NextFunction) => {

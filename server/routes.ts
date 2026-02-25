@@ -6,8 +6,8 @@ import fs from "fs";
 import passport from "passport";
 import { storage } from "./storage";
 import { assemblyAIService } from "./services/assemblyai";
-import { requireAuth, hashPassword } from "./auth";
-import { insertCallSchema, insertEmployeeSchema } from "@shared/schema";
+import { requireAuth } from "./auth";
+import { insertEmployeeSchema } from "@shared/schema";
 import { z } from "zod";
 
 // Ensure uploads directory exists
@@ -28,7 +28,7 @@ const upload = multer({
     if (allowedTypes.includes(ext)) {
       cb(null, true);
     } else {
-      cb(new Error('Invalid file type. Only audio files are allowed.'));
+      cb(new Error('Invalid file type. Only audio files are allowed.'), false);
     }
   }
 });
@@ -36,42 +36,7 @@ const upload = multer({
 export async function registerRoutes(app: Express): Promise<Server> {
 
   // ==================== AUTH ROUTES (unauthenticated) ====================
-
-  // Register a new user
-  app.post("/api/auth/register", async (req, res) => {
-    try {
-      const { username, password, name } = req.body;
-      if (!username || !password || !name) {
-        res.status(400).json({ message: "Username, password, and name are required" });
-        return;
-      }
-      if (password.length < 8) {
-        res.status(400).json({ message: "Password must be at least 8 characters" });
-        return;
-      }
-
-      const existing = await storage.getUserByUsername(username);
-      if (existing) {
-        res.status(409).json({ message: "Username already exists" });
-        return;
-      }
-
-      const passwordHash = await hashPassword(password);
-      const user = await storage.createUser({ username, passwordHash, name, role: "viewer" });
-
-      // Auto-login after registration
-      req.login({ id: user.id, username: user.username, name: user.name, role: user.role }, (err) => {
-        if (err) {
-          res.status(500).json({ message: "Registration succeeded but login failed" });
-          return;
-        }
-        res.status(201).json({ id: user.id, username: user.username, name: user.name, role: user.role });
-      });
-    } catch (error) {
-      console.error("Registration error:", error);
-      res.status(500).json({ message: "Failed to register" });
-    }
-  });
+  // Users are managed via AUTH_USERS environment variable (no registration)
 
   // Login
   app.post("/api/auth/login", (req, res, next) => {
@@ -241,7 +206,9 @@ app.get("/api/calls", requireAuth, async (req, res) => {
 
       // Read file buffer for API upload, then start async processing
       const audioBuffer = fs.readFileSync(req.file.path);
-      processAudioFile(call.id, req.file.path, audioBuffer)
+      const originalName = req.file.originalname;
+      const mimeType = req.file.mimetype || "audio/mpeg";
+      processAudioFile(call.id, req.file.path, audioBuffer, originalName, mimeType)
         .catch(error => {
           console.error(`Failed to process call ${call.id}:`, error);
           storage.updateCall(call.id, { status: "failed" });
@@ -267,14 +234,23 @@ app.get("/api/calls", requireAuth, async (req, res) => {
     }
   }
 
-// Process audio file with AssemblyAI
-async function processAudioFile(callId: string, filePath: string, audioBuffer: Buffer) {
+// Process audio file with AssemblyAI and archive to GCS
+async function processAudioFile(callId: string, filePath: string, audioBuffer: Buffer, originalName: string, mimeType: string) {
   console.log(`[${callId}] Starting audio processing...`);
   try {
-    // Step 1: Upload to AssemblyAI
+    // Step 1a: Upload to AssemblyAI
     console.log(`[${callId}] Step 1/7: Uploading audio file to AssemblyAI...`);
     const audioUrl = await assemblyAIService.uploadAudioFile(audioBuffer, path.basename(filePath));
-    console.log(`[${callId}] Step 1/7: Upload successful. Audio URL: ${audioUrl}`);
+    console.log(`[${callId}] Step 1/7: Upload to AssemblyAI successful.`);
+
+    // Step 1b: Archive audio to GCS
+    console.log(`[${callId}] Step 1b/7: Archiving audio file to GCS...`);
+    try {
+      await storage.uploadAudioToGcs(callId, originalName, audioBuffer, mimeType);
+      console.log(`[${callId}] Step 1b/7: Audio archived to GCS.`);
+    } catch (gcsError) {
+      console.warn(`[${callId}] Warning: Failed to archive audio to GCS (continuing):`, gcsError);
+    }
 
     // Step 2: Start transcription
     console.log(`[${callId}] Step 2/7: Submitting for transcription...`);
@@ -304,8 +280,8 @@ async function processAudioFile(callId: string, filePath: string, audioBuffer: B
     const { transcript, sentiment, analysis } = assemblyAIService.processTranscriptData(transcriptResponse, lemurResponse, callId);
     console.log(`[${callId}] Step 5/6: Data processing complete.`);
 
-    // Step 6: Store rich results
-    console.log(`[${callId}] Step 6/6: Saving rich analysis to the database...`);
+    // Step 6: Store rich results in GCS
+    console.log(`[${callId}] Step 6/6: Saving rich analysis to GCS...`);
     await storage.createTranscript(transcript);
     await storage.createSentimentAnalysis(sentiment);
     await storage.createCallAnalysis(analysis);
@@ -314,7 +290,7 @@ async function processAudioFile(callId: string, filePath: string, audioBuffer: B
       status: "completed",
       duration: Math.floor((transcriptResponse.words?.[transcriptResponse.words.length - 1]?.end || 0) / 1000)
     });
-    console.log(`[${callId}] Step 6/6: Database updated. Status is now 'completed'.`);
+    console.log(`[${callId}] Step 6/6: GCS updated. Status is now 'completed'.`);
 
     await cleanupFile(filePath);
     console.log(`[${callId}] Processing finished successfully.`);

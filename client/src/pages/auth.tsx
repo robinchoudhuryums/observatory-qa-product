@@ -3,7 +3,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { useToast } from "@/hooks/use-toast";
-import { AudioWaveform, LogIn, UserPlus } from "lucide-react";
+import { AudioWaveform, LogIn } from "lucide-react";
 import { apiRequest } from "@/lib/queryClient";
 
 interface AuthPageProps {
@@ -11,10 +11,8 @@ interface AuthPageProps {
 }
 
 export default function AuthPage({ onLogin }: AuthPageProps) {
-  const [isLogin, setIsLogin] = useState(true);
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
-  const [name, setName] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const { toast } = useToast();
 
@@ -23,19 +21,14 @@ export default function AuthPage({ onLogin }: AuthPageProps) {
     setIsLoading(true);
 
     try {
-      const endpoint = isLogin ? "/api/auth/login" : "/api/auth/register";
-      const body = isLogin
-        ? { username, password }
-        : { username, password, name };
-
-      await apiRequest("POST", endpoint, body);
+      await apiRequest("POST", "/api/auth/login", { username, password });
       onLogin();
     } catch (error: any) {
       const message = error.message?.includes(":")
         ? error.message.split(": ").slice(1).join(": ")
         : error.message;
       toast({
-        title: isLogin ? "Login Failed" : "Registration Failed",
+        title: "Login Failed",
         description: message,
         variant: "destructive",
       });
@@ -55,28 +48,11 @@ export default function AuthPage({ onLogin }: AuthPageProps) {
           </div>
           <CardTitle className="text-2xl">CallAnalyzer</CardTitle>
           <CardDescription>
-            {isLogin
-              ? "Sign in to access the call analysis dashboard"
-              : "Create an account to get started"}
+            Sign in to access the call analysis dashboard
           </CardDescription>
         </CardHeader>
         <CardContent>
           <form onSubmit={handleSubmit} className="space-y-4">
-            {!isLogin && (
-              <div>
-                <label className="text-sm font-medium text-foreground" htmlFor="name">
-                  Full Name
-                </label>
-                <Input
-                  id="name"
-                  type="text"
-                  placeholder="Jane Smith"
-                  value={name}
-                  onChange={(e) => setName(e.target.value)}
-                  required={!isLogin}
-                />
-              </div>
-            )}
             <div>
               <label className="text-sm font-medium text-foreground" htmlFor="username">
                 Username
@@ -102,41 +78,18 @@ export default function AuthPage({ onLogin }: AuthPageProps) {
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 required
-                minLength={8}
-                autoComplete={isLogin ? "current-password" : "new-password"}
+                autoComplete="current-password"
               />
-              {!isLogin && (
-                <p className="text-xs text-muted-foreground mt-1">Minimum 8 characters</p>
-              )}
             </div>
             <Button type="submit" className="w-full" disabled={isLoading}>
               {isLoading ? (
                 <AudioWaveform className="w-4 h-4 mr-2 animate-spin" />
-              ) : isLogin ? (
-                <LogIn className="w-4 h-4 mr-2" />
               ) : (
-                <UserPlus className="w-4 h-4 mr-2" />
+                <LogIn className="w-4 h-4 mr-2" />
               )}
-              {isLogin ? "Sign In" : "Create Account"}
+              Sign In
             </Button>
           </form>
-
-          <div className="mt-4 text-center">
-            <button
-              type="button"
-              className="text-sm text-primary hover:underline"
-              onClick={() => {
-                setIsLogin(!isLogin);
-                setUsername("");
-                setPassword("");
-                setName("");
-              }}
-            >
-              {isLogin
-                ? "Need an account? Register"
-                : "Already have an account? Sign in"}
-            </button>
-          </div>
         </CardContent>
       </Card>
     </div>

@@ -4,22 +4,69 @@ import session from "express-session";
 import { scrypt, randomBytes, timingSafeEqual } from "crypto";
 import { promisify } from "util";
 import type { Express, RequestHandler } from "express";
-import { storage } from "./storage";
-import type { User } from "@shared/schema";
 
 const scryptAsync = promisify(scrypt);
 
-export async function hashPassword(password: string): Promise<string> {
+/**
+ * Users are defined via the AUTH_USERS environment variable.
+ * Format: username:password:role:displayName (comma-separated for multiple users)
+ * Example: admin:SecurePass123!:admin:Admin User,viewer:ViewerPass456:viewer:Jane Doe
+ */
+
+interface EnvUser {
+  id: string;
+  username: string;
+  passwordHash: string;
+  name: string;
+  role: string;
+}
+
+// In-memory store of hashed user credentials parsed from env vars
+const envUsers: EnvUser[] = [];
+
+async function hashPassword(password: string): Promise<string> {
   const salt = randomBytes(16).toString("hex");
   const buf = (await scryptAsync(password, salt, 64)) as Buffer;
   return `${buf.toString("hex")}.${salt}`;
 }
 
-export async function comparePasswords(supplied: string, stored: string): Promise<boolean> {
+async function comparePasswords(supplied: string, stored: string): Promise<boolean> {
   const [hashedPassword, salt] = stored.split(".");
   const hashedPasswordBuf = Buffer.from(hashedPassword, "hex");
   const suppliedPasswordBuf = (await scryptAsync(supplied, salt, 64)) as Buffer;
   return timingSafeEqual(hashedPasswordBuf, suppliedPasswordBuf);
+}
+
+async function loadUsersFromEnv(): Promise<void> {
+  const authUsersRaw = process.env.AUTH_USERS;
+  if (!authUsersRaw) {
+    console.warn("AUTH_USERS not set. No users will be able to log in.");
+    return;
+  }
+
+  const userEntries = authUsersRaw.split(",").map((s) => s.trim()).filter(Boolean);
+
+  for (const entry of userEntries) {
+    const parts = entry.split(":");
+    if (parts.length < 2) {
+      console.warn(`Skipping malformed AUTH_USERS entry: ${entry}`);
+      continue;
+    }
+
+    const [username, password, role = "viewer", ...nameParts] = parts;
+    const displayName = nameParts.length > 0 ? nameParts.join(":") : username;
+
+    const passwordHash = await hashPassword(password);
+    envUsers.push({
+      id: randomBytes(8).toString("hex"),
+      username,
+      passwordHash,
+      name: displayName,
+      role,
+    });
+
+    console.log(`Loaded user from AUTH_USERS: ${username} (${role})`);
+  }
 }
 
 // Extend Express types for session user
@@ -34,7 +81,10 @@ declare global {
   }
 }
 
-export function setupAuth(app: Express) {
+export async function setupAuth(app: Express) {
+  // Load users from environment variables on startup
+  await loadUsersFromEnv();
+
   // Session configuration
   const sessionSecret = process.env.SESSION_SECRET || randomBytes(32).toString("hex");
   if (!process.env.SESSION_SECRET) {
@@ -58,11 +108,11 @@ export function setupAuth(app: Express) {
   app.use(passport.initialize());
   app.use(passport.session());
 
-  // Local strategy: authenticate with username + password
+  // Local strategy: authenticate against env-var-defined users
   passport.use(
     new LocalStrategy(async (username, password, done) => {
       try {
-        const user = await storage.getUserByUsername(username);
+        const user = envUsers.find((u) => u.username === username);
         if (!user) {
           return done(null, false, { message: "Invalid username or password" });
         }
@@ -70,7 +120,6 @@ export function setupAuth(app: Express) {
         if (!isValid) {
           return done(null, false, { message: "Invalid username or password" });
         }
-        // Return user without password hash
         return done(null, {
           id: user.id,
           username: user.username,
@@ -90,20 +139,16 @@ export function setupAuth(app: Express) {
 
   // Deserialize user from session
   passport.deserializeUser(async (id: string, done) => {
-    try {
-      const user = await storage.getUser(id);
-      if (!user) {
-        return done(null, false);
-      }
-      done(null, {
-        id: user.id,
-        username: user.username,
-        name: user.name,
-        role: user.role,
-      });
-    } catch (err) {
-      done(err);
+    const user = envUsers.find((u) => u.id === id);
+    if (!user) {
+      return done(null, false);
     }
+    done(null, {
+      id: user.id,
+      username: user.username,
+      name: user.name,
+      role: user.role,
+    });
   });
 }
 
