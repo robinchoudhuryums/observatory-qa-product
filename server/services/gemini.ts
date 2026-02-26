@@ -34,9 +34,9 @@ export interface GeminiAnalysis {
 
 type AuthMode = "api_key" | "vertex_ai" | "none";
 
-// Default models per auth mode. The free tier for 2.0-flash on AI Studio is
-// heavily restricted (limit: 0 in many regions), so default to 1.5-flash there.
-const DEFAULT_MODEL_API_KEY = "gemini-1.5-flash";
+// Default models per auth mode. 2.5-flash has the best free-tier quota on
+// AI Studio. 2.0-flash had limit:0 issues; 1.5-flash was retired from v1beta.
+const DEFAULT_MODEL_API_KEY = "gemini-2.5-flash";
 const DEFAULT_MODEL_VERTEX = "gemini-2.0-flash";
 
 export class GeminiService {
