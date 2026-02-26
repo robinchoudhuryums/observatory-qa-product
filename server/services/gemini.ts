@@ -34,27 +34,35 @@ export interface GeminiAnalysis {
 
 type AuthMode = "api_key" | "vertex_ai" | "none";
 
+// Default models per auth mode. The free tier for 2.0-flash on AI Studio is
+// heavily restricted (limit: 0 in many regions), so default to 1.5-flash there.
+const DEFAULT_MODEL_API_KEY = "gemini-1.5-flash";
+const DEFAULT_MODEL_VERTEX = "gemini-2.0-flash";
+
 export class GeminiService {
   private authMode: AuthMode = "none";
   private apiKey: string | null = null;
   private credentials: ServiceAccountKey | null = null;
   private accessToken: string | null = null;
   private tokenExpiry: number = 0;
+  private model: string;
 
   constructor() {
     // Priority 1: GEMINI_API_KEY (Google AI Studio — simplest for personal/testing)
     if (process.env.GEMINI_API_KEY) {
       this.apiKey = process.env.GEMINI_API_KEY;
       this.authMode = "api_key";
-      console.log("Gemini service initialized (mode: API key via Google AI Studio)");
+      this.model = process.env.GEMINI_MODEL || DEFAULT_MODEL_API_KEY;
+      console.log(`Gemini service initialized (mode: API key via AI Studio, model: ${this.model})`);
       return;
     }
 
     // Priority 2+: Service account credentials for Vertex AI
+    this.model = process.env.GEMINI_MODEL || DEFAULT_MODEL_VERTEX;
     try {
       this.credentials = this.loadServiceAccountCredentials();
       this.authMode = "vertex_ai";
-      console.log(`Gemini service initialized (mode: Vertex AI, project: ${this.credentials.project_id})`);
+      console.log(`Gemini service initialized (mode: Vertex AI, project: ${this.credentials.project_id}, model: ${this.model})`);
     } catch {
       console.warn("Gemini service: No credentials found. AI analysis will be unavailable.");
     }
@@ -133,7 +141,7 @@ export class GeminiService {
       throw new Error("Gemini service not configured");
     }
 
-    const model = "gemini-2.0-flash";
+    const model = this.model;
     const prompt = this.buildPrompt(transcriptText);
 
     const requestBody = {
