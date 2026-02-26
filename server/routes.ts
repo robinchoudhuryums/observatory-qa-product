@@ -266,10 +266,15 @@ async function processAudioFile(callId: string, filePath: string, audioBuffer: B
     }
     console.log(`[${callId}] Step 3/7: Polling complete. Status: ${transcriptResponse.status}`);
 
-    // Step 4: Submit task to LeMUR (returns result synchronously)
-    console.log(`[${callId}] Step 4/6: Submitting task to LeMUR...`);
-    const lemurResponse = await assemblyAIService.submitLeMURTask(transcriptId);
-    console.log(`[${callId}] Step 4/6: LeMUR analysis complete.`);
+    // Step 4: Submit task to LeMUR (optional — account may not have access)
+    let lemurResponse = null;
+    try {
+      console.log(`[${callId}] Step 4/6: Submitting task to LeMUR...`);
+      lemurResponse = await assemblyAIService.submitLeMURTask(transcriptId);
+      console.log(`[${callId}] Step 4/6: LeMUR analysis complete.`);
+    } catch (lemurError) {
+      console.warn(`[${callId}] LeMUR unavailable (continuing without AI analysis):`, (lemurError as Error).message);
+    }
 
     // Step 5: Process combined results
     console.log(`[${callId}] Step 5/6: Processing combined transcript and LeMUR data...`);

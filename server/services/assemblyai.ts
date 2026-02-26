@@ -148,14 +148,14 @@ Evaluate the agent on: professionalism, product knowledge, empathy, problem reso
 
   processTranscriptData(
     transcriptResponse: AssemblyAIResponse,
-    lemurResponse: LeMURResponse,
+    lemurResponse: LeMURResponse | null,
     callId: string
   ): { transcript: InsertTranscript; sentiment: InsertSentimentAnalysis; analysis: InsertCallAnalysis } {
     // Parse LeMUR response
     let lemurData: any = {};
     try {
       // The LeMUR response text may contain JSON
-      const responseText = lemurResponse.response || '';
+      const responseText = lemurResponse?.response || '';
       // Try to extract JSON from the response
       const jsonMatch = responseText.match(/\{[\s\S]*\}/);
       if (jsonMatch) {
@@ -229,7 +229,7 @@ Evaluate the agent on: professionalism, product knowledge, empathy, problem reso
       summary: lemurData.summary || transcriptResponse.text?.slice(0, 500) || '',
       actionItems: lemurData.action_items || [],
       feedback: lemurData.feedback || { strengths: [], suggestions: [] },
-      lemurResponse: lemurResponse,
+      lemurResponse: lemurResponse || undefined,
     };
 
     return { transcript, sentiment, analysis };
