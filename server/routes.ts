@@ -155,7 +155,7 @@ app.get("/api/calls", requireAuth, async (req, res) => {
         return;
       }
 
-      const employee = await storage.getEmployee(call.employeeId);
+      const employee = call.employeeId ? await storage.getEmployee(call.employeeId) : undefined;
       const transcript = await storage.getTranscript(call.id);
       const sentiment = await storage.getSentimentAnalysis(call.id);
       const analysis = await storage.getCallAnalysis(call.id);
@@ -181,24 +181,20 @@ app.get("/api/calls", requireAuth, async (req, res) => {
       }
 
       const { employeeId } = req.body;
-      if (!employeeId) {
-        // HIPAA: Clean up uploaded file if validation fails
-        await cleanupFile(req.file.path);
-        res.status(400).json({ message: "Employee ID is required" });
-        return;
+
+      // If employeeId provided, verify employee exists
+      if (employeeId) {
+        const employee = await storage.getEmployee(employeeId);
+        if (!employee) {
+          await cleanupFile(req.file.path);
+          res.status(404).json({ message: "Employee not found" });
+          return;
+        }
       }
 
-      // Verify employee exists
-      const employee = await storage.getEmployee(employeeId);
-      if (!employee) {
-        await cleanupFile(req.file.path);
-        res.status(404).json({ message: "Employee not found" });
-        return;
-      }
-
-      // Create call record
+      // Create call record (employeeId is optional — can be assigned later)
       const call = await storage.createCall({
-        employeeId,
+        employeeId: employeeId || undefined,
         fileName: req.file.originalname,
         filePath: req.file.path,
         status: "processing"
