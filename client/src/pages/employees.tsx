@@ -82,14 +82,12 @@ export default function EmployeesPage() {
 
   // Add form
   const [name, setName] = useState("");
-  const [email, setEmail] = useState("");
   const [role, setRole] = useState("");
   const [subTeam, setSubTeam] = useState("");
   const [status, setStatus] = useState("Active");
 
   // Edit form
   const [editName, setEditName] = useState("");
-  const [editEmail, setEditEmail] = useState("");
   const [editRole, setEditRole] = useState("");
   const [editSubTeam, setEditSubTeam] = useState("");
   const [editStatus, setEditStatus] = useState("Active");
@@ -120,7 +118,7 @@ export default function EmployeesPage() {
   };
 
   const createMutation = useMutation({
-    mutationFn: async (data: { name: string; email: string; role?: string; initials?: string; status?: string; subTeam?: string }) => {
+    mutationFn: async (data: { name: string; email: string; role?: string; initials?: string; status?: string; subTeam?: string; }) => {
       const res = await apiRequest("POST", "/api/employees", data);
       return res.json();
     },
@@ -166,13 +164,12 @@ export default function EmployeesPage() {
   });
 
   const resetAddForm = () => {
-    setName(""); setEmail(""); setRole(""); setSubTeam(""); setStatus("Active");
+    setName(""); setRole(""); setSubTeam(""); setStatus("Active");
   };
 
   const openEditDialog = (emp: Employee) => {
     setEditEmployee(emp);
     setEditName(emp.name);
-    setEditEmail(emp.email);
     setEditRole(emp.role || "");
     setEditSubTeam(emp.subTeam || "");
     setEditStatus(emp.status || "Active");
@@ -181,18 +178,22 @@ export default function EmployeesPage() {
 
   const handleAdd = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!name.trim() || !email.trim()) {
-      toast({ title: "Validation Error", description: "Name and email are required.", variant: "destructive" });
+    if (!name.trim()) {
+      toast({ title: "Validation Error", description: "Name is required.", variant: "destructive" });
       return;
     }
-    const nameParts = name.trim().split(/\s+/);
+    const trimmedName = name.trim();
+    const nameParts = trimmedName.split(/\s+/);
     const initials = nameParts.length >= 2
       ? (nameParts[0][0] + nameParts[nameParts.length - 1][0]).toUpperCase()
-      : name.slice(0, 2).toUpperCase();
+      : trimmedName.slice(0, 2).toUpperCase();
+
+    // Auto-generate email from name for backend storage
+    const autoEmail = `${trimmedName.toLowerCase().replace(/\s+/g, ".")}@company.com`;
 
     createMutation.mutate({
-      name: name.trim(),
-      email: email.trim(),
+      name: trimmedName,
+      email: autoEmail,
       role: role.trim() || undefined,
       initials,
       status,
@@ -207,7 +208,6 @@ export default function EmployeesPage() {
       id: editEmployee.id,
       updates: {
         name: editName.trim(),
-        email: editEmail.trim(),
         role: editRole.trim() || undefined,
         subTeam: editSubTeam && editSubTeam !== "none" ? editSubTeam : undefined,
         status: editStatus,
@@ -231,7 +231,6 @@ export default function EmployeesPage() {
           {emp.name}
         </div>
       </td>
-      <td className="px-4 py-2.5 text-sm text-muted-foreground">{emp.email}</td>
       <td className="px-4 py-2.5 text-sm text-muted-foreground">{emp.subTeam || "—"}</td>
       <td className="px-4 py-2.5 text-sm">
         <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${
@@ -253,7 +252,6 @@ export default function EmployeesPage() {
       <thead>
         <tr className="border-b border-border">
           <th className="text-left px-4 py-2 text-xs font-medium text-muted-foreground">Name</th>
-          <th className="text-left px-4 py-2 text-xs font-medium text-muted-foreground">Email</th>
           <th className="text-left px-4 py-2 text-xs font-medium text-muted-foreground">Sub-Team</th>
           <th className="text-left px-4 py-2 text-xs font-medium text-muted-foreground">Status</th>
           <th className="text-left px-4 py-2 text-xs font-medium text-muted-foreground w-12"></th>
@@ -334,10 +332,6 @@ export default function EmployeesPage() {
                   <Label htmlFor="add-name">Full Name *</Label>
                   <Input id="add-name" value={name} onChange={(e) => setName(e.target.value)} placeholder="Jane Smith" />
                 </div>
-                <div>
-                  <Label htmlFor="add-email">Email *</Label>
-                  <Input id="add-email" type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="jane.smith@company.com" />
-                </div>
                 {renderDepartmentField(role, setRole, "add-role")}
                 {renderSubTeamField(role, subTeam, setSubTeam)}
                 <div>
@@ -370,10 +364,6 @@ export default function EmployeesPage() {
               <div>
                 <Label htmlFor="edit-name">Full Name</Label>
                 <Input id="edit-name" value={editName} onChange={(e) => setEditName(e.target.value)} />
-              </div>
-              <div>
-                <Label htmlFor="edit-email">Email</Label>
-                <Input id="edit-email" type="email" value={editEmail} onChange={(e) => setEditEmail(e.target.value)} />
               </div>
               {renderDepartmentField(editRole, setEditRole, "edit-role")}
               {renderSubTeamField(editRole, editSubTeam, setEditSubTeam)}
