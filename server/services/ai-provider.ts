@@ -24,12 +24,27 @@ export interface CallAnalysis {
 export interface AIAnalysisProvider {
   readonly name: string;
   readonly isAvailable: boolean;
-  analyzeCallTranscript(transcriptText: string, callId: string): Promise<CallAnalysis>;
+  analyzeCallTranscript(transcriptText: string, callId: string, callCategory?: string): Promise<CallAnalysis>;
 }
 
-export function buildAnalysisPrompt(transcriptText: string): string {
-  return `You are analyzing a customer service call transcript for a medical supply company. Analyze the following transcript and provide your assessment.
+const CATEGORY_CONTEXT: Record<string, string> = {
+  inbound: "This is an INBOUND call — a customer or patient called into the company. One speaker is the customer/patient and the other is the company employee/agent.",
+  outbound: "This is an OUTBOUND call — the company employee called a customer or patient. One speaker is the employee/agent and the other is the customer/patient.",
+  internal: "This is an INTERNAL call — both speakers are coworkers or employees within the same company. Evaluate collaboration, communication clarity, and productivity rather than customer service metrics.",
+  vendor: "This is a VENDOR/PARTNER call — the employee is speaking with an external vendor or business partner. Evaluate negotiation, clarity, and professionalism.",
+};
 
+export function buildAnalysisPrompt(transcriptText: string, callCategory?: string): string {
+  const categoryContext = callCategory && CATEGORY_CONTEXT[callCategory]
+    ? `\nCALL CONTEXT:\n${CATEGORY_CONTEXT[callCategory]}\n`
+    : "";
+
+  const evaluationCriteria = callCategory === "internal"
+    ? "- Evaluate on: communication clarity, collaboration effectiveness, action item follow-through, and productivity"
+    : "- Evaluate the agent on: professionalism, product knowledge, empathy, problem resolution, and compliance with medical supply protocols";
+
+  return `You are analyzing a call transcript for a medical supply company. Analyze the following transcript and provide your assessment.
+${categoryContext}
 TRANSCRIPT:
 ${transcriptText}
 
@@ -50,7 +65,7 @@ Respond with ONLY valid JSON in this exact format (no markdown, no code fences):
 Guidelines:
 - sentiment_score: 0.0 to 1.0 (1.0 = most positive)
 - performance_score: 0.0 to 10.0 (10.0 = best)
-- Evaluate the agent on: professionalism, product knowledge, empathy, problem resolution, and compliance with medical supply protocols
+${evaluationCriteria}
 - Be specific in strengths and suggestions — reference actual moments from the call
 - Include 2-4 action items that are concrete and actionable
 - Topics should be specific (e.g. "order tracking", "billing dispute") not generic`;

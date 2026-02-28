@@ -1,17 +1,18 @@
 import { useCallback, useState } from "react";
 import { useDropzone } from "react-dropzone";
-// --- THIS LINE IS THE FIX ---
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { CloudUpload, FileAudio, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Progress } from "@/components/ui/progress";
 import { useToast } from "@/hooks/use-toast";
+import { CALL_CATEGORIES } from "@shared/schema";
 import type { Employee } from "@shared/schema";
 
 interface UploadFile {
   file: File;
   employeeId: string;
+  callCategory: string;
   progress: number;
   status: 'pending' | 'uploading' | 'processing' | 'completed' | 'error';
   error?: string;
@@ -27,11 +28,12 @@ export default function FileUpload() {
   });
 
   const uploadMutation = useMutation({
-    mutationFn: async ({ file, employeeId }: { file: File; employeeId?: string }) => {
+    mutationFn: async ({ file, employeeId, callCategory }: { file: File; employeeId?: string; callCategory?: string }) => {
       const formData = new FormData();
       formData.append('audioFile', file);
       if (employeeId) formData.append('employeeId', employeeId);
-      
+      if (callCategory) formData.append('callCategory', callCategory);
+
       const response = await fetch('/api/calls/upload', {
         method: 'POST',
         body: formData,
@@ -55,7 +57,7 @@ export default function FileUpload() {
 
   const onDrop = useCallback((acceptedFiles: File[]) => {
     const newFiles = acceptedFiles.map(file => ({
-      file, employeeId: '', progress: 0, status: 'pending' as const,
+      file, employeeId: '', callCategory: '', progress: 0, status: 'pending' as const,
     }));
     setUploadFiles(prev => [...prev, ...newFiles]);
   }, []);
@@ -78,7 +80,11 @@ export default function FileUpload() {
     const fileData = uploadFiles[index];
     try {
       updateFile(index, { status: 'uploading', progress: 0 });
-      await uploadMutation.mutateAsync({ file: fileData.file, employeeId: fileData.employeeId || undefined });
+      await uploadMutation.mutateAsync({
+        file: fileData.file,
+        employeeId: fileData.employeeId || undefined,
+        callCategory: fileData.callCategory || undefined,
+      });
       updateFile(index, { status: 'completed', progress: 100 });
       setTimeout(() => removeFile(index), 3000);
     } catch (error) {
@@ -102,7 +108,7 @@ export default function FileUpload() {
         <CloudUpload className="mx-auto h-12 w-12 text-gray-400" />
         <p className="mt-2 text-sm text-gray-600">Drag & drop files here, or click to select files</p>
       </div>
-      
+
       {uploadFiles.length > 0 && (
         <div className="mt-6 space-y-4">
           <div className="flex items-center justify-between">
@@ -112,14 +118,21 @@ export default function FileUpload() {
             </Button>
           </div>
           {uploadFiles.map((fileData, index) => (
-            <div key={index} className="flex items-center space-x-4 p-4 bg-muted rounded-lg">
-              <FileAudio className="text-primary w-8 h-8" />
+            <div key={index} className="flex items-center space-x-3 p-4 bg-muted rounded-lg">
+              <FileAudio className="text-primary w-8 h-8 shrink-0" />
               <div className="flex-1 min-w-0">
                 <p className="font-medium text-sm truncate">{fileData.file.name}</p>
-                {/* Progress bar and status logic can go here */}
               </div>
+              <Select onValueChange={(value) => updateFile(index, { callCategory: value })}>
+                <SelectTrigger className="w-40"><SelectValue placeholder="Call type" /></SelectTrigger>
+                <SelectContent>
+                  {CALL_CATEGORIES.map(cat => (
+                    <SelectItem key={cat.value} value={cat.value}>{cat.label}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
               <Select onValueChange={(value) => updateFile(index, { employeeId: value })}>
-                <SelectTrigger className="w-48"><SelectValue placeholder="Select employee" /></SelectTrigger>
+                <SelectTrigger className="w-44"><SelectValue placeholder="Select employee" /></SelectTrigger>
                 <SelectContent>
                   {employees?.map(employee => (
                     <SelectItem key={employee.id} value={employee.id}>{employee.name}</SelectItem>
@@ -134,4 +147,3 @@ export default function FileUpload() {
     </div>
   );
 }
-

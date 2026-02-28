@@ -20,12 +20,36 @@ export const insertEmployeeSchema = z.object({
   email: z.string(),
   initials: z.string().max(2).optional(),
   status: z.string().default("Active").optional(),
+  subTeam: z.string().optional(),
 });
 
 export const employeeSchema = insertEmployeeSchema.extend({
   id: z.string(),
   createdAt: z.string().optional(),
 });
+
+// --- POWER MOBILITY SUB-TEAMS (in chronological process order) ---
+export const POWER_MOBILITY_SUBTEAMS = [
+  "PPD",
+  "MA Education",
+  "Appt Scheduling",
+  "PT Education",
+  "Appt Passed",
+  "PT Eval",
+  "MDO Follow-Up",
+  "Medical Review",
+  "Prior Authorization",
+] as const;
+
+// --- CALL CATEGORY ---
+export const CALL_CATEGORIES = [
+  { value: "inbound", label: "Inbound Call", description: "Customer/patient calling into the company" },
+  { value: "outbound", label: "Outbound Call", description: "Employee calling a customer/patient" },
+  { value: "internal", label: "Internal", description: "Call between coworkers or departments" },
+  { value: "vendor", label: "Vendor/Partner", description: "Call with an external vendor or partner" },
+] as const;
+
+export type CallCategory = typeof CALL_CATEGORIES[number]["value"];
 
 // --- CALL SCHEMAS ---
 export const insertCallSchema = z.object({
@@ -35,6 +59,7 @@ export const insertCallSchema = z.object({
   status: z.string().default("pending"),
   duration: z.number().optional(),
   assemblyAiId: z.string().optional(),
+  callCategory: z.string().optional(),
 });
 
 export const callSchema = insertCallSchema.extend({
