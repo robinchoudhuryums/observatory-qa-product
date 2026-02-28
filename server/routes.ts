@@ -546,13 +546,257 @@ app.get("/api/performance", requireAuth, async (req, res) => {
       sentiment,
       performers,
     };
-    
+
     res.json(reportData);
   } catch (error) {
     console.error("Failed to generate report data:", error);
     res.status(500).json({ message: "Failed to generate report data" });
   }
 });
+
+  // Filtered reports: accepts date range, employee, department filters
+  app.get("/api/reports/filtered", requireAuth, async (req, res) => {
+    try {
+      const { from, to, employeeId, department } = req.query;
+
+      const allCalls = await storage.getCallsWithDetails({ status: "completed" });
+      const employees = await storage.getAllEmployees();
+
+      // Build employee lookup maps
+      const employeeMap = new Map(employees.map(e => [e.id, e]));
+
+      // Filter by date range
+      let filtered = allCalls;
+      if (from) {
+        const fromDate = new Date(from as string);
+        filtered = filtered.filter(c => new Date(c.uploadedAt || 0) >= fromDate);
+      }
+      if (to) {
+        const toDate = new Date(to as string);
+        toDate.setHours(23, 59, 59, 999);
+        filtered = filtered.filter(c => new Date(c.uploadedAt || 0) <= toDate);
+      }
+
+      // Filter by employee
+      if (employeeId) {
+        filtered = filtered.filter(c => c.employeeId === employeeId);
+      }
+
+      // Filter by department
+      if (department) {
+        filtered = filtered.filter(c => {
+          if (!c.employeeId) return false;
+          const emp = employeeMap.get(c.employeeId);
+          return emp?.role === department;
+        });
+      }
+
+      // Compute metrics from filtered set
+      const totalCalls = filtered.length;
+      const sentiments = filtered.map(c => c.sentiment).filter(Boolean);
+      const analyses = filtered.map(c => c.analysis).filter(Boolean);
+
+      const avgSentiment = sentiments.length > 0
+        ? (sentiments.reduce((sum, s) => sum + parseFloat(s!.overallScore || "0"), 0) / sentiments.length) * 10
+        : 0;
+      const avgPerformanceScore = analyses.length > 0
+        ? analyses.reduce((sum, a) => sum + parseFloat(a!.performanceScore || "0"), 0) / analyses.length
+        : 0;
+
+      const sentimentDist = { positive: 0, neutral: 0, negative: 0 };
+      for (const s of sentiments) {
+        const key = s!.overallSentiment as keyof typeof sentimentDist;
+        if (key in sentimentDist) sentimentDist[key]++;
+      }
+
+      // Per-employee stats for performers list
+      const employeeStats = new Map<string, { totalScore: number; callCount: number }>();
+      for (const call of filtered) {
+        if (!call.employeeId) continue;
+        const stats = employeeStats.get(call.employeeId) || { totalScore: 0, callCount: 0 };
+        stats.callCount++;
+        if (call.analysis?.performanceScore) {
+          stats.totalScore += parseFloat(call.analysis.performanceScore);
+        }
+        employeeStats.set(call.employeeId, stats);
+      }
+
+      const performers = Array.from(employeeStats.entries())
+        .map(([empId, stats]) => {
+          const emp = employeeMap.get(empId);
+          return {
+            id: empId,
+            name: emp?.name || "Unknown",
+            role: emp?.role || "",
+            avgPerformanceScore: stats.callCount > 0
+              ? Math.round((stats.totalScore / stats.callCount) * 100) / 100
+              : null,
+            totalCalls: stats.callCount,
+          };
+        })
+        .filter(p => p.totalCalls > 0)
+        .sort((a, b) => (b.avgPerformanceScore || 0) - (a.avgPerformanceScore || 0));
+
+      // Trend data: group by month
+      const trendMap = new Map<string, { calls: number; totalScore: number; scored: number; positive: number; neutral: number; negative: number }>();
+      for (const call of filtered) {
+        const date = new Date(call.uploadedAt || 0);
+        const monthKey = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}`;
+        const entry = trendMap.get(monthKey) || { calls: 0, totalScore: 0, scored: 0, positive: 0, neutral: 0, negative: 0 };
+        entry.calls++;
+        if (call.analysis?.performanceScore) {
+          entry.totalScore += parseFloat(call.analysis.performanceScore);
+          entry.scored++;
+        }
+        if (call.sentiment?.overallSentiment) {
+          const sent = call.sentiment.overallSentiment as "positive" | "neutral" | "negative";
+          if (sent in entry) entry[sent]++;
+        }
+        trendMap.set(monthKey, entry);
+      }
+
+      const trends = Array.from(trendMap.entries())
+        .sort(([a], [b]) => a.localeCompare(b))
+        .map(([month, data]) => ({
+          month,
+          calls: data.calls,
+          avgScore: data.scored > 0 ? Math.round((data.totalScore / data.scored) * 100) / 100 : null,
+          positive: data.positive,
+          neutral: data.neutral,
+          negative: data.negative,
+        }));
+
+      res.json({
+        metrics: {
+          totalCalls,
+          avgSentiment: Math.round(avgSentiment * 100) / 100,
+          avgPerformanceScore: Math.round(avgPerformanceScore * 100) / 100,
+        },
+        sentiment: sentimentDist,
+        performers,
+        trends,
+      });
+    } catch (error) {
+      console.error("Failed to generate filtered report:", error);
+      res.status(500).json({ message: "Failed to generate filtered report" });
+    }
+  });
+
+  // Agent profile: aggregated feedback across all calls for an employee
+  app.get("/api/reports/agent-profile/:employeeId", requireAuth, async (req, res) => {
+    try {
+      const { employeeId } = req.params;
+      const { from, to } = req.query;
+
+      const employee = await storage.getEmployee(employeeId);
+      if (!employee) {
+        res.status(404).json({ message: "Employee not found" });
+        return;
+      }
+
+      const allCalls = await storage.getCallsWithDetails({ status: "completed", employee: employeeId });
+
+      // Apply optional date filters
+      let filtered = allCalls;
+      if (from) {
+        const fromDate = new Date(from as string);
+        filtered = filtered.filter(c => new Date(c.uploadedAt || 0) >= fromDate);
+      }
+      if (to) {
+        const toDate = new Date(to as string);
+        toDate.setHours(23, 59, 59, 999);
+        filtered = filtered.filter(c => new Date(c.uploadedAt || 0) <= toDate);
+      }
+
+      // Aggregate all analysis feedback
+      const allStrengths: string[] = [];
+      const allSuggestions: string[] = [];
+      const allTopics: string[] = [];
+      const scores: number[] = [];
+      const sentimentCounts = { positive: 0, neutral: 0, negative: 0 };
+
+      // Trend over time for this agent
+      const monthlyScores = new Map<string, { total: number; count: number }>();
+
+      for (const call of filtered) {
+        if (call.analysis) {
+          if (call.analysis.performanceScore) {
+            scores.push(parseFloat(call.analysis.performanceScore));
+          }
+          if (call.analysis.feedback) {
+            const fb = typeof call.analysis.feedback === "string"
+              ? JSON.parse(call.analysis.feedback)
+              : call.analysis.feedback;
+            if (fb.strengths) allStrengths.push(...fb.strengths);
+            if (fb.suggestions) allSuggestions.push(...fb.suggestions);
+          }
+          if (call.analysis.topics) {
+            const topics = typeof call.analysis.topics === "string"
+              ? JSON.parse(call.analysis.topics)
+              : call.analysis.topics;
+            if (Array.isArray(topics)) allTopics.push(...topics);
+          }
+        }
+        if (call.sentiment?.overallSentiment) {
+          const s = call.sentiment.overallSentiment as keyof typeof sentimentCounts;
+          if (s in sentimentCounts) sentimentCounts[s]++;
+        }
+
+        // Monthly trend
+        const date = new Date(call.uploadedAt || 0);
+        const monthKey = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}`;
+        if (call.analysis?.performanceScore) {
+          const entry = monthlyScores.get(monthKey) || { total: 0, count: 0 };
+          entry.total += parseFloat(call.analysis.performanceScore);
+          entry.count++;
+          monthlyScores.set(monthKey, entry);
+        }
+      }
+
+      // Count frequency of strengths, suggestions, topics
+      const countFrequency = (arr: string[]) => {
+        const freq = new Map<string, number>();
+        for (const item of arr) {
+          const normalized = item.trim().toLowerCase();
+          freq.set(normalized, (freq.get(normalized) || 0) + 1);
+        }
+        return Array.from(freq.entries())
+          .sort(([, a], [, b]) => b - a)
+          .slice(0, 10)
+          .map(([text, count]) => ({ text, count }));
+      };
+
+      const avgScore = scores.length > 0
+        ? Math.round((scores.reduce((a, b) => a + b, 0) / scores.length) * 100) / 100
+        : null;
+      const highScore = scores.length > 0 ? Math.max(...scores) : null;
+      const lowScore = scores.length > 0 ? Math.min(...scores) : null;
+
+      const scoreTrend = Array.from(monthlyScores.entries())
+        .sort(([a], [b]) => a.localeCompare(b))
+        .map(([month, data]) => ({
+          month,
+          avgScore: Math.round((data.total / data.count) * 100) / 100,
+          calls: data.count,
+        }));
+
+      res.json({
+        employee: { id: employee.id, name: employee.name, role: employee.role, status: employee.status },
+        totalCalls: filtered.length,
+        avgPerformanceScore: avgScore,
+        highScore,
+        lowScore,
+        sentimentBreakdown: sentimentCounts,
+        topStrengths: countFrequency(allStrengths),
+        topSuggestions: countFrequency(allSuggestions),
+        commonTopics: countFrequency(allTopics),
+        scoreTrend,
+      });
+    } catch (error) {
+      console.error("Failed to generate agent profile:", error);
+      res.status(500).json({ message: "Failed to generate agent profile" });
+    }
+  });
 
   app.delete("/api/calls/:id", requireAuth, async (req, res) => {
   try {
