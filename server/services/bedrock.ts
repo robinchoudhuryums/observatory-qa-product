@@ -49,12 +49,12 @@ export class BedrockProvider implements AIAnalysisProvider {
     return this.credentials !== null;
   }
 
-  async analyzeCallTranscript(transcriptText: string, callId: string): Promise<CallAnalysis> {
+  async analyzeCallTranscript(transcriptText: string, callId: string, callCategory?: string): Promise<CallAnalysis> {
     if (!this.credentials) {
       throw new Error("Bedrock provider not configured");
     }
 
-    const prompt = buildAnalysisPrompt(transcriptText);
+    const prompt = buildAnalysisPrompt(transcriptText, callCategory);
     const region = this.credentials.region;
     const host = `bedrock-runtime.${region}.amazonaws.com`;
     // Raw path for the HTTP request (no encoding — colons in model IDs are fine)

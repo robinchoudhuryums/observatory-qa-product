@@ -27,6 +27,16 @@ export const employeeSchema = insertEmployeeSchema.extend({
   createdAt: z.string().optional(),
 });
 
+// --- CALL CATEGORY ---
+export const CALL_CATEGORIES = [
+  { value: "inbound", label: "Inbound Call", description: "Customer/patient calling into the company" },
+  { value: "outbound", label: "Outbound Call", description: "Employee calling a customer/patient" },
+  { value: "internal", label: "Internal", description: "Call between coworkers or departments" },
+  { value: "vendor", label: "Vendor/Partner", description: "Call with an external vendor or partner" },
+] as const;
+
+export type CallCategory = typeof CALL_CATEGORIES[number]["value"];
+
 // --- CALL SCHEMAS ---
 export const insertCallSchema = z.object({
   employeeId: z.string().optional(),
@@ -35,6 +45,7 @@ export const insertCallSchema = z.object({
   status: z.string().default("pending"),
   duration: z.number().optional(),
   assemblyAiId: z.string().optional(),
+  callCategory: z.string().optional(),
 });
 
 export const callSchema = insertCallSchema.extend({

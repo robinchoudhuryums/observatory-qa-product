@@ -10,6 +10,7 @@ import { aiProvider } from "./services/ai-factory";
 import { requireAuth } from "./auth";
 import { insertEmployeeSchema } from "@shared/schema";
 import { z } from "zod";
+import csv from "csv-parser";
 
 // Ensure uploads directory exists
 const uploadsDir = 'uploads';
@@ -131,6 +132,65 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Bulk import employees from the bundled CSV file
+  app.post("/api/employees/import-csv", requireAuth, async (req, res) => {
+    try {
+      const csvFilePath = path.resolve("employees.csv");
+      if (!fs.existsSync(csvFilePath)) {
+        res.status(404).json({ message: "employees.csv not found on server" });
+        return;
+      }
+
+      const results: Array<{ name: string; action: string }> = [];
+      const rows: any[] = [];
+
+      await new Promise<void>((resolve, reject) => {
+        fs.createReadStream(csvFilePath)
+          .pipe(csv())
+          .on("data", (row: any) => rows.push(row))
+          .on("end", resolve)
+          .on("error", reject);
+      });
+
+      for (const row of rows) {
+        const name = (row["Agent Name"] || "").trim();
+        const department = (row["Department"] || "").trim();
+        const extension = (row["Extension"] || "").trim();
+        const status = (row["Status"] || "Active").trim();
+
+        if (!name) continue;
+
+        const email = extension && extension !== "NA" && extension !== "N/A" && extension !== "a"
+          ? `${extension}@company.com`
+          : `${name.toLowerCase().replace(/\s+/g, ".")}@company.com`;
+
+        const nameParts = name.split(/\s+/);
+        const initials = nameParts.length >= 2
+          ? (nameParts[0][0] + nameParts[nameParts.length - 1][0]).toUpperCase()
+          : name.slice(0, 2).toUpperCase();
+
+        try {
+          const existing = await storage.getEmployeeByEmail(email);
+          if (existing) {
+            results.push({ name, action: "skipped (exists)" });
+          } else {
+            await storage.createEmployee({ name, email, role: department, initials, status });
+            results.push({ name, action: "created" });
+          }
+        } catch (err) {
+          results.push({ name, action: `error: ${(err as Error).message}` });
+        }
+      }
+
+      const created = results.filter(r => r.action === "created").length;
+      const skipped = results.filter(r => r.action.startsWith("skipped")).length;
+      res.json({ message: `Import complete: ${created} created, ${skipped} skipped`, details: results });
+    } catch (error) {
+      console.error("CSV import failed:", error);
+      res.status(500).json({ message: "Failed to import employees from CSV" });
+    }
+  });
+
   // Get all calls with details
 app.get("/api/calls", requireAuth, async (req, res) => {
   try {
@@ -181,7 +241,7 @@ app.get("/api/calls", requireAuth, async (req, res) => {
         return;
       }
 
-      const { employeeId } = req.body;
+      const { employeeId, callCategory } = req.body;
 
       // If employeeId provided, verify employee exists
       if (employeeId) {
@@ -198,14 +258,15 @@ app.get("/api/calls", requireAuth, async (req, res) => {
         employeeId: employeeId || undefined,
         fileName: req.file.originalname,
         filePath: req.file.path,
-        status: "processing"
+        status: "processing",
+        callCategory: callCategory || undefined,
       });
 
       // Read file buffer for API upload, then start async processing
       const audioBuffer = fs.readFileSync(req.file.path);
       const originalName = req.file.originalname;
       const mimeType = req.file.mimetype || "audio/mpeg";
-      processAudioFile(call.id, req.file.path, audioBuffer, originalName, mimeType)
+      processAudioFile(call.id, req.file.path, audioBuffer, originalName, mimeType, callCategory)
         .catch(error => {
           console.error(`Failed to process call ${call.id}:`, error);
           storage.updateCall(call.id, { status: "failed" });
@@ -232,7 +293,7 @@ app.get("/api/calls", requireAuth, async (req, res) => {
   }
 
 // Process audio file with AssemblyAI and archive to cloud storage
-async function processAudioFile(callId: string, filePath: string, audioBuffer: Buffer, originalName: string, mimeType: string) {
+async function processAudioFile(callId: string, filePath: string, audioBuffer: Buffer, originalName: string, mimeType: string, callCategory?: string) {
   console.log(`[${callId}] Starting audio processing...`);
   try {
     // Step 1a: Upload to AssemblyAI
@@ -272,7 +333,7 @@ async function processAudioFile(callId: string, filePath: string, audioBuffer: B
     if (aiProvider.isAvailable && transcriptResponse.text) {
       try {
         console.log(`[${callId}] Step 4/6: Running AI analysis (${aiProvider.name})...`);
-        aiAnalysis = await aiProvider.analyzeCallTranscript(transcriptResponse.text, callId);
+        aiAnalysis = await aiProvider.analyzeCallTranscript(transcriptResponse.text, callId, callCategory);
         console.log(`[${callId}] Step 4/6: AI analysis complete.`);
       } catch (aiError) {
         console.warn(`[${callId}] AI analysis failed (continuing with defaults):`, (aiError as Error).message);
