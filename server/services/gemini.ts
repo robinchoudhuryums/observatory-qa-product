@@ -33,12 +33,18 @@ export class GeminiProvider implements AIAnalysisProvider {
 
   constructor() {
     // Priority 1: GEMINI_API_KEY (Google AI Studio)
+    // HIPAA: Block AI Studio in production — it has no BAA coverage
     if (process.env.GEMINI_API_KEY) {
-      this.apiKey = process.env.GEMINI_API_KEY;
-      this.authMode = "api_key";
-      this.model = process.env.GEMINI_MODEL || DEFAULT_MODEL_API_KEY;
-      console.log(`Gemini provider initialized (mode: API key via AI Studio, model: ${this.model})`);
-      return;
+      if (process.env.NODE_ENV === "production") {
+        console.warn("HIPAA: GEMINI_API_KEY (AI Studio) is NOT BAA-eligible. Blocked in production. Use Vertex AI with service account credentials instead.");
+      } else {
+        this.apiKey = process.env.GEMINI_API_KEY;
+        this.authMode = "api_key";
+        this.model = process.env.GEMINI_MODEL || DEFAULT_MODEL_API_KEY;
+        console.log(`Gemini provider initialized (mode: API key via AI Studio, model: ${this.model})`);
+        console.warn("WARNING: AI Studio mode is not HIPAA-compliant. Use Vertex AI in production.");
+        return;
+      }
     }
 
     // Priority 2+: Service account credentials for Vertex AI

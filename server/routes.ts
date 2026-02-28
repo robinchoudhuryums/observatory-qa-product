@@ -8,7 +8,7 @@ import { storage } from "./storage";
 import { assemblyAIService } from "./services/assemblyai";
 import { aiProvider } from "./services/ai-factory";
 import { buildAgentSummaryPrompt } from "./services/ai-provider";
-import { requireAuth } from "./auth";
+import { requireAuth, requireRole } from "./auth";
 import { insertEmployeeSchema } from "@shared/schema";
 import { z } from "zod";
 import csv from "csv-parser";
@@ -118,8 +118,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // Create employee
-  app.post("/api/employees", requireAuth, async (req, res) => {
+  // HIPAA: Only managers and admins can create employees
+  app.post("/api/employees", requireAuth, requireRole("manager", "admin"), async (req, res) => {
     try {
       const validatedData = insertEmployeeSchema.parse(req.body);
       const employee = await storage.createEmployee(validatedData);
@@ -133,8 +133,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // Update employee (edit email, department, sub-team, status, etc.)
-  app.patch("/api/employees/:id", requireAuth, async (req, res) => {
+  // HIPAA: Only managers and admins can update employees
+  app.patch("/api/employees/:id", requireAuth, requireRole("manager", "admin"), async (req, res) => {
     try {
       const employee = await storage.getEmployee(req.params.id);
       if (!employee) {
@@ -178,8 +178,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // Bulk import employees from the bundled CSV file
-  app.post("/api/employees/import-csv", requireAuth, async (req, res) => {
+  // HIPAA: Only admins can bulk import employees
+  app.post("/api/employees/import-csv", requireAuth, requireRole("admin"), async (req, res) => {
     try {
       const csvFilePath = path.resolve("employees.csv");
       if (!fs.existsSync(csvFilePath)) {
@@ -409,7 +409,8 @@ async function processAudioFile(callId: string, filePath: string, audioBuffer: B
     console.log(`[${callId}] Processing finished successfully.`);
 
   } catch (error) {
-    console.error(`[${callId}] A critical error occurred during audio processing:`, error);
+    // HIPAA: Only log error message, not full stack which may contain PHI
+    console.error(`[${callId}] A critical error occurred during audio processing:`, (error as Error).message);
     await storage.updateCall(callId, { status: "failed" });
     await cleanupFile(filePath);
   }
@@ -459,6 +460,9 @@ async function processAudioFile(callId: string, filePath: string, audioBuffer: B
       res.setHeader('Content-Type', contentType);
       res.setHeader('Content-Length', audioBuffer.length.toString());
       res.setHeader('Accept-Ranges', 'bytes');
+      // HIPAA: Prevent browser/proxy caching of PHI audio data
+      res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, private');
+      res.setHeader('Pragma', 'no-cache');
       res.send(audioBuffer);
     } catch (error) {
       console.error("Failed to stream audio:", error);
@@ -508,8 +512,8 @@ async function processAudioFile(callId: string, filePath: string, audioBuffer: B
     }
   });
 
-  // Manually edit call analysis (score, summary, feedback, etc.)
-  app.patch("/api/calls/:id/analysis", requireAuth, async (req, res) => {
+  // HIPAA: Only managers and admins can manually edit call analysis
+  app.patch("/api/calls/:id/analysis", requireAuth, requireRole("manager", "admin"), async (req, res) => {
     try {
       const callId = req.params.id;
       const { updates, reason } = req.body;
@@ -1011,7 +1015,8 @@ app.get("/api/performance", requireAuth, async (req, res) => {
     }
   });
 
-  app.delete("/api/calls/:id", requireAuth, async (req, res) => {
+  // HIPAA: Only managers and admins can delete call records
+  app.delete("/api/calls/:id", requireAuth, requireRole("manager", "admin"), async (req, res) => {
   try {
     const callId = req.params.id;
     

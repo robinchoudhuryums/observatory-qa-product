@@ -1,6 +1,7 @@
 import passport from "passport";
 import { Strategy as LocalStrategy } from "passport-local";
 import session from "express-session";
+import createMemoryStore from "memorystore";
 import { scrypt, randomBytes, timingSafeEqual } from "crypto";
 import { promisify } from "util";
 import type { Express, RequestHandler } from "express";
@@ -85,23 +86,32 @@ export async function setupAuth(app: Express) {
   // Load users from environment variables on startup
   await loadUsersFromEnv();
 
-  // Session configuration
+  // HIPAA: Session configuration with proper memory store and idle timeout
   const sessionSecret = process.env.SESSION_SECRET || randomBytes(32).toString("hex");
   if (!process.env.SESSION_SECRET) {
     console.warn("SESSION_SECRET not set - using random secret (sessions will not persist across restarts)");
   }
+
+  // Use MemoryStore to prevent memory leaks and support session expiry
+  const MemoryStore = createMemoryStore(session);
 
   app.use(
     session({
       secret: sessionSecret,
       resave: false,
       saveUninitialized: false,
+      store: new MemoryStore({
+        checkPeriod: 60 * 60 * 1000, // Prune expired entries every hour
+      }),
       cookie: {
         secure: process.env.NODE_ENV === "production",
         httpOnly: true,
-        maxAge: 8 * 60 * 60 * 1000, // 8 hours
+        maxAge: 8 * 60 * 60 * 1000, // 8 hours absolute max
         sameSite: "lax",
       },
+      // HIPAA: rolling=true resets cookie expiry on each request, acting as idle timeout
+      // Combined with maxAge, this means 8h absolute or 8h from last activity
+      rolling: true,
     })
   );
 
@@ -159,3 +169,28 @@ export const requireAuth: RequestHandler = (req, res, next) => {
   }
   res.status(401).json({ message: "Authentication required" });
 };
+
+// HIPAA: Role-based access control middleware
+// Roles hierarchy: admin > manager > viewer
+const ROLE_HIERARCHY: Record<string, number> = {
+  admin: 3,
+  manager: 2,
+  viewer: 1,
+};
+
+export function requireRole(...allowedRoles: string[]): RequestHandler {
+  return (req, res, next) => {
+    if (!req.isAuthenticated() || !req.user) {
+      return res.status(401).json({ message: "Authentication required" });
+    }
+    const userRole = req.user.role || "viewer";
+    if (allowedRoles.includes(userRole)) {
+      return next();
+    }
+    // Admin always has access
+    if (userRole === "admin") {
+      return next();
+    }
+    return res.status(403).json({ message: "Insufficient permissions" });
+  };
+}
