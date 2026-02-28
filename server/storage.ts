@@ -18,6 +18,8 @@ import {
   type InsertAccessRequest,
   type PromptTemplate,
   type InsertPromptTemplate,
+  type CoachingSession,
+  type InsertCoachingSession,
 } from "@shared/schema";
 import { GcsClient } from "./services/gcs";
 import { S3Client } from "./services/s3";
@@ -96,6 +98,13 @@ export interface IStorage {
   updatePromptTemplate(id: string, updates: Partial<PromptTemplate>): Promise<PromptTemplate | undefined>;
   deletePromptTemplate(id: string): Promise<void>;
 
+  // Coaching session operations
+  createCoachingSession(session: InsertCoachingSession): Promise<CoachingSession>;
+  getCoachingSession(id: string): Promise<CoachingSession | undefined>;
+  getAllCoachingSessions(): Promise<CoachingSession[]>;
+  getCoachingSessionsByEmployee(employeeId: string): Promise<CoachingSession[]>;
+  updateCoachingSession(id: string, updates: Partial<CoachingSession>): Promise<CoachingSession | undefined>;
+
   // Data retention
   purgeExpiredCalls(retentionDays: number): Promise<number>;
 }
@@ -113,6 +122,7 @@ export class MemStorage implements IStorage {
   private audioFiles = new Map<string, Buffer>(); // objectName -> buffer
   private accessRequests = new Map<string, AccessRequest>();
   private promptTemplates = new Map<string, PromptTemplate>();
+  private coachingSessions = new Map<string, CoachingSession>();
 
   async getUser(_id: string): Promise<User | undefined> { return undefined; }
   async getUserByUsername(_username: string): Promise<User | undefined> { return undefined; }
@@ -341,6 +351,30 @@ export class MemStorage implements IStorage {
   }
   async deletePromptTemplate(id: string): Promise<void> {
     this.promptTemplates.delete(id);
+  }
+
+  // Coaching session operations
+  async createCoachingSession(session: InsertCoachingSession): Promise<CoachingSession> {
+    const id = randomUUID();
+    const newSession: CoachingSession = { ...session, id, createdAt: new Date().toISOString() };
+    this.coachingSessions.set(id, newSession);
+    return newSession;
+  }
+  async getCoachingSession(id: string): Promise<CoachingSession | undefined> {
+    return this.coachingSessions.get(id);
+  }
+  async getAllCoachingSessions(): Promise<CoachingSession[]> {
+    return Array.from(this.coachingSessions.values());
+  }
+  async getCoachingSessionsByEmployee(employeeId: string): Promise<CoachingSession[]> {
+    return Array.from(this.coachingSessions.values()).filter(s => s.employeeId === employeeId);
+  }
+  async updateCoachingSession(id: string, updates: Partial<CoachingSession>): Promise<CoachingSession | undefined> {
+    const session = this.coachingSessions.get(id);
+    if (!session) return undefined;
+    const updated = { ...session, ...updates };
+    this.coachingSessions.set(id, updated);
+    return updated;
   }
 
   async purgeExpiredCalls(retentionDays: number): Promise<number> {
@@ -728,6 +762,31 @@ export class CloudStorage implements IStorage {
   }
   async deletePromptTemplate(id: string): Promise<void> {
     await this.client.deleteObject(`prompt-templates/${id}.json`);
+  }
+
+  // --- Coaching Session Methods ---
+  async createCoachingSession(session: InsertCoachingSession): Promise<CoachingSession> {
+    const id = randomUUID();
+    const newSession: CoachingSession = { ...session, id, createdAt: new Date().toISOString() };
+    await this.client.uploadJson(`coaching/${id}.json`, newSession);
+    return newSession;
+  }
+  async getCoachingSession(id: string): Promise<CoachingSession | undefined> {
+    return this.client.downloadJson<CoachingSession>(`coaching/${id}.json`);
+  }
+  async getAllCoachingSessions(): Promise<CoachingSession[]> {
+    return this.client.listAndDownloadJson<CoachingSession>("coaching/");
+  }
+  async getCoachingSessionsByEmployee(employeeId: string): Promise<CoachingSession[]> {
+    const all = await this.getAllCoachingSessions();
+    return all.filter(s => s.employeeId === employeeId);
+  }
+  async updateCoachingSession(id: string, updates: Partial<CoachingSession>): Promise<CoachingSession | undefined> {
+    const session = await this.getCoachingSession(id);
+    if (!session) return undefined;
+    const updated = { ...session, ...updates };
+    await this.client.uploadJson(`coaching/${id}.json`, updated);
+    return updated;
   }
 
   // --- Data Retention ---

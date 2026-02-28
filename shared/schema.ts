@@ -211,6 +211,39 @@ export const USER_ROLES = [
 
 export type UserRole = typeof USER_ROLES[number]["value"];
 
+// --- COACHING SESSION SCHEMAS ---
+export const COACHING_CATEGORIES = [
+  { value: "compliance", label: "Compliance" },
+  { value: "customer_experience", label: "Customer Experience" },
+  { value: "communication", label: "Communication" },
+  { value: "resolution", label: "Resolution" },
+  { value: "general", label: "General" },
+] as const;
+
+export const insertCoachingSessionSchema = z.object({
+  employeeId: z.string(),
+  callId: z.string().optional(),
+  assignedBy: z.string(),
+  category: z.string().default("general"),
+  title: z.string(),
+  notes: z.string().optional(),
+  actionPlan: z.array(z.object({
+    task: z.string(),
+    completed: z.boolean().default(false),
+  })).optional(),
+  status: z.enum(["pending", "in_progress", "completed", "dismissed"]).default("pending"),
+  dueDate: z.string().optional(),
+});
+
+export const coachingSessionSchema = insertCoachingSessionSchema.extend({
+  id: z.string(),
+  createdAt: z.string().optional(),
+  completedAt: z.string().optional(),
+});
+
+export type InsertCoachingSession = z.infer<typeof insertCoachingSessionSchema>;
+export type CoachingSession = z.infer<typeof coachingSessionSchema>;
+
 // --- COMBINED TYPES ---
 export type CallWithDetails = Call & {
   employee?: Employee;

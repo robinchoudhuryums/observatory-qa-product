@@ -1,10 +1,11 @@
 import { useState, useRef, useEffect, useMemo, useCallback } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { Play, Pause, Download, Clock, FileText, AlertTriangle, Shield, Pencil, X, Save, History, Award, Gauge, ShieldQuestion } from "lucide-react";
+import { Play, Pause, Download, Clock, FileText, AlertTriangle, Shield, Pencil, X, Save, History, Award, Gauge, ShieldQuestion, ClipboardCheck } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Link } from "wouter";
 import type { CallWithDetails } from "@shared/schema";
 import { AudioWaveform } from "lucide-react";
 
@@ -661,6 +662,14 @@ export default function TranscriptViewer({ callId }: TranscriptViewerProps) {
                     );
                   })}
                 </div>
+                {hasBad && call.employee && (
+                  <Link
+                    href={`/coaching?newSession=true&employeeId=${call.employee.id}&callId=${callId}&category=${flags.some(f => f.startsWith("agent_misconduct")) ? "compliance" : "general"}`}
+                    className="mt-2 inline-flex items-center gap-1.5 text-xs font-medium text-primary hover:underline"
+                  >
+                    <ClipboardCheck className="w-3.5 h-3.5" /> Create Coaching Session
+                  </Link>
+                )}
               </div>
             );
           })()}

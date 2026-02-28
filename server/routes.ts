@@ -10,7 +10,7 @@ import { aiProvider } from "./services/ai-factory";
 import { buildAgentSummaryPrompt } from "./services/ai-provider";
 import { requireAuth, requireRole } from "./auth";
 import { broadcastCallUpdate } from "./services/websocket";
-import { insertEmployeeSchema, insertAccessRequestSchema, insertPromptTemplateSchema } from "@shared/schema";
+import { insertEmployeeSchema, insertAccessRequestSchema, insertPromptTemplateSchema, insertCoachingSessionSchema } from "@shared/schema";
 import { z } from "zod";
 import csv from "csv-parser";
 
@@ -1276,6 +1276,73 @@ app.get("/api/performance", requireAuth, async (req, res) => {
     res.status(500).json({ message: "Failed to delete call" });
   }
 });
+
+  // ==================== COACHING ROUTES ====================
+
+  // List all coaching sessions (managers and admins)
+  app.get("/api/coaching", requireAuth, requireRole("manager", "admin"), async (_req, res) => {
+    try {
+      const sessions = await storage.getAllCoachingSessions();
+      // Enrich with employee names
+      const enriched = await Promise.all(sessions.map(async s => {
+        const emp = await storage.getEmployee(s.employeeId);
+        return { ...s, employeeName: emp?.name || "Unknown" };
+      }));
+      res.json(enriched.sort((a, b) => new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime()));
+    } catch (error) {
+      res.status(500).json({ message: "Failed to fetch coaching sessions" });
+    }
+  });
+
+  // Get coaching sessions for a specific employee
+  app.get("/api/coaching/employee/:employeeId", requireAuth, async (req, res) => {
+    try {
+      const sessions = await storage.getCoachingSessionsByEmployee(req.params.employeeId);
+      res.json(sessions.sort((a, b) => new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime()));
+    } catch (error) {
+      res.status(500).json({ message: "Failed to fetch coaching sessions" });
+    }
+  });
+
+  // Create a coaching session (managers and admins)
+  app.post("/api/coaching", requireAuth, requireRole("manager", "admin"), async (req, res) => {
+    try {
+      const parsed = insertCoachingSessionSchema.safeParse({
+        ...req.body,
+        assignedBy: req.user?.name || req.user?.username || "Unknown",
+      });
+      if (!parsed.success) {
+        res.status(400).json({ message: "Invalid coaching data", errors: parsed.error.flatten() });
+        return;
+      }
+      const session = await storage.createCoachingSession(parsed.data);
+      res.status(201).json(session);
+    } catch (error) {
+      res.status(500).json({ message: "Failed to create coaching session" });
+    }
+  });
+
+  // Update a coaching session (status, notes, action plan progress)
+  app.patch("/api/coaching/:id", requireAuth, requireRole("manager", "admin"), async (req, res) => {
+    try {
+      const updates: Record<string, any> = {};
+      const allowed = ["status", "notes", "actionPlan", "title", "category", "dueDate"];
+      for (const key of allowed) {
+        if (req.body[key] !== undefined) updates[key] = req.body[key];
+      }
+      if (updates.status === "completed") {
+        updates.completedAt = new Date().toISOString();
+      }
+      const updated = await storage.updateCoachingSession(req.params.id, updates);
+      if (!updated) {
+        res.status(404).json({ message: "Coaching session not found" });
+        return;
+      }
+      res.json(updated);
+    } catch (error) {
+      res.status(500).json({ message: "Failed to update coaching session" });
+    }
+  });
 
   // ==================== COMPANY INSIGHTS API ====================
 
