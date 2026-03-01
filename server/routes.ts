@@ -371,7 +371,19 @@ app.get("/api/calls", requireAuth, async (req, res) => {
       const employee = call.employeeId ? await storage.getEmployee(call.employeeId) : undefined;
       const transcript = await storage.getTranscript(call.id);
       const sentiment = await storage.getSentimentAnalysis(call.id);
-      const analysis = await storage.getCallAnalysis(call.id);
+      const rawAnalysis = await storage.getCallAnalysis(call.id);
+
+      // Normalize analysis for backward-compatibility with older stored data
+      const analysis = rawAnalysis ? {
+        ...rawAnalysis,
+        topics: Array.isArray(rawAnalysis.topics) ? rawAnalysis.topics : [],
+        actionItems: Array.isArray(rawAnalysis.actionItems) ? rawAnalysis.actionItems : [],
+        flags: Array.isArray(rawAnalysis.flags) ? rawAnalysis.flags : [],
+        feedback: (rawAnalysis.feedback && typeof rawAnalysis.feedback === "object" && !Array.isArray(rawAnalysis.feedback))
+          ? rawAnalysis.feedback
+          : { strengths: [], suggestions: [] },
+        summary: typeof rawAnalysis.summary === "string" ? rawAnalysis.summary : "",
+      } : undefined;
 
       res.json({
         ...call,

@@ -106,7 +106,31 @@ export interface PromptTemplateConfig {
   additionalInstructions?: string;
 }
 
+/**
+ * For very long transcripts, keep the beginning and end (most info-dense)
+ * and sample the middle to stay within reasonable token budgets.
+ * Threshold: ~80K chars (~20K tokens input).
+ */
+function smartTruncate(text: string, maxChars = 80000): string {
+  if (text.length <= maxChars) return text;
+
+  const headSize = Math.floor(maxChars * 0.35);
+  const tailSize = Math.floor(maxChars * 0.35);
+  const midSize = maxChars - headSize - tailSize - 200;
+  const midStart = Math.floor((text.length - midSize) / 2);
+
+  return [
+    text.slice(0, headSize),
+    `\n\n[... ${((text.length - maxChars) / 1000).toFixed(0)}K characters omitted from mid-call transitions ...]\n\n`,
+    text.slice(midStart, midStart + midSize),
+    "\n\n[... continued ...]\n\n",
+    text.slice(-tailSize),
+  ].join("");
+}
+
 export function buildAnalysisPrompt(transcriptText: string, callCategory?: string, template?: PromptTemplateConfig): string {
+  const processedTranscript = smartTruncate(transcriptText);
+
   const categoryContext = callCategory && CATEGORY_CONTEXT[callCategory]
     ? `\nCALL CONTEXT:\n${CATEGORY_CONTEXT[callCategory]}\n`
     : "";
@@ -149,50 +173,25 @@ export function buildAnalysisPrompt(transcriptText: string, callCategory?: strin
     additionalSection = `\n- ADDITIONAL INSTRUCTIONS:\n${template.additionalInstructions}`;
   }
 
-  return `You are analyzing a call transcript for a medical supply company. Analyze the ENTIRE transcript from beginning to end — do not skip or summarize any sections. Every part of the conversation may contain important details that affect scoring.
+  return `You are analyzing a call transcript for a medical supply company. Analyze the ENTIRE transcript from beginning to end — reference moments from the beginning, middle, AND end. Do not skip or summarize sections.
 ${categoryContext}
 TRANSCRIPT:
-${transcriptText}
+${processedTranscript}
 
-Respond with ONLY valid JSON in this exact format (no markdown, no code fences):
-{
-  "summary": "A concise one-paragraph summary of what happened in the call",
-  "topics": ["topic1", "topic2", "topic3"],
-  "sentiment": "positive|neutral|negative",
-  "sentiment_score": 0.0,
-  "performance_score": 0.0,
-  "sub_scores": {
-    "compliance": 0.0,
-    "customer_experience": 0.0,
-    "communication": 0.0,
-    "resolution": 0.0
-  },
-  "action_items": ["action1", "action2"],
-  "feedback": {
-    "strengths": [{"text": "Description of strength referencing a specific moment", "timestamp": "MM:SS"}],
-    "suggestions": [{"text": "Description of suggestion referencing a specific moment", "timestamp": "MM:SS"}]
-  },
-  "call_party_type": "customer|insurance|medical_facility|medicare|vendor|internal|other",
-  "flags": [],
-  "detected_agent_name": null
-}
+Respond with ONLY valid JSON (no markdown, no code fences):
+{"summary":"...","topics":["..."],"sentiment":"positive|neutral|negative","sentiment_score":0.0,"performance_score":0.0,"sub_scores":{"compliance":0.0,"customer_experience":0.0,"communication":0.0,"resolution":0.0},"action_items":["..."],"feedback":{"strengths":[{"text":"...","timestamp":"MM:SS"}],"suggestions":[{"text":"...","timestamp":"MM:SS"}]},"call_party_type":"customer|insurance|medical_facility|medicare|vendor|internal|other","flags":[],"detected_agent_name":null}
 
 Guidelines:
-- IMPORTANT: You MUST analyze the ENTIRE transcript. Reference moments from the beginning, middle, AND end of the call to demonstrate complete coverage. Do not focus only on the first portion.
-- sentiment_score: 0.0 to 1.0 (1.0 = most positive)
-- performance_score: 0.0 to 10.0 (10.0 = best) — this is the overall weighted score
-- sub_scores: Rate each dimension 0.0-10.0:
-  * compliance: Adherence to required procedures, scripts, disclaimers, HIPAA, and company policies
-  * customer_experience: Empathy, patience, tone, making the caller feel heard and valued
-  * communication: Clarity, articulation, active listening, providing complete information
-  * resolution: Effectiveness at resolving the caller's issue or advancing toward resolution
+- sentiment_score: 0.0-1.0 (1.0 = most positive)
+- performance_score: 0.0-10.0 (overall weighted score)
+- sub_scores (each 0.0-10.0): compliance (procedures, HIPAA, policies), customer_experience (empathy, patience, tone), communication (clarity, listening, completeness), resolution (issue resolution effectiveness)
 ${evaluationCriteria}${scoringSection}${phrasesSection}${additionalSection}
-- For EACH strength and suggestion, include the approximate timestamp (MM:SS format) of the moment in the call you are referencing. Use the timestamps from the transcript to determine the time.
-- Include 2-4 action items that are concrete and actionable
-- Topics should be specific (e.g. "order tracking", "billing dispute") not generic
-- call_party_type: Classify who the agent is speaking with. Use "customer" for general patients/customers, "insurance" for insurance company representatives, "medical_facility" for hospitals/clinics/doctors offices, "medicare" for 1-800-MEDICARE or Medicare representatives, "vendor" for vendors/suppliers, "internal" for coworkers, or "other" if unclear.
-- detected_agent_name: If the agent identifies themselves by name during the call (e.g. "Hi, my name is Sarah" or "This is John from..."), provide ONLY their first name or full name exactly as spoken. If no name is clearly stated, return null. Only include names you are confident belong to the agent (not the customer).
-- flags: An array of flag strings. Add "medicare_call" if the call involves 1-800-MEDICARE or a Medicare representative. Add "low_score" if the performance_score is 2.0 or below. Add "exceptional_call" if the performance_score is 9.0 or above AND the agent demonstrated outstanding customer service, empathy, problem-solving, or went above and beyond. Add "agent_misconduct" if the agent displays any of: abusive language toward the caller, hanging up on the caller, refusing to help, making false promises, HIPAA violations, or other serious professional misconduct. Describe the misconduct briefly in the flag like "agent_misconduct:hung up on caller".`;
+- For EACH strength/suggestion, include approximate timestamp (MM:SS) of the referenced moment
+- 2-4 concrete, actionable action items
+- Topics: specific (e.g. "order tracking", "billing dispute"), not generic
+- call_party_type: "customer" (patients), "insurance" (reps), "medical_facility" (clinics/hospitals), "medicare" (1-800-MEDICARE), "vendor", "internal" (coworkers), "other"
+- detected_agent_name: Agent's name if clearly stated (e.g. "Hi, my name is Sarah"). Return null if uncertain. Only the agent's name, not the customer's.
+- flags: "medicare_call" if Medicare involved, "low_score" if performance ≤2.0, "exceptional_call" if ≥9.0 with outstanding service, "agent_misconduct:<description>" for serious misconduct (abusive language, hanging up, HIPAA violations, etc.)`;
 }
 
 /**

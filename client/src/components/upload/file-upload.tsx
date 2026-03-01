@@ -121,10 +121,24 @@ export default function FileUpload() {
     setUploadFiles(prev => [...prev, ...newFiles]);
   }, []);
 
+  const MAX_BATCH_SIZE = 20;
+  const MAX_FILE_SIZE = 100 * 1024 * 1024; // 100MB — matches server limit
+
   const { getRootProps, getInputProps, isDragActive } = useDropzone({
-    onDrop,
-    accept: { 'audio/*': ['.mp3', '.wav', '.m4a'] },
-    maxSize: 500 * 1024 * 1024,
+    onDrop: (accepted, rejected) => {
+      if (rejected.length > 0) {
+        const reasons = rejected.map(r => r.errors.map(e => e.message).join(", ")).join("; ");
+        toast({ title: "Some files rejected", description: reasons, variant: "destructive" });
+      }
+      const currentCount = uploadFiles.length;
+      const allowed = accepted.slice(0, MAX_BATCH_SIZE - currentCount);
+      if (allowed.length < accepted.length) {
+        toast({ title: "Batch limit", description: `Maximum ${MAX_BATCH_SIZE} files per batch. ${accepted.length - allowed.length} file(s) were skipped.`, variant: "destructive" });
+      }
+      onDrop(allowed);
+    },
+    accept: { 'audio/*': ['.mp3', '.wav', '.m4a', '.mp4', '.flac', '.ogg'] },
+    maxSize: MAX_FILE_SIZE,
   });
 
   const updateFile = (index: number, updates: Partial<UploadFile>) => {
@@ -159,12 +173,18 @@ export default function FileUpload() {
     }
   };
 
-  const uploadAll = () => {
-    uploadFiles.forEach((file, index) => {
-      if (file.status === 'pending') {
-        uploadFile(index);
-      }
-    });
+  const MAX_CONCURRENT = 3;
+
+  const uploadAll = async () => {
+    const pendingIndices = uploadFiles
+      .map((file, index) => file.status === 'pending' ? index : -1)
+      .filter(i => i >= 0);
+
+    // Process in batches of MAX_CONCURRENT
+    for (let i = 0; i < pendingIndices.length; i += MAX_CONCURRENT) {
+      const batch = pendingIndices.slice(i, i + MAX_CONCURRENT);
+      await Promise.allSettled(batch.map(idx => uploadFile(idx)));
+    }
   };
 
   return (
@@ -178,18 +198,30 @@ export default function FileUpload() {
         <p className="mt-2 text-sm text-muted-foreground">
           {isDragActive ? "Drop files here..." : "Drag & drop files here, or click to select files"}
         </p>
-        <p className="text-xs text-muted-foreground mt-1">MP3, WAV, M4A up to 500MB</p>
+        <p className="text-xs text-muted-foreground mt-1">MP3, WAV, M4A, MP4, FLAC, OGG — up to 100MB per file, {MAX_BATCH_SIZE} files max</p>
       </div>
 
       {uploadFiles.length > 0 && (
         <div className="mt-6 space-y-4">
           <div className="flex items-center justify-between">
-            <h4 className="font-medium text-foreground">Files to Upload</h4>
-            {uploadFiles.some(f => f.status === 'pending') && (
-              <Button type="button" onClick={uploadAll} disabled={uploadMutation.isPending}>
-                Upload All
-              </Button>
-            )}
+            <h4 className="font-medium text-foreground">
+              Files to Upload
+              <span className="text-xs text-muted-foreground ml-2 font-normal">
+                ({uploadFiles.filter(f => f.status === 'completed').length}/{uploadFiles.length} complete)
+              </span>
+            </h4>
+            <div className="flex items-center gap-2">
+              {uploadFiles.length > 1 && uploadFiles.some(f => f.status !== 'pending') && (
+                <span className="text-xs text-muted-foreground">
+                  {uploadFiles.filter(f => f.status === 'uploading' || f.status === 'processing').length} in progress
+                </span>
+              )}
+              {uploadFiles.some(f => f.status === 'pending') && (
+                <Button type="button" onClick={uploadAll} disabled={uploadMutation.isPending}>
+                  Upload All ({uploadFiles.filter(f => f.status === 'pending').length})
+                </Button>
+              )}
+            </div>
           </div>
           {uploadFiles.map((fileData, index) => (
             <div key={index} className="p-4 bg-muted rounded-lg space-y-3">
@@ -210,9 +242,12 @@ export default function FileUpload() {
                         ))}
                       </SelectContent>
                     </Select>
-                    <Select onValueChange={(value) => updateFile(index, { employeeId: value })}>
-                      <SelectTrigger className="w-44"><SelectValue placeholder="Select employee" /></SelectTrigger>
+                    <Select onValueChange={(value) => updateFile(index, { employeeId: value === "__unassigned__" ? "" : value })}>
+                      <SelectTrigger className="w-44"><SelectValue placeholder="Assign to agent" /></SelectTrigger>
                       <SelectContent>
+                        <SelectItem value="__unassigned__">
+                          <span className="text-muted-foreground italic">Unassigned (auto-detect)</span>
+                        </SelectItem>
                         {employees?.map(employee => (
                           <SelectItem key={employee.id} value={employee.id}>{employee.name}</SelectItem>
                         ))}

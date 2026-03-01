@@ -188,7 +188,7 @@ export class GeminiProvider implements AIAnalysisProvider {
       contents: [{ role: "user", parts: [{ text: prompt }] }],
       generationConfig: {
         temperature: 0.3,
-        maxOutputTokens: 8192,
+        maxOutputTokens: 2048,
       },
     };
 

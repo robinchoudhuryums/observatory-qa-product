@@ -7,17 +7,19 @@ import { apiRequest, queryClient, getQueryFn } from "@/lib/queryClient";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import type { CallWithDetails, Employee, AccessRequest } from "@shared/schema";
 
-const navigation = [
+type NavItem = { name: string; href: string; icon: any; section?: string; requireRole?: string[] };
+
+const navigation: NavItem[] = [
   { name: "Dashboard", href: "/", icon: BarChart3 },
   { name: "Upload Calls", href: "/upload", icon: Upload },
   { name: "Transcripts", href: "/transcripts", icon: FileText },
-  { name: "Sentiment", href: "/sentiment", icon: Heart },
+  { name: "Search", href: "/search", icon: Search },
+  { name: "Sentiment", href: "/sentiment", icon: Heart, section: "Analytics" },
   { name: "Performance", href: "/performance", icon: Users },
   { name: "Reports", href: "/reports", icon: TrendingUp },
-  { name: "Employees", href: "/employees", icon: UserPlus },
   { name: "Insights", href: "/insights", icon: Building2 },
-  { name: "Coaching", href: "/coaching", icon: ClipboardCheck },
-  { name: "Search", href: "/search", icon: Search },
+  { name: "Employees", href: "/employees", icon: UserPlus, section: "Management" },
+  { name: "Coaching", href: "/coaching", icon: ClipboardCheck, requireRole: ["manager", "admin"] },
 ];
 
 interface AuthUser {
@@ -78,8 +80,8 @@ export default function Sidebar() {
   const pendingRequestCount = (accessRequests || []).filter(r => r.status === "pending").length;
 
   const flaggedCount = (calls || []).filter(c => {
-    const flags = c.analysis?.flags as string[] | undefined;
-    return flags && flags.some(f => f === "low_score" || f.startsWith("agent_misconduct"));
+    const flags = c.analysis?.flags;
+    return Array.isArray(flags) && flags.some(f => f === "low_score" || f.startsWith("agent_misconduct"));
   }).length;
 
   const handleLogout = async () => {
@@ -120,37 +122,46 @@ export default function Sidebar() {
         </div>
       </div>
 
-      <nav className="flex-1 p-4 space-y-2">
+      <nav className="flex-1 p-4 space-y-1">
         {navigation.map((item) => {
+          // Role-based visibility
+          if (item.requireRole && (!user?.role || !item.requireRole.includes(user.role))) return null;
+
           const Icon = item.icon;
           const isActive = location === item.href || (item.href !== "/" && location.startsWith(item.href));
           const showBadge = item.name === "Dashboard" && flaggedCount > 0;
 
           return (
-            <Link
-              key={item.name}
-              href={item.href}
-              className={cn(
-                "flex items-center space-x-3 px-3 py-2 rounded-md font-medium transition-colors",
-                isActive
-                  ? "bg-primary text-primary-foreground"
-                  : "text-muted-foreground hover:bg-muted hover:text-foreground"
+            <div key={item.name}>
+              {item.section && (
+                <div className="pt-3 pb-1 px-1">
+                  <p className="text-[10px] uppercase font-semibold text-muted-foreground tracking-wider">{item.section}</p>
+                </div>
               )}
-              data-testid={`nav-link-${item.name.toLowerCase().replace(/\s+/g, '-')}`}
-            >
-              <Icon className="w-5 h-5" />
-              <span>{item.name}</span>
-              {showBadge && (
-                <span className={cn(
-                  "ml-auto flex items-center justify-center min-w-[20px] h-5 px-1.5 rounded-full text-[10px] font-bold",
+              <Link
+                href={item.href}
+                className={cn(
+                  "flex items-center space-x-3 px-3 py-2 rounded-md font-medium transition-colors",
                   isActive
-                    ? "bg-red-500 text-white"
-                    : "bg-red-100 text-red-700 dark:bg-red-900 dark:text-red-300"
-                )}>
-                  {flaggedCount}
-                </span>
-              )}
-            </Link>
+                    ? "bg-primary text-primary-foreground"
+                    : "text-muted-foreground hover:bg-muted hover:text-foreground"
+                )}
+                data-testid={`nav-link-${item.name.toLowerCase().replace(/\s+/g, '-')}`}
+              >
+                <Icon className="w-5 h-5" />
+                <span>{item.name}</span>
+                {showBadge && (
+                  <span className={cn(
+                    "ml-auto flex items-center justify-center min-w-[20px] h-5 px-1.5 rounded-full text-[10px] font-bold",
+                    isActive
+                      ? "bg-red-500 text-white"
+                      : "bg-red-100 text-red-700 dark:bg-red-900 dark:text-red-300"
+                  )}>
+                    {flaggedCount}
+                  </span>
+                )}
+              </Link>
+            </div>
           );
         })}
 

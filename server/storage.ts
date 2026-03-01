@@ -509,12 +509,24 @@ export class CloudStorage implements IStorage {
           this.getCallAnalysis(call.id),
         ]);
 
+        // Normalize analysis for backward-compat with older stored data
+        const normalizedAnalysis = analysis ? {
+          ...analysis,
+          topics: Array.isArray(analysis.topics) ? analysis.topics : [],
+          actionItems: Array.isArray(analysis.actionItems) ? analysis.actionItems : [],
+          flags: Array.isArray(analysis.flags) ? analysis.flags : [],
+          feedback: (analysis.feedback && typeof analysis.feedback === "object" && !Array.isArray(analysis.feedback))
+            ? analysis.feedback
+            : { strengths: [], suggestions: [] },
+          summary: typeof analysis.summary === "string" ? analysis.summary : "",
+        } : undefined;
+
         results.push({
           ...call,
           employee,
           transcript: transcript || undefined,
           sentiment: sentiment || undefined,
-          analysis: analysis || undefined,
+          analysis: normalizedAnalysis,
         });
       })
     );

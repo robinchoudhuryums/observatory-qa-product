@@ -405,7 +405,7 @@ export default function CallsTable() {
                 <td className="py-3 px-2">
                   <div className="flex items-center gap-1.5">
                     {getStatusBadge(call.status)}
-                    {call.analysis?.flags && (call.analysis.flags as string[]).length > 0 && (() => {
+                    {call.analysis?.flags && Array.isArray(call.analysis.flags) && (call.analysis.flags as string[]).length > 0 && (() => {
                       const flags = call.analysis.flags as string[];
                       const hasExceptional = flags.includes("exceptional_call");
                       const hasBad = flags.some(f => f === "low_score" || f.startsWith("agent_misconduct"));

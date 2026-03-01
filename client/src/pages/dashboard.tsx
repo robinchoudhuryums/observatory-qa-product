@@ -21,18 +21,20 @@ export default function Dashboard() {
   });
 
   const flaggedCalls = (calls || []).filter(c => {
-    const flags = c.analysis?.flags as string[] | undefined;
-    return flags && flags.length > 0 && flags.some(f =>
+    const flags = c.analysis?.flags;
+    return Array.isArray(flags) && flags.length > 0 && flags.some(f =>
       f === "low_score" || f.startsWith("agent_misconduct") || f === "exceptional_call"
     );
   });
 
-  const badCalls = flaggedCalls.filter(c =>
-    (c.analysis?.flags as string[]).some(f => f === "low_score" || f.startsWith("agent_misconduct"))
-  );
-  const goodCalls = flaggedCalls.filter(c =>
-    (c.analysis?.flags as string[]).includes("exceptional_call")
-  );
+  const badCalls = flaggedCalls.filter(c => {
+    const flags = c.analysis?.flags;
+    return Array.isArray(flags) && flags.some(f => f === "low_score" || f.startsWith("agent_misconduct"));
+  });
+  const goodCalls = flaggedCalls.filter(c => {
+    const flags = c.analysis?.flags;
+    return Array.isArray(flags) && flags.includes("exceptional_call");
+  });
 
   // Compute daily trend data from calls for the last 30 days
   const trendData = useMemo(() => {

@@ -536,7 +536,7 @@ export default function TranscriptViewer({ callId }: TranscriptViewerProps) {
             </div>
           )}
 
-          {call.analysis?.topics && call.analysis.topics.length > 0 && (
+          {call.analysis?.topics && Array.isArray(call.analysis.topics) && call.analysis.topics.length > 0 && (
             <div className="bg-muted rounded-lg p-4">
               <h4 className="font-semibold text-foreground mb-3">Key Topics</h4>
               <div className="flex flex-wrap gap-2">
@@ -549,7 +549,7 @@ export default function TranscriptViewer({ callId }: TranscriptViewerProps) {
             </div>
           )}
 
-          {call.analysis?.actionItems && call.analysis.actionItems.length > 0 && (
+          {call.analysis?.actionItems && Array.isArray(call.analysis.actionItems) && call.analysis.actionItems.length > 0 && (
             <div className="bg-muted rounded-lg p-4">
               <h4 className="font-semibold text-foreground mb-3">Action Items</h4>
               <ul className="space-y-1 text-sm">
@@ -563,11 +563,11 @@ export default function TranscriptViewer({ callId }: TranscriptViewerProps) {
             </div>
           )}
 
-          {call.analysis?.feedback && (
+          {call.analysis?.feedback && typeof call.analysis.feedback === "object" && !Array.isArray(call.analysis.feedback) && (
             <div className="bg-muted rounded-lg p-4">
               <h4 className="font-semibold text-foreground mb-3">AI Feedback</h4>
               <div className="space-y-2 text-sm">
-                {(call.analysis.feedback as any).strengths?.length > 0 && (
+                {Array.isArray((call.analysis.feedback as any).strengths) && (call.analysis.feedback as any).strengths.length > 0 && (
                   <div>
                     <p className="font-medium text-green-600">Strengths:</p>
                     <ul className="space-y-1.5 text-muted-foreground">
@@ -596,7 +596,7 @@ export default function TranscriptViewer({ callId }: TranscriptViewerProps) {
                     </ul>
                   </div>
                 )}
-                {(call.analysis.feedback as any).suggestions?.length > 0 && (
+                {Array.isArray((call.analysis.feedback as any).suggestions) && (call.analysis.feedback as any).suggestions.length > 0 && (
                   <div>
                     <p className="font-medium text-primary">Suggestions:</p>
                     <ul className="space-y-1.5 text-muted-foreground">
@@ -630,7 +630,7 @@ export default function TranscriptViewer({ callId }: TranscriptViewerProps) {
           )}
 
           {/* Call Flags */}
-          {call.analysis?.flags && (call.analysis.flags as string[]).length > 0 && (() => {
+          {call.analysis?.flags && Array.isArray(call.analysis.flags) && (call.analysis.flags as string[]).length > 0 && (() => {
             const flags = call.analysis.flags as string[];
             const hasExceptional = flags.includes("exceptional_call");
             const hasBad = flags.some(f => f === "low_score" || f.startsWith("agent_misconduct"));
@@ -686,10 +686,13 @@ export default function TranscriptViewer({ callId }: TranscriptViewerProps) {
 
           {/* AI Confidence Score */}
           {call.analysis?.confidenceScore && (() => {
-            const confidence = parseFloat(call.analysis.confidenceScore as string);
+            const raw = call.analysis.confidenceScore;
+            const confidence = parseFloat(typeof raw === "string" ? raw : String(raw));
+            if (isNaN(confidence)) return null;
             const isLow = confidence < 0.7;
             const pct = (confidence * 100).toFixed(0);
-            const factors = call.analysis.confidenceFactors as { transcriptConfidence?: number; wordCount?: number; callDuration?: number; aiAnalysis?: boolean } | undefined;
+            const factors = (call.analysis.confidenceFactors && typeof call.analysis.confidenceFactors === "object")
+              ? call.analysis.confidenceFactors as { transcriptConfidence?: number; wordCount?: number; callDurationSeconds?: number; callDuration?: number } : undefined;
             const barColor = isLow ? "from-yellow-500 to-amber-400" : confidence >= 0.85 ? "from-green-500 to-emerald-400" : "from-blue-500 to-cyan-400";
             const bgClass = isLow
               ? "bg-yellow-50 dark:bg-yellow-950/30 border border-yellow-200 dark:border-yellow-900"
@@ -709,14 +712,14 @@ export default function TranscriptViewer({ callId }: TranscriptViewerProps) {
                   </div>
                   {factors && (
                     <div className="text-xs text-muted-foreground space-y-0.5 mt-2">
-                      {factors.transcriptConfidence !== undefined && (
-                        <p>Transcript clarity: {(factors.transcriptConfidence * 100).toFixed(0)}%</p>
+                      {factors.transcriptConfidence != null && (
+                        <p>Transcript clarity: {(Number(factors.transcriptConfidence) * 100).toFixed(0)}%</p>
                       )}
                       {factors.wordCount !== undefined && (
                         <p>Word count: {factors.wordCount} words</p>
                       )}
-                      {factors.callDuration !== undefined && (
-                        <p>Call duration: {factors.callDuration}s</p>
+                      {(factors.callDurationSeconds ?? factors.callDuration) !== undefined && (
+                        <p>Call duration: {factors.callDurationSeconds ?? factors.callDuration}s</p>
                       )}
                     </div>
                   )}
