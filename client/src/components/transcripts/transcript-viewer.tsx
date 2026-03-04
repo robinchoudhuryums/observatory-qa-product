@@ -93,6 +93,44 @@ export default function TranscriptViewer({ callId }: TranscriptViewerProps) {
     editMutation.mutate({ updates, reason: editReason.trim() });
   };
 
+  // Safely coerce a value to a display string (handles objects from Bedrock AI)
+  const toDisplayString = useCallback((val: unknown): string => {
+    if (val == null) return "";
+    if (typeof val === "string") return val;
+    if (typeof val === "number" || typeof val === "boolean") return String(val);
+    if (typeof val === "object") {
+      const obj = val as Record<string, unknown>;
+      if (typeof obj.text === "string") return obj.text;
+      if (typeof obj.name === "string") return obj.name;
+      if (typeof obj.task === "string") return obj.task;
+      if (typeof obj.label === "string") return obj.label;
+      if (typeof obj.description === "string") return obj.description;
+      return JSON.stringify(val);
+    }
+    return String(val);
+  }, []);
+
+  // Build keyword set from detected topics for highlighting
+  // MUST be called before any early returns to respect Rules of Hooks
+  const topicKeywords = useMemo(() => {
+    try {
+      if (!call?.analysis?.topics || !Array.isArray(call.analysis.topics)) return [];
+      return (call.analysis.topics as unknown[])
+        .map(t => {
+          if (typeof t === "string") return t;
+          if (t && typeof t === "object") {
+            const obj = t as Record<string, unknown>;
+            return typeof obj.text === "string" ? obj.text : typeof obj.name === "string" ? obj.name : JSON.stringify(t);
+          }
+          return String(t ?? "");
+        })
+        .filter(t => t.length >= 3)
+        .map(t => t.toLowerCase());
+    } catch {
+      return [];
+    }
+  }, [call?.analysis?.topics]);
+
   // Sync audio time with transcript highlight
   useEffect(() => {
     const audio = audioRef.current;
@@ -272,30 +310,6 @@ export default function TranscriptViewer({ callId }: TranscriptViewerProps) {
     a.click();
     URL.revokeObjectURL(url);
   };
-
-  // Safely coerce a value to a display string (handles objects from Bedrock AI)
-  const toDisplayString = (val: unknown): string => {
-    if (val == null) return "";
-    if (typeof val === "string") return val;
-    if (typeof val === "number" || typeof val === "boolean") return String(val);
-    if (typeof val === "object") {
-      // Handle common object shapes from AI: {text: "..."}, {name: "..."}, {task: "..."}
-      const obj = val as Record<string, unknown>;
-      if (typeof obj.text === "string") return obj.text;
-      if (typeof obj.name === "string") return obj.name;
-      if (typeof obj.task === "string") return obj.task;
-      if (typeof obj.label === "string") return obj.label;
-      if (typeof obj.description === "string") return obj.description;
-      return JSON.stringify(val);
-    }
-    return String(val);
-  };
-
-  // Build keyword set from detected topics for highlighting
-  const topicKeywords = useMemo(() => {
-    if (!call.analysis?.topics || !Array.isArray(call.analysis.topics)) return [];
-    return (call.analysis.topics as unknown[]).map(t => toDisplayString(t)).filter(t => t.length >= 3).map(t => t.toLowerCase());
-  }, [call.analysis?.topics]);
 
   const highlightKeywords = (text: string | any) => {
     if (typeof text !== "string") return String(text ?? "");
@@ -508,7 +522,7 @@ export default function TranscriptViewer({ callId }: TranscriptViewerProps) {
               <div className="space-y-2 text-sm">
                 <p><strong>Duration:</strong> {call.duration ? `${Math.floor(call.duration / 60)}m ${call.duration % 60}s` : 'Unknown'}</p>
                 <p><strong>Status:</strong> <Badge>{call.status}</Badge></p>
-                <p><strong>Sentiment:</strong> {call.sentiment?.overallSentiment ? (
+                <p><strong>Sentiment:</strong> {call.sentiment?.overallSentiment && typeof call.sentiment.overallSentiment === "string" ? (
                   <Badge className={getSentimentColor(call.sentiment.overallSentiment)}>
                     {call.sentiment.overallSentiment.charAt(0).toUpperCase() + call.sentiment.overallSentiment.slice(1)}
                   </Badge>
@@ -593,9 +607,9 @@ export default function TranscriptViewer({ callId }: TranscriptViewerProps) {
                   <div>
                     <p className="font-medium text-green-600">Strengths:</p>
                     <ul className="space-y-1.5 text-muted-foreground">
-                      {(call.analysis.feedback as any).strengths.map((item: string | { text: string; timestamp?: string }, index: number) => {
-                        const text = typeof item === "string" ? item : item.text;
-                        const ts = typeof item === "object" ? item.timestamp : null;
+                      {(call.analysis.feedback as any).strengths.map((item: unknown, index: number) => {
+                        const text = toDisplayString(item);
+                        const ts = typeof item === "object" && item !== null ? (item as any).timestamp : null;
                         return (
                           <li key={index} className="flex items-start gap-2">
                             <span className="text-green-500 mt-0.5 shrink-0">+</span>
@@ -622,9 +636,9 @@ export default function TranscriptViewer({ callId }: TranscriptViewerProps) {
                   <div>
                     <p className="font-medium text-primary">Suggestions:</p>
                     <ul className="space-y-1.5 text-muted-foreground">
-                      {(call.analysis.feedback as any).suggestions.map((item: string | { text: string; timestamp?: string }, index: number) => {
-                        const text = typeof item === "string" ? item : item.text;
-                        const ts = typeof item === "object" ? item.timestamp : null;
+                      {(call.analysis.feedback as any).suggestions.map((item: unknown, index: number) => {
+                        const text = toDisplayString(item);
+                        const ts = typeof item === "object" && item !== null ? (item as any).timestamp : null;
                         return (
                           <li key={index} className="flex items-start gap-2">
                             <span className="text-amber-500 mt-0.5 shrink-0">!</span>
