@@ -1,12 +1,22 @@
 import { useQuery } from "@tanstack/react-query";
-import { Phone, Heart, Clock, Star } from "lucide-react";
+import { Phone, Heart, Clock, Star, AlertTriangle } from "lucide-react";
 import { Skeleton } from "@/components/ui/skeleton";
 import type { DashboardMetrics } from "@shared/schema";
 
 export default function MetricsOverview() {
-  const { data: metrics, isLoading } = useQuery<DashboardMetrics>({
+  const { data: metrics, isLoading, error } = useQuery<DashboardMetrics>({
     queryKey: ["/api/dashboard/metrics"],
   });
+
+  if (error) {
+    return (
+      <div className="bg-card rounded-lg border border-destructive/30 p-6 text-center">
+        <AlertTriangle className="w-6 h-6 text-destructive mx-auto mb-2" />
+        <p className="text-sm font-medium text-destructive">Failed to load metrics</p>
+        <p className="text-xs text-muted-foreground">{error.message}</p>
+      </div>
+    );
+  }
 
   if (isLoading) {
     return (
