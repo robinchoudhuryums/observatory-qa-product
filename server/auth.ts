@@ -255,11 +255,9 @@ export function requireRole(...allowedRoles: string[]): RequestHandler {
       return res.status(401).json({ message: "Authentication required" });
     }
     const userRole = req.user.role || "viewer";
-    if (allowedRoles.includes(userRole)) {
-      return next();
-    }
-    // Admin always has access
-    if (userRole === "admin") {
+    const userLevel = ROLE_HIERARCHY[userRole] ?? 0;
+    const requiredLevel = Math.min(...allowedRoles.map(r => ROLE_HIERARCHY[r] ?? 0));
+    if (userLevel >= requiredLevel) {
       return next();
     }
     return res.status(403).json({ message: "Insufficient permissions" });

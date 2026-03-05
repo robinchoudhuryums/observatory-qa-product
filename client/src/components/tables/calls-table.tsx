@@ -48,7 +48,7 @@ export default function CallsTable() {
   });
 
   const deleteMutation = useMutation({
-    mutationFn: (callId: string) => fetch(`/api/calls/${callId}`, { method: 'DELETE' }),
+    mutationFn: (callId: string) => apiRequest("DELETE", `/api/calls/${callId}`),
     onSuccess: () => {
       toast({
         title: "Call Deleted",

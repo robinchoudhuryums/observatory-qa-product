@@ -198,7 +198,11 @@ export class S3Client {
 
   private async getObject(objectName: string): Promise<Response | undefined> {
     const response = await this.request("GET", `/${objectName}`);
-    if (response.status === 404 || response.status === 403) return undefined;
+    if (response.status === 404) return undefined;
+    if (response.status === 403) {
+      console.error(`[S3] Access denied (403) for ${objectName} — check IAM permissions`);
+      return undefined;
+    }
     if (!response.ok) {
       throw new Error(`S3 download failed for ${objectName}: ${await response.text()}`);
     }

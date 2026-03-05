@@ -186,9 +186,12 @@ export default function TranscriptViewer({ callId }: TranscriptViewerProps) {
     }
   };
 
-  const transcriptSegments = call.transcript?.words && Array.isArray(call.transcript.words) && call.transcript.words.length > 0 ?
-    generateSegmentsFromWords(call.transcript.words as TranscriptWord[]) :
-    [];
+  const transcriptSegments = useMemo(() => {
+    if (call.transcript?.words && Array.isArray(call.transcript.words) && call.transcript.words.length > 0) {
+      return generateSegmentsFromWords(call.transcript.words as TranscriptWord[]);
+    }
+    return [];
+  }, [call.transcript?.words]);
 
   function generateSegmentsFromWords(words: TranscriptWord[]) {
     const segments: any[] = [];

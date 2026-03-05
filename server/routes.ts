@@ -475,9 +475,13 @@ app.get("/api/calls", requireAuth, async (req, res) => {
       const originalName = req.file.originalname;
       const mimeType = req.file.mimetype || "audio/mpeg";
       processAudioFile(call.id, req.file.path, audioBuffer, originalName, mimeType, callCategory)
-        .catch(error => {
+        .catch(async (error) => {
           console.error(`Failed to process call ${call.id}:`, error);
-          storage.updateCall(call.id, { status: "failed" });
+          try {
+            await storage.updateCall(call.id, { status: "failed" });
+          } catch (updateErr) {
+            console.error(`Failed to mark call ${call.id} as failed:`, updateErr);
+          }
         });
 
       res.status(201).json(call);
@@ -826,6 +830,22 @@ async function processAudioFile(callId: string, filePath: string, audioBuffer: B
 
       if (!reason || typeof reason !== "string" || reason.trim().length === 0) {
         res.status(400).json({ message: "A reason for the manual edit is required." });
+        return;
+      }
+
+      if (!updates || typeof updates !== "object" || Array.isArray(updates)) {
+        res.status(400).json({ message: "Updates must be a non-empty object." });
+        return;
+      }
+
+      // Whitelist allowed fields to prevent arbitrary overwrites
+      const ALLOWED_FIELDS = new Set([
+        "summary", "performanceScore", "topics", "actionItems",
+        "feedback", "flags", "sentiment", "sentimentScore",
+      ]);
+      const disallowed = Object.keys(updates).filter(k => !ALLOWED_FIELDS.has(k));
+      if (disallowed.length > 0) {
+        res.status(400).json({ message: `Cannot edit fields: ${disallowed.join(", ")}` });
         return;
       }
 
