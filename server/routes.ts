@@ -670,9 +670,9 @@ async function processAudioFile(callId: string, filePath: string, audioBuffer: B
       if (matchedEmployee) {
         await storage.updateCall(callId, { employeeId: matchedEmployee.id });
         autoAssigned = true;
-        console.log(`[${callId}] Auto-assigned to employee: ${matchedEmployee.name} (detected name: "${aiAnalysis.detected_agent_name}")`);
+        console.log(`[${callId}] Auto-assigned to employee: ${matchedEmployee.id}`);
       } else {
-        console.log(`[${callId}] Detected agent name "${aiAnalysis.detected_agent_name}" but no matching employee found.`);
+        console.log(`[${callId}] Detected agent name but no matching employee found.`);
       }
     }
 
@@ -1355,13 +1355,13 @@ app.get("/api/performance", requireAuth, async (req, res) => {
         dateRange,
       });
 
-      console.log(`Generating AI summary for ${employee.name} (${filtered.length} calls)...`);
+      console.log(`[${req.params.id}] Generating AI summary (${filtered.length} calls)...`);
       const summary = await aiProvider.generateText(prompt);
-      console.log(`AI summary generated for ${employee.name}.`);
+      console.log(`[${req.params.id}] AI summary generated.`);
 
       res.json({ summary });
     } catch (error) {
-      console.error("Failed to generate agent summary:", error);
+      console.error("Failed to generate agent summary:", (error as Error).message);
       res.status(500).json({ message: "Failed to generate AI summary" });
     }
   });
