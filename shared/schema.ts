@@ -100,6 +100,7 @@ export const insertCallSchema = z.object({
   duration: z.number().optional(),
   assemblyAiId: z.string().optional(),
   callCategory: z.string().optional(),
+  tags: z.array(z.string()).optional(),
 });
 
 export const callSchema = insertCallSchema.extend({

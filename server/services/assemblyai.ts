@@ -97,7 +97,11 @@ export class AssemblyAIService {
     return await response.json();
   }
 
-  async pollTranscript(transcriptId: string, maxAttempts = 60): Promise<AssemblyAIResponse> {
+  async pollTranscript(
+    transcriptId: string,
+    maxAttempts = 60,
+    onProgress?: (attempt: number, maxAttempts: number, status: string) => void,
+  ): Promise<AssemblyAIResponse> {
     for (let attempt = 0; attempt < maxAttempts; attempt++) {
       const transcript = await this.getTranscript(transcriptId);
 
@@ -107,6 +111,8 @@ export class AssemblyAIService {
       if (transcript.status === 'error') {
         throw new Error(`Transcription failed: ${transcript.error || 'Unknown error'}`);
       }
+
+      onProgress?.(attempt, maxAttempts, transcript.status);
 
       // Wait with backoff: 3s for first 10 attempts, then 5s
       const delay = attempt < 10 ? 3000 : 5000;

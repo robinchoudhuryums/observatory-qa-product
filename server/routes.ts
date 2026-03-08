@@ -14,6 +14,7 @@ import { logPhiAccess, auditContext } from "./services/audit-log";
 import { insertEmployeeSchema, insertAccessRequestSchema, insertPromptTemplateSchema, insertCoachingSessionSchema } from "@shared/schema";
 import { z } from "zod";
 import csv from "csv-parser";
+import { notifyFlaggedCall } from "./services/notifications";
 
 /**
  * Retry an async operation with exponential backoff.
@@ -233,6 +234,96 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Bulk re-analysis: re-analyze recent calls using updated prompt template
+  app.post("/api/calls/reanalyze", requireAuth, injectOrgContext, requireRole("admin"), async (req, res) => {
+    try {
+      const { callCategory, limit: maxCalls } = req.body;
+      if (!callCategory || typeof callCategory !== "string") {
+        res.status(400).json({ message: "callCategory is required" });
+        return;
+      }
+
+      if (!aiProvider.isAvailable) {
+        res.status(503).json({ message: "AI provider not configured" });
+        return;
+      }
+
+      const reanalysisLimit = Math.min(parseInt(maxCalls) || 10, 50);
+      const allCalls = await storage.getCallsWithDetails(req.orgId!, { status: "completed" });
+
+      // Filter to calls matching the category
+      const targetCalls = allCalls
+        .filter(c => c.callCategory === callCategory && c.transcript?.text)
+        .slice(0, reanalysisLimit);
+
+      if (targetCalls.length === 0) {
+        res.json({ message: "No matching calls found", queued: 0 });
+        return;
+      }
+
+      // Load the prompt template for this category
+      let promptTemplate = undefined;
+      const tmpl = await storage.getPromptTemplateByCategory(req.orgId!, callCategory);
+      if (tmpl) {
+        promptTemplate = {
+          evaluationCriteria: tmpl.evaluationCriteria,
+          requiredPhrases: tmpl.requiredPhrases,
+          scoringWeights: tmpl.scoringWeights,
+          additionalInstructions: tmpl.additionalInstructions,
+        };
+      }
+
+      // Queue re-analysis in background (respond immediately)
+      const orgId = req.orgId!;
+      const queued = targetCalls.length;
+      res.json({ message: `Re-analysis queued for ${queued} calls`, queued });
+
+      // Process in background with bounded concurrency
+      (async () => {
+        let succeeded = 0;
+        let failed = 0;
+        for (const call of targetCalls) {
+          try {
+            const transcriptText = call.transcript!.text!;
+            const aiAnalysis = await withRetry(
+              () => aiProvider.analyzeCallTranscript(transcriptText, call.id, callCategory, promptTemplate),
+              { retries: 1, baseDelay: 2000, label: `reanalyze ${call.id}` }
+            );
+
+            const { analysis } = assemblyAIService.processTranscriptData(
+              { id: "", status: "completed", text: transcriptText, words: call.transcript?.words as any },
+              aiAnalysis,
+              call.id
+            );
+
+            if (aiAnalysis.sub_scores) {
+              analysis.subScores = {
+                compliance: aiAnalysis.sub_scores.compliance ?? 0,
+                customerExperience: aiAnalysis.sub_scores.customer_experience ?? 0,
+                communication: aiAnalysis.sub_scores.communication ?? 0,
+                resolution: aiAnalysis.sub_scores.resolution ?? 0,
+              };
+            }
+            if (aiAnalysis.detected_agent_name) {
+              analysis.detectedAgentName = aiAnalysis.detected_agent_name;
+            }
+
+            await storage.createCallAnalysis(orgId, { ...analysis, callId: call.id });
+            succeeded++;
+          } catch (error) {
+            console.error(`[REANALYZE] Failed for call ${call.id}:`, (error as Error).message);
+            failed++;
+          }
+        }
+        console.log(`[REANALYZE] Complete: ${succeeded} succeeded, ${failed} failed out of ${queued}`);
+        broadcastCallUpdate("bulk", "reanalysis_complete", { succeeded, failed, total: queued }, orgId);
+      })().catch(err => console.error("[REANALYZE] Bulk re-analysis failed:", err));
+    } catch (error) {
+      console.error("Failed to start re-analysis:", error);
+      res.status(500).json({ message: "Failed to start re-analysis" });
+    }
+  });
+
   // ==================== PROTECTED ROUTES ====================
 
   // Dashboard metrics
@@ -349,6 +440,30 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.json(updated);
     } catch (error) {
       res.status(500).json({ message: "Failed to assign employee to call" });
+    }
+  });
+
+  // Tag/untag a call (managers and admins only)
+  const tagCallSchema = z.object({
+    tags: z.array(z.string().min(1).max(50)).max(20),
+  }).strict();
+
+  app.patch("/api/calls/:id/tags", requireAuth, injectOrgContext, requireRole("manager", "admin"), async (req, res) => {
+    try {
+      const parsed = tagCallSchema.safeParse(req.body);
+      if (!parsed.success) {
+        res.status(400).json({ message: "Invalid tags data", errors: parsed.error.flatten() });
+        return;
+      }
+      const call = await storage.getCall(req.orgId!, req.params.id);
+      if (!call) {
+        res.status(404).json({ message: "Call not found" });
+        return;
+      }
+      const updated = await storage.updateCall(req.orgId!, req.params.id, { tags: parsed.data.tags });
+      res.json(updated);
+    } catch (error) {
+      res.status(500).json({ message: "Failed to update call tags" });
     }
   });
 
@@ -562,10 +677,15 @@ async function processAudioFile(orgId: string, callId: string, filePath: string,
 
     await storage.updateCall(orgId, callId, { assemblyAiId: transcriptId });
 
-    // Step 3: Poll for transcription completion
+    // Step 3: Poll for transcription completion (with progress updates)
     broadcastCallUpdate(callId, "transcribing", { step: 3, totalSteps: 6, label: "Waiting for transcript..." }, orgId);
     console.log(`[${callId}] Step 3/7: Polling for transcript results...`);
-    const transcriptResponse = await assemblyAIService.pollTranscript(transcriptId);
+    const transcriptResponse = await assemblyAIService.pollTranscript(transcriptId, 60, (attempt, max, status) => {
+      const pct = Math.round((attempt / max) * 100);
+      broadcastCallUpdate(callId, "transcribing", {
+        step: 3, totalSteps: 6, label: `Transcribing... (${status})`, progress: pct,
+      }, orgId);
+    });
 
     // --- CRITICAL SAFETY CHECK ---
     // This prevents the crash if polling fails to return a valid result.
@@ -721,6 +841,23 @@ async function processAudioFile(orgId: string, callId: string, filePath: string,
 
     await cleanupFile(filePath);
     broadcastCallUpdate(callId, "completed", { step: 6, totalSteps: 6, label: "Complete" }, orgId);
+
+    // Send webhook notification for flagged calls (non-blocking)
+    const finalFlags = (analysis.flags as string[]) || [];
+    if (finalFlags.length > 0) {
+      notifyFlaggedCall({
+        event: "call_flagged",
+        callId,
+        orgId,
+        flags: finalFlags,
+        performanceScore: analysis.performanceScore ? parseFloat(analysis.performanceScore) : undefined,
+        agentName: analysis.detectedAgentName || undefined,
+        fileName: originalName,
+        summary: typeof analysis.summary === "string" ? analysis.summary : undefined,
+        timestamp: new Date().toISOString(),
+      }).catch(() => {}); // swallow — notifications are best-effort
+    }
+
     console.log(`[${callId}] Processing finished successfully.`);
 
   } catch (error) {
@@ -1137,6 +1274,69 @@ app.get("/api/performance", requireAuth, injectOrgContext, async (req, res) => {
     }
   });
 
+  // Comparative analytics: compare two time periods side by side
+  app.get("/api/reports/compare", requireAuth, injectOrgContext, async (req, res) => {
+    try {
+      const { currentFrom, currentTo, previousFrom, previousTo } = req.query;
+      if (!currentFrom || !currentTo || !previousFrom || !previousTo) {
+        res.status(400).json({ message: "Required query params: currentFrom, currentTo, previousFrom, previousTo" });
+        return;
+      }
+
+      const allCalls = await storage.getCallsWithDetails(req.orgId!, { status: "completed" });
+
+      const computePeriodMetrics = (calls: typeof allCalls, from: string, to: string) => {
+        const fromDate = new Date(from);
+        const toDate = new Date(to);
+        toDate.setHours(23, 59, 59, 999);
+
+        const filtered = calls.filter(c => {
+          const d = new Date(c.uploadedAt || 0);
+          return d >= fromDate && d <= toDate;
+        });
+
+        const scores = filtered
+          .map(c => c.analysis?.performanceScore ? parseFloat(c.analysis.performanceScore) : null)
+          .filter((s): s is number => s !== null);
+
+        const sentiments = { positive: 0, neutral: 0, negative: 0 };
+        for (const c of filtered) {
+          const s = c.sentiment?.overallSentiment as keyof typeof sentiments;
+          if (s && s in sentiments) sentiments[s]++;
+        }
+
+        return {
+          totalCalls: filtered.length,
+          avgScore: scores.length > 0
+            ? Math.round((scores.reduce((a, b) => a + b, 0) / scores.length) * 100) / 100
+            : null,
+          sentiments,
+          flaggedCount: filtered.filter(c => {
+            const flags = c.analysis?.flags;
+            return Array.isArray(flags) && flags.length > 0;
+          }).length,
+        };
+      };
+
+      const current = computePeriodMetrics(allCalls, currentFrom as string, currentTo as string);
+      const previous = computePeriodMetrics(allCalls, previousFrom as string, previousTo as string);
+
+      // Compute deltas
+      const delta = {
+        totalCalls: current.totalCalls - previous.totalCalls,
+        avgScore: current.avgScore != null && previous.avgScore != null
+          ? Math.round((current.avgScore - previous.avgScore) * 100) / 100
+          : null,
+        flaggedCount: current.flaggedCount - previous.flaggedCount,
+      };
+
+      res.json({ current, previous, delta });
+    } catch (error) {
+      console.error("Failed to generate comparative report:", error);
+      res.status(500).json({ message: "Failed to generate comparative report" });
+    }
+  });
+
   // Agent profile: aggregated feedback across all calls for an employee
   app.get("/api/reports/agent-profile/:employeeId", requireAuth, injectOrgContext, async (req, res) => {
     try {
@@ -1401,6 +1601,84 @@ app.get("/api/performance", requireAuth, injectOrgContext, async (req, res) => {
     } catch (error) {
       console.error("Failed to generate agent summary:", (error as Error).message);
       res.status(500).json({ message: "Failed to generate AI summary" });
+    }
+  });
+
+  // Export agent profile report as printable HTML (for PDF via browser print)
+  app.get("/api/reports/agent-profile/:employeeId/export", requireAuth, injectOrgContext, async (req, res) => {
+    try {
+      const { employeeId } = req.params;
+      const employee = await storage.getEmployee(req.orgId!, employeeId);
+      if (!employee) {
+        res.status(404).json({ message: "Employee not found" });
+        return;
+      }
+
+      const allCalls = await storage.getCallsWithDetails(req.orgId!, { status: "completed", employee: employeeId });
+      const scores = allCalls
+        .map(c => c.analysis?.performanceScore ? parseFloat(c.analysis.performanceScore) : null)
+        .filter((s): s is number => s !== null);
+
+      const sentimentCounts = { positive: 0, neutral: 0, negative: 0 };
+      for (const c of allCalls) {
+        const s = c.sentiment?.overallSentiment as keyof typeof sentimentCounts;
+        if (s && s in sentimentCounts) sentimentCounts[s]++;
+      }
+
+      const avgScore = scores.length > 0
+        ? (scores.reduce((a, b) => a + b, 0) / scores.length).toFixed(1)
+        : "N/A";
+
+      const html = `<!DOCTYPE html>
+<html><head><meta charset="utf-8"><title>Agent Report - ${employee.name}</title>
+<style>
+  body { font-family: -apple-system, sans-serif; max-width: 800px; margin: 2em auto; color: #1a1a1a; }
+  h1 { border-bottom: 2px solid #333; padding-bottom: 0.3em; }
+  .meta { color: #666; margin-bottom: 2em; }
+  .grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 1em; margin: 1.5em 0; }
+  .card { border: 1px solid #ddd; border-radius: 8px; padding: 1em; text-align: center; }
+  .card .value { font-size: 2em; font-weight: bold; }
+  .card .label { color: #666; font-size: 0.9em; }
+  table { width: 100%; border-collapse: collapse; margin: 1em 0; }
+  th, td { border: 1px solid #ddd; padding: 0.5em; text-align: left; }
+  th { background: #f5f5f5; }
+  @media print { body { margin: 0; } }
+</style></head><body>
+<h1>Agent Performance Report</h1>
+<div class="meta">
+  <strong>${employee.name}</strong> &mdash; ${employee.role || "N/A"}<br>
+  Generated: ${new Date().toLocaleDateString()}<br>
+  Total Calls Analyzed: ${allCalls.length}
+</div>
+<div class="grid">
+  <div class="card"><div class="value">${avgScore}</div><div class="label">Avg Score</div></div>
+  <div class="card"><div class="value">${allCalls.length}</div><div class="label">Total Calls</div></div>
+  <div class="card"><div class="value">${sentimentCounts.positive}</div><div class="label">Positive</div></div>
+</div>
+<h2>Sentiment Breakdown</h2>
+<table>
+  <tr><th>Sentiment</th><th>Count</th><th>%</th></tr>
+  ${(["positive", "neutral", "negative"] as const).map(s =>
+    `<tr><td>${s}</td><td>${sentimentCounts[s]}</td><td>${allCalls.length > 0 ? ((sentimentCounts[s] / allCalls.length) * 100).toFixed(0) : 0}%</td></tr>`
+  ).join("")}
+</table>
+<h2>Recent Calls</h2>
+<table>
+  <tr><th>Date</th><th>File</th><th>Score</th><th>Sentiment</th></tr>
+  ${allCalls.slice(0, 20).map(c => `<tr>
+    <td>${c.uploadedAt ? new Date(c.uploadedAt).toLocaleDateString() : "—"}</td>
+    <td>${c.fileName || "—"}</td>
+    <td>${c.analysis?.performanceScore || "—"}</td>
+    <td>${c.sentiment?.overallSentiment || "—"}</td>
+  </tr>`).join("")}
+</table>
+</body></html>`;
+
+      res.setHeader("Content-Type", "text/html; charset=utf-8");
+      res.send(html);
+    } catch (error) {
+      console.error("Failed to export agent report:", error);
+      res.status(500).json({ message: "Failed to export agent report" });
     }
   });
 
