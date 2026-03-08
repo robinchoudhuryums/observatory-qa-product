@@ -1,5 +1,6 @@
 import { InsertTranscript, InsertSentimentAnalysis, InsertCallAnalysis } from "@shared/schema";
 import type { CallAnalysis } from "./ai-provider";
+import { normalizeStringArray } from "../utils";
 
 export interface AssemblyAIConfig {
   apiKey: string;
@@ -96,7 +97,11 @@ export class AssemblyAIService {
     return await response.json();
   }
 
-  async pollTranscript(transcriptId: string, maxAttempts = 60): Promise<AssemblyAIResponse> {
+  async pollTranscript(
+    transcriptId: string,
+    maxAttempts = 60,
+    onProgress?: (attempt: number, maxAttempts: number, status: string) => void,
+  ): Promise<AssemblyAIResponse> {
     for (let attempt = 0; attempt < maxAttempts; attempt++) {
       const transcript = await this.getTranscript(transcriptId);
 
@@ -106,6 +111,8 @@ export class AssemblyAIService {
       if (transcript.status === 'error') {
         throw new Error(`Transcription failed: ${transcript.error || 'Unknown error'}`);
       }
+
+      onProgress?.(attempt, maxAttempts, transcript.status);
 
       // Wait with backoff: 3s for first 10 attempts, then 5s
       const delay = attempt < 10 ? 3000 : 5000;
@@ -213,22 +220,6 @@ Evaluate the agent on: professionalism, product knowledge, empathy, problem reso
     if (performanceScore >= 9.0 && !flags.includes("exceptional_call")) {
       flags.push("exceptional_call");
     }
-
-    // Normalize array fields from AI — coerce any objects to strings
-    const normalizeStringArray = (arr: unknown): string[] => {
-      if (!Array.isArray(arr)) return [];
-      return arr.map((item: unknown) => {
-        if (typeof item === "string") return item;
-        if (item && typeof item === "object") {
-          const obj = item as Record<string, unknown>;
-          if (typeof obj.text === "string") return obj.text;
-          if (typeof obj.name === "string") return obj.name;
-          if (typeof obj.task === "string") return obj.task;
-          return JSON.stringify(item);
-        }
-        return String(item ?? "");
-      });
-    };
 
     const analysis: InsertCallAnalysis = {
       callId,

@@ -10,6 +10,7 @@ import { ErrorBoundary } from "@/components/lib/error-boundary";
 import { AudioWaveform } from "lucide-react";
 import { useWebSocket } from "@/hooks/use-websocket";
 import { AnimatePresence, motion } from "framer-motion";
+import type { AuthUser } from "@shared/schema";
 
 // Route-level code splitting — each page loads on demand
 const Dashboard = lazy(() => import("@/pages/dashboard"));
@@ -33,13 +34,6 @@ function PageLoader() {
       <AudioWaveform className="w-8 h-8 animate-spin text-primary" />
     </div>
   );
-}
-
-interface AuthUser {
-  id: string;
-  username: string;
-  name: string;
-  role: string;
 }
 
 const pageTransition = {

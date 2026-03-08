@@ -206,7 +206,7 @@ export default function ReportsPage() {
       ? `Department Report: ${selectedDepartment}`
       : "Overall Report";
 
-    lines.push("CallAnalyzer Performance Report");
+    lines.push("Observatory Performance Report");
     lines.push("===============================");
     lines.push(`Type: ${typeLabel}`);
     lines.push(`Period: ${dateRange.from} to ${dateRange.to} (${PRESET_LABELS[datePreset]})`);

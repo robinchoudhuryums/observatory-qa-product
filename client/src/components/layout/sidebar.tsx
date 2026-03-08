@@ -5,7 +5,7 @@ import { cn } from "@/lib/utils";
 import { useQuery } from "@tanstack/react-query";
 import { apiRequest, queryClient, getQueryFn } from "@/lib/queryClient";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import type { CallWithDetails, Employee, AccessRequest } from "@shared/schema";
+import type { CallWithDetails, Employee, AccessRequest, AuthUser } from "@shared/schema";
 
 type NavItem = { name: string; href: string; icon: any; section?: string; requireRole?: string[] };
 
@@ -21,13 +21,6 @@ const navigation: NavItem[] = [
   { name: "Employees", href: "/employees", icon: UserPlus, section: "Management" },
   { name: "Coaching", href: "/coaching", icon: ClipboardCheck, requireRole: ["manager", "admin"] },
 ];
-
-interface AuthUser {
-  id: string;
-  username: string;
-  name: string;
-  role: string;
-}
 
 export default function Sidebar() {
   const [location, navigate] = useLocation();
@@ -108,8 +101,8 @@ export default function Sidebar() {
               <Mic className="text-primary-foreground w-4 h-4" />
             </div>
             <div>
-              <h1 className="font-bold text-lg text-foreground">CallAnalyzer</h1>
-              <p className="text-xs text-muted-foreground">Pro Dashboard</p>
+              <h1 className="font-bold text-lg text-foreground">Observatory</h1>
+              <p className="text-xs text-muted-foreground">QA Dashboard</p>
             </div>
           </div>
           <button

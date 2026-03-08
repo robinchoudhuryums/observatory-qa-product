@@ -9,8 +9,9 @@
  */
 
 export interface AuditEntry {
-  timestamp: string;
+  timestamp?: string;
   event: string;
+  orgId?: string;
   userId?: string;
   username?: string;
   role?: string;
@@ -21,22 +22,23 @@ export interface AuditEntry {
   detail?: string;
 }
 
-const AUDIT_PREFIX = "[HIPAA_AUDIT]";
+import { logger } from "../logger";
 
 export function logPhiAccess(entry: AuditEntry): void {
-  const line = {
+  logger.info({
     ...entry,
     timestamp: entry.timestamp || new Date().toISOString(),
-  };
-  console.log(`${AUDIT_PREFIX} ${JSON.stringify(line)}`);
+    _audit: "HIPAA_PHI",
+  }, `[HIPAA_AUDIT] ${entry.event}`);
 }
 
 /**
  * Helper to extract audit-relevant fields from an Express request.
  */
-export function auditContext(req: any): Pick<AuditEntry, "userId" | "username" | "role" | "ip" | "userAgent"> {
-  const user = req.user as { id?: string; username?: string; role?: string } | undefined;
+export function auditContext(req: any): Pick<AuditEntry, "orgId" | "userId" | "username" | "role" | "ip" | "userAgent"> {
+  const user = req.user as { id?: string; username?: string; role?: string; orgId?: string } | undefined;
   return {
+    orgId: user?.orgId || req.orgId,
     userId: user?.id,
     username: user?.username,
     role: user?.role,

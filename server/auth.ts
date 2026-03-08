@@ -4,8 +4,11 @@ import session from "express-session";
 import createMemoryStore from "memorystore";
 import { scrypt, randomBytes, timingSafeEqual } from "crypto";
 import { promisify } from "util";
-import type { Express, RequestHandler } from "express";
+import type { Express, Request, Response, NextFunction, RequestHandler } from "express";
 import { logPhiAccess } from "./services/audit-log";
+import { storage } from "./storage";
+import { createRedisSessionStore } from "./services/redis";
+import { logger } from "./services/logger";
 
 const scryptAsync = promisify(scrypt);
 
@@ -13,6 +16,16 @@ const scryptAsync = promisify(scrypt);
 const MAX_FAILED_ATTEMPTS = 5;
 const LOCKOUT_DURATION_MS = 15 * 60 * 1000; // 15 minutes
 const loginAttempts = new Map<string, { count: number; lastAttempt: number; lockedUntil?: number }>();
+
+// Prune expired lockout entries every 5 minutes to prevent unbounded memory growth
+setInterval(() => {
+  const now = Date.now();
+  for (const [key, record] of Array.from(loginAttempts)) {
+    // Remove entries whose lockout has expired, or that are stale (no activity for 2x lockout window)
+    const expiry = record.lockedUntil || (record.lastAttempt + LOCKOUT_DURATION_MS * 2);
+    if (now > expiry) loginAttempts.delete(key);
+  }
+}, 5 * 60 * 1000).unref();
 
 function isAccountLocked(username: string): boolean {
   const record = loginAttempts.get(username);
@@ -42,8 +55,9 @@ function clearFailedAttempts(username: string): void {
 
 /**
  * Users are defined via the AUTH_USERS environment variable.
- * Format: username:password:role:displayName (comma-separated for multiple users)
- * Example: admin:SecurePass123!:admin:Admin User,viewer:ViewerPass456:viewer:Jane Doe
+ * Format: username:password:role:displayName:orgSlug (comma-separated for multiple users)
+ * The orgSlug field maps to an organization's slug. If omitted, defaults to DEFAULT_ORG_SLUG env var or "default".
+ * Example: admin:SecurePass123!:admin:Admin User:ums,viewer:ViewerPass456:viewer:Jane Doe:ums
  */
 
 interface EnvUser {
@@ -52,6 +66,8 @@ interface EnvUser {
   passwordHash: string;
   name: string;
   role: string;
+  orgSlug: string;
+  orgId?: string; // Resolved at runtime from orgSlug → org record
 }
 
 // In-memory store of hashed user credentials parsed from env vars
@@ -77,6 +93,7 @@ async function loadUsersFromEnv(): Promise<void> {
     return;
   }
 
+  const defaultOrgSlug = process.env.DEFAULT_ORG_SLUG || "default";
   const userEntries = authUsersRaw.split(",").map((s) => s.trim()).filter(Boolean);
 
   for (const entry of userEntries) {
@@ -86,19 +103,53 @@ async function loadUsersFromEnv(): Promise<void> {
       continue;
     }
 
-    const [username, password, role = "viewer", ...nameParts] = parts;
-    const displayName = nameParts.length > 0 ? nameParts.join(":") : username;
+    // Format: username:password:role:displayName:orgSlug
+    const [username, password, role = "viewer", displayName, orgSlug] = parts;
+    const name = displayName || username;
+    const userOrgSlug = orgSlug || defaultOrgSlug;
 
     const passwordHash = await hashPassword(password);
     envUsers.push({
       id: randomBytes(8).toString("hex"),
       username,
       passwordHash,
-      name: displayName,
+      name,
       role,
+      orgSlug: userOrgSlug,
     });
 
-    console.log(`Loaded user from AUTH_USERS: ${username} (${role})`);
+    console.log(`Loaded user from AUTH_USERS: ${username} (${role}, org: ${userOrgSlug})`);
+  }
+}
+
+/**
+ * Resolve orgSlug → orgId for all loaded env users.
+ * Called after storage is initialized so we can look up org records.
+ * If an org doesn't exist yet, it will be auto-created (for backward compat).
+ */
+async function resolveUserOrgIds(): Promise<void> {
+  const resolvedSlugs = new Map<string, string>(); // slug → orgId cache
+
+  for (const user of envUsers) {
+    if (resolvedSlugs.has(user.orgSlug)) {
+      user.orgId = resolvedSlugs.get(user.orgSlug);
+      continue;
+    }
+
+    let org = await storage.getOrganizationBySlug(user.orgSlug);
+    if (!org) {
+      // Auto-create org for backward compatibility (single-tenant migration)
+      console.log(`[AUTH] Auto-creating organization for slug "${user.orgSlug}"`);
+      org = await storage.createOrganization({
+        name: user.orgSlug === "default" ? "Default Organization" : user.orgSlug,
+        slug: user.orgSlug,
+        status: "active",
+      });
+    }
+
+    user.orgId = org.id;
+    resolvedSlugs.set(user.orgSlug, org.id);
+    console.log(`[AUTH] Resolved org slug "${user.orgSlug}" → orgId "${org.id}"`);
   }
 }
 
@@ -110,6 +161,12 @@ declare global {
       username: string;
       name: string;
       role: string;
+      orgId: string;
+      orgSlug: string;
+    }
+    interface Request {
+      /** Organization ID extracted from authenticated user session */
+      orgId?: string;
     }
   }
 }
@@ -120,27 +177,41 @@ export let sessionMiddleware: RequestHandler;
 export async function setupAuth(app: Express) {
   // Load users from environment variables on startup
   await loadUsersFromEnv();
+  // Resolve org slugs to org IDs (auto-creates orgs if needed)
+  await resolveUserOrgIds();
 
   // HIPAA: Session configuration with proper memory store and idle timeout
   const sessionSecret = process.env.SESSION_SECRET || randomBytes(32).toString("hex");
   if (!process.env.SESSION_SECRET) {
-    console.warn("SESSION_SECRET not set - using random secret (sessions will not persist across restarts)");
+    const msg = "SESSION_SECRET not set - using random secret (sessions will not persist across restarts)";
+    if (process.env.NODE_ENV === "production") {
+      logger.error(msg + " — THIS IS A SECURITY RISK IN PRODUCTION. Set SESSION_SECRET env var.");
+    } else {
+      logger.warn(msg);
+    }
   }
-
-  // Use MemoryStore to prevent memory leaks and support session expiry
-  const MemoryStore = createMemoryStore(session);
 
   // HIPAA: 15-minute idle timeout (addressable requirement, standard in healthcare)
   const SESSION_IDLE_TIMEOUT_MS = 15 * 60 * 1000; // 15 minutes
-  const SESSION_ABSOLUTE_MAX_MS = 8 * 60 * 60 * 1000; // 8 hours absolute max
+
+  // Prefer Redis session store (distributed, survives restarts)
+  // Falls back to MemoryStore if Redis unavailable
+  const redisStore = createRedisSessionStore(session);
+  let sessionStore: session.Store;
+  if (redisStore) {
+    sessionStore = redisStore;
+    logger.info("Using Redis session store (distributed, persistent)");
+  } else {
+    const MemoryStore = createMemoryStore(session);
+    sessionStore = new MemoryStore({ checkPeriod: 60 * 1000 });
+    logger.info("Using in-memory session store (non-persistent)");
+  }
 
   sessionMiddleware = session({
     secret: sessionSecret,
     resave: false,
     saveUninitialized: false,
-    store: new MemoryStore({
-      checkPeriod: 60 * 1000, // Prune expired entries every minute
-    }),
+    store: sessionStore,
     cookie: {
       secure: process.env.NODE_ENV === "production" && !process.env.DISABLE_SECURE_COOKIE,
       httpOnly: true,
@@ -163,7 +234,7 @@ export async function setupAuth(app: Express) {
         // HIPAA: Check account lockout before attempting authentication
         if (isAccountLocked(username)) {
           logPhiAccess({
-            timestamp: new Date().toISOString(),
+
             event: "login_locked",
             username,
             resourceType: "auth",
@@ -176,7 +247,7 @@ export async function setupAuth(app: Express) {
         if (!user) {
           recordFailedAttempt(username);
           logPhiAccess({
-            timestamp: new Date().toISOString(),
+
             event: "login_failed",
             username,
             resourceType: "auth",
@@ -187,7 +258,7 @@ export async function setupAuth(app: Express) {
         if (!isValid) {
           recordFailedAttempt(username);
           logPhiAccess({
-            timestamp: new Date().toISOString(),
+
             event: "login_failed",
             username,
             resourceType: "auth",
@@ -196,18 +267,21 @@ export async function setupAuth(app: Express) {
         }
         clearFailedAttempts(username);
         logPhiAccess({
-          timestamp: new Date().toISOString(),
           event: "login_success",
+          orgId: user.orgId,
           userId: user.id,
           username: user.username,
           role: user.role,
           resourceType: "auth",
+          detail: `org: ${user.orgSlug}`,
         });
         return done(null, {
           id: user.id,
           username: user.username,
           name: user.name,
           role: user.role,
+          orgId: user.orgId!,
+          orgSlug: user.orgSlug,
         });
       } catch (err) {
         return done(err);
@@ -231,6 +305,8 @@ export async function setupAuth(app: Express) {
       username: user.username,
       name: user.name,
       role: user.role,
+      orgId: user.orgId!,
+      orgSlug: user.orgSlug,
     });
   });
 }
@@ -265,3 +341,25 @@ export function requireRole(...allowedRoles: string[]): RequestHandler {
     return res.status(403).json({ message: "Insufficient permissions" });
   };
 }
+
+/**
+ * Middleware that extracts orgId from the authenticated user's session
+ * and sets it on req.orgId for use by route handlers.
+ * Must be used AFTER requireAuth.
+ */
+/**
+ * Look up a loaded env user by their session ID and return their orgId.
+ * Used by WebSocket upgrade handler to resolve org context from session.
+ */
+export function resolveUserOrgId(userId: string): string | undefined {
+  const user = envUsers.find((u) => u.id === userId);
+  return user?.orgId;
+}
+
+export const injectOrgContext: RequestHandler = (req: Request, res: Response, next: NextFunction) => {
+  if (!req.user?.orgId) {
+    return res.status(401).json({ message: "No organization context in session" });
+  }
+  req.orgId = req.user.orgId;
+  next();
+};

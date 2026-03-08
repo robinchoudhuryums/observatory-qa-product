@@ -29,8 +29,11 @@ export class BedrockProvider implements AIAnalysisProvider {
   private credentials: AwsCredentials | null = null;
   private model: string;
 
-  constructor() {
-    this.model = process.env.BEDROCK_MODEL || DEFAULT_MODEL;
+  /**
+   * @param modelOverride - Per-org model override (from OrgSettings.bedrockModel)
+   */
+  constructor(modelOverride?: string) {
+    this.model = modelOverride || process.env.BEDROCK_MODEL || DEFAULT_MODEL;
 
     if (process.env.AWS_ACCESS_KEY_ID && process.env.AWS_SECRET_ACCESS_KEY) {
       this.credentials = {

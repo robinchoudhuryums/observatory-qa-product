@@ -9,14 +9,11 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { UserPlus, Users, Upload, ChevronDown, ChevronRight, Pencil, Eye, GitCompare } from "lucide-react";
 import { Link } from "wouter";
-import { POWER_MOBILITY_SUBTEAMS } from "@shared/schema";
+import { DEFAULT_SUBTEAMS } from "@shared/schema";
 import type { Employee } from "@shared/schema";
 
-// Departments that use sub-teams
-const DEPARTMENTS_WITH_SUBTEAMS: Record<string, readonly string[]> = {
-  "Intake - Power Mobility": POWER_MOBILITY_SUBTEAMS,
-  "Power Mobility": POWER_MOBILITY_SUBTEAMS,
-};
+// Departments that use sub-teams (uses shared defaults; org-specific overrides come from org settings)
+const DEPARTMENTS_WITH_SUBTEAMS: Record<string, readonly string[]> = DEFAULT_SUBTEAMS;
 
 interface DepartmentGroup {
   department: string;
@@ -263,8 +260,8 @@ export default function EmployeesPage() {
       ? (nameParts[0][0] + nameParts[nameParts.length - 1][0]).toUpperCase()
       : trimmedName.slice(0, 2).toUpperCase();
 
-    // Auto-generate email from name for backend storage
-    const autoEmail = `${trimmedName.toLowerCase().replace(/\s+/g, ".")}@company.com`;
+    // Auto-generate placeholder email from name (server may override domain from org settings)
+    const autoEmail = `${trimmedName.toLowerCase().replace(/\s+/g, ".")}@placeholder.local`;
 
     createMutation.mutate({
       name: trimmedName,

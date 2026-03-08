@@ -2,15 +2,17 @@ import express, { type Request, Response, NextFunction } from "express";
 import { registerRoutes } from "./routes";
 import { setupVite, serveStatic, log } from "./vite";
 import { setupAuth } from "./auth";
-import { storage } from "./storage";
+import { storage, initPostgresStorage } from "./storage";
 import { setupWebSocket } from "./services/websocket";
-import crypto from "crypto";
+import { logger } from "./services/logger";
+import { initRedis, checkRateLimit, closeRedis } from "./services/redis";
+import { initQueues, enqueueRetention, closeQueues } from "./services/queue";
 
 const app = express();
 
-// HIPAA: Simple rate limiter for sensitive endpoints (login, search)
+// --- In-memory rate limiter (fallback when Redis unavailable) ---
 const rateLimitMap = new Map<string, { count: number; resetTime: number }>();
-function rateLimit(windowMs: number, maxRequests: number) {
+function inMemoryRateLimit(windowMs: number, maxRequests: number) {
   return (req: Request, res: Response, next: NextFunction) => {
     const key = `${req.ip}:${req.path}`;
     const now = Date.now();
@@ -26,7 +28,33 @@ function rateLimit(windowMs: number, maxRequests: number) {
     return next();
   };
 }
-// Clean up expired rate limit entries every 5 minutes
+
+// --- Distributed rate limiter (Redis-backed when available) ---
+let redisAvailable = false;
+
+function distributedRateLimit(windowMs: number, maxRequests: number) {
+  return async (req: Request, res: Response, next: NextFunction) => {
+    if (!redisAvailable) {
+      // Fall back to in-memory
+      return inMemoryRateLimit(windowMs, maxRequests)(req, res, next);
+    }
+
+    const key = `${req.ip}:${req.path}`;
+    try {
+      const result = await checkRateLimit(key, windowMs, maxRequests);
+      if (!result.allowed) {
+        res.setHeader("Retry-After", Math.ceil(result.resetMs / 1000).toString());
+        return res.status(429).json({ message: "Too many requests. Please try again later." });
+      }
+      return next();
+    } catch {
+      // Redis error — fall through to allow the request
+      return next();
+    }
+  };
+}
+
+// Clean up expired in-memory rate limit entries every 5 minutes
 setInterval(() => {
   const now = Date.now();
   rateLimitMap.forEach((entry, key) => {
@@ -66,7 +94,7 @@ app.use((req, res, next) => {
   res.setHeader('Permissions-Policy', 'camera=(), microphone=(), geolocation=()');
   // CSP: restrict resource loading to same-origin and trusted CDNs
   res.setHeader('Content-Security-Policy',
-    "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data: blob:; media-src 'self' blob:; connect-src 'self'; frame-ancestors 'none';"
+    "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data: blob:; media-src 'self' blob:; connect-src 'self' wss:; frame-ancestors 'none';"
   );
   // Only set no-cache on API routes — static assets need caching for performance
   if (req.path.startsWith("/api")) {
@@ -86,8 +114,16 @@ app.use((req, res, next) => {
     if (path.startsWith("/api")) {
       const user = req.user;
       const userId = user ? `${user.username}(${user.role})` : "anonymous";
-      const logLine = `[AUDIT] ${new Date().toISOString()} ${userId} ${req.method} ${path} ${res.statusCode} ${duration}ms`;
-      log(logLine);
+      const orgSlug = user?.orgSlug || "-";
+      logger.info({
+        type: "audit",
+        org: orgSlug,
+        user: userId,
+        method: req.method,
+        path,
+        status: res.statusCode,
+        durationMs: duration,
+      }, `${req.method} ${path} ${res.statusCode}`);
     }
   });
 
@@ -95,9 +131,30 @@ app.use((req, res, next) => {
 });
 
 // HIPAA: Rate limiting on login endpoint (5 attempts per 15 minutes per IP)
-app.post("/api/auth/login", rateLimit(15 * 60 * 1000, 5));
+app.post("/api/auth/login", distributedRateLimit(15 * 60 * 1000, 5) as any);
 
 (async () => {
+  // --- Infrastructure initialization ---
+
+  // 1. Initialize Redis (sessions, rate limiting, pub/sub, queue backend)
+  const redis = initRedis();
+  redisAvailable = redis !== null;
+  if (redisAvailable) {
+    logger.info("Redis available — using distributed sessions, rate limiting, and job queues");
+  }
+
+  // 2. Initialize PostgreSQL storage if configured
+  const pgInitialized = await initPostgresStorage();
+  if (pgInitialized) {
+    logger.info("PostgreSQL storage backend active");
+  }
+
+  // 3. Initialize BullMQ job queues
+  const queuesReady = initQueues();
+  if (queuesReady) {
+    logger.info("BullMQ job queues active");
+  }
+
   // Authentication (must come before routes) - async to hash env var passwords on startup
   await setupAuth(app);
 
@@ -109,7 +166,7 @@ app.post("/api/auth/login", rateLimit(15 * 60 * 1000, 5));
 
     res.status(status).json({ message });
     if (status >= 500) {
-      console.error(`[ERROR] ${status}: ${message}`);
+      logger.error({ status }, message);
     }
   });
 
@@ -138,22 +195,56 @@ app.post("/api/auth/login", rateLimit(15 * 60 * 1000, 5));
     setupWebSocket(server);
 
     // HIPAA: Data retention — purge calls older than configured days
-    // Default 90 days, configurable via RETENTION_DAYS env var
-    const retentionDays = parseInt(process.env.RETENTION_DAYS || "90", 10);
+    // Runs across all organizations; uses per-org retentionDays from settings (falls back to env/default 90)
+    const defaultRetentionDays = parseInt(process.env.RETENTION_DAYS || "90", 10);
     const runRetention = async () => {
       try {
-        const purged = await storage.purgeExpiredCalls(retentionDays);
-        if (purged > 0) {
-          log(`[RETENTION] Purged ${purged} call(s) older than ${retentionDays} days`);
+        const currentStorage = (await import("./storage")).storage;
+        const orgs = await currentStorage.listOrganizations();
+        let totalPurged = 0;
+        for (const org of orgs) {
+          const orgRetention = org.settings?.retentionDays ?? defaultRetentionDays;
+
+          // Use job queue if available (non-blocking, durable)
+          if (queuesReady) {
+            await enqueueRetention(org.id, orgRetention);
+          } else {
+            // Fallback: run inline
+            const purged = await currentStorage.purgeExpiredCalls(org.id, orgRetention);
+            if (purged > 0) {
+              logger.info({ org: org.slug, purged, retentionDays: orgRetention }, "Retention purge completed");
+              totalPurged += purged;
+            }
+          }
+        }
+        if (!queuesReady && totalPurged > 0) {
+          logger.info({ totalPurged }, "Retention purge complete across all orgs");
         }
       } catch (error) {
-        console.error("[RETENTION] Error during purge:", error);
+        logger.error({ err: error }, "Error during retention purge");
       }
     };
 
-    // Run once on startup (after 30s delay to let GCS auth settle)
+    // Run once on startup (after 30s delay to let auth settle)
     setTimeout(runRetention, 30_000);
     // Then run daily (every 24 hours)
     setInterval(runRetention, 24 * 60 * 60 * 1000);
   });
+
+  // Graceful shutdown
+  const shutdown = async () => {
+    logger.info("Shutting down...");
+    await Promise.all([
+      closeQueues(),
+      closeRedis(),
+    ]);
+    // Close DB if PostgreSQL was initialized
+    if (pgInitialized) {
+      const { closeDatabase } = await import("./db/index");
+      await closeDatabase();
+    }
+    process.exit(0);
+  };
+  process.on("SIGTERM", shutdown);
+  process.on("SIGINT", shutdown);
 })();

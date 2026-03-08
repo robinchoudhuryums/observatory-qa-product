@@ -92,7 +92,7 @@ export default function AuthPage({ onLogin }: AuthPageProps) {
                 <AudioWaveform className="w-6 h-6 text-primary" />
               </div>
             </div>
-            <CardTitle className="text-2xl">CallAnalyzer</CardTitle>
+            <CardTitle className="text-2xl">Observatory</CardTitle>
             <CardDescription>
               {view === "login"
                 ? "Sign in to access the call analysis dashboard"
