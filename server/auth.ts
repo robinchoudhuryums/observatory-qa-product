@@ -245,6 +245,7 @@ export async function setupAuth(app: Express) {
         logPhiAccess({
           timestamp: new Date().toISOString(),
           event: "login_success",
+          orgId: user.orgId,
           userId: user.id,
           username: user.username,
           role: user.role,

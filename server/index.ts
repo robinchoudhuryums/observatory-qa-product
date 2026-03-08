@@ -86,7 +86,8 @@ app.use((req, res, next) => {
     if (path.startsWith("/api")) {
       const user = req.user;
       const userId = user ? `${user.username}(${user.role})` : "anonymous";
-      const logLine = `[AUDIT] ${new Date().toISOString()} ${userId} ${req.method} ${path} ${res.statusCode} ${duration}ms`;
+      const orgSlug = user?.orgSlug || "-";
+      const logLine = `[AUDIT] ${new Date().toISOString()} org:${orgSlug} ${userId} ${req.method} ${path} ${res.statusCode} ${duration}ms`;
       log(logLine);
     }
   });

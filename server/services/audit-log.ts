@@ -11,6 +11,7 @@
 export interface AuditEntry {
   timestamp: string;
   event: string;
+  orgId?: string;
   userId?: string;
   username?: string;
   role?: string;
@@ -34,9 +35,10 @@ export function logPhiAccess(entry: AuditEntry): void {
 /**
  * Helper to extract audit-relevant fields from an Express request.
  */
-export function auditContext(req: any): Pick<AuditEntry, "userId" | "username" | "role" | "ip" | "userAgent"> {
-  const user = req.user as { id?: string; username?: string; role?: string } | undefined;
+export function auditContext(req: any): Pick<AuditEntry, "orgId" | "userId" | "username" | "role" | "ip" | "userAgent"> {
+  const user = req.user as { id?: string; username?: string; role?: string; orgId?: string } | undefined;
   return {
+    orgId: user?.orgId || req.orgId,
     userId: user?.id,
     username: user?.username,
     role: user?.role,
