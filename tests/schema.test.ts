@@ -10,6 +10,13 @@ import {
   insertAccessRequestSchema,
   insertUserSchema,
   insertEmployeeSchema,
+  insertOrganizationSchema,
+  organizationSchema,
+  orgSettingsSchema,
+  insertCallSchema,
+  insertTranscriptSchema,
+  insertSentimentAnalysisSchema,
+  insertPromptTemplateSchema,
 } from "../shared/schema.js";
 
 describe("insertCallAnalysisSchema", () => {
@@ -202,5 +209,243 @@ describe("insertEmployeeSchema", () => {
     });
     assert.ok(result.success);
     assert.equal(result.data.status, "Inactive");
+  });
+
+  it("accepts optional orgId", () => {
+    const result = insertEmployeeSchema.safeParse({
+      name: "Jane Smith",
+      email: "jane@acme.com",
+      orgId: "org-123",
+    });
+    assert.ok(result.success);
+    assert.equal(result.data.orgId, "org-123");
+  });
+
+  it("accepts without orgId (backward compat)", () => {
+    const result = insertEmployeeSchema.safeParse({
+      name: "Jane Smith",
+      email: "jane@acme.com",
+    });
+    assert.ok(result.success);
+    assert.equal(result.data.orgId, undefined);
+  });
+});
+
+// --- ORGANIZATION SCHEMA TESTS ---
+describe("insertOrganizationSchema", () => {
+  it("accepts valid organization with all settings", () => {
+    const result = insertOrganizationSchema.safeParse({
+      name: "Acme Medical Supplies",
+      slug: "acme-medical",
+      settings: {
+        emailDomain: "acme.com",
+        departments: ["Sales", "Support", "Billing"],
+        subTeams: { "Support": ["Tier 1", "Tier 2", "Escalations"] },
+        callCategories: ["inbound", "outbound"],
+        callPartyTypes: ["customer", "vendor"],
+        retentionDays: 180,
+        branding: { appName: "AcmeQA", logoUrl: "https://acme.com/logo.png" },
+        aiProvider: "bedrock",
+      },
+      status: "active",
+    });
+    assert.ok(result.success, `Parse failed: ${JSON.stringify(result.error?.issues)}`);
+  });
+
+  it("accepts minimal organization (name + slug only)", () => {
+    const result = insertOrganizationSchema.safeParse({
+      name: "Test Org",
+      slug: "test-org",
+    });
+    assert.ok(result.success);
+    assert.equal(result.data.status, "active"); // default
+  });
+
+  it("rejects empty name", () => {
+    const result = insertOrganizationSchema.safeParse({
+      name: "",
+      slug: "test",
+    });
+    assert.ok(!result.success);
+  });
+
+  it("rejects invalid slug (uppercase)", () => {
+    const result = insertOrganizationSchema.safeParse({
+      name: "Test",
+      slug: "TestOrg",
+    });
+    assert.ok(!result.success);
+  });
+
+  it("rejects invalid slug (spaces)", () => {
+    const result = insertOrganizationSchema.safeParse({
+      name: "Test",
+      slug: "test org",
+    });
+    assert.ok(!result.success);
+  });
+
+  it("accepts slug with hyphens and numbers", () => {
+    const result = insertOrganizationSchema.safeParse({
+      name: "Test Org 2",
+      slug: "test-org-2",
+    });
+    assert.ok(result.success);
+  });
+
+  it("validates status enum", () => {
+    const result = insertOrganizationSchema.safeParse({
+      name: "Test",
+      slug: "test",
+      status: "invalid",
+    });
+    assert.ok(!result.success);
+  });
+
+  it("accepts trial status", () => {
+    const result = insertOrganizationSchema.safeParse({
+      name: "Trial Org",
+      slug: "trial-org",
+      status: "trial",
+    });
+    assert.ok(result.success);
+    assert.equal(result.data.status, "trial");
+  });
+});
+
+describe("organizationSchema (full entity)", () => {
+  it("requires id on full entity", () => {
+    const result = organizationSchema.safeParse({
+      name: "Test",
+      slug: "test",
+    });
+    assert.ok(!result.success); // missing id
+  });
+
+  it("accepts full entity with id", () => {
+    const result = organizationSchema.safeParse({
+      id: "org-abc",
+      name: "Test Org",
+      slug: "test-org",
+      createdAt: "2026-01-01T00:00:00Z",
+    });
+    assert.ok(result.success);
+  });
+});
+
+describe("orgSettingsSchema", () => {
+  it("defaults retentionDays to 90", () => {
+    const result = orgSettingsSchema.safeParse({});
+    assert.ok(result.success);
+    assert.equal(result.data.retentionDays, 90);
+  });
+
+  it("validates aiProvider enum", () => {
+    const valid = orgSettingsSchema.safeParse({ aiProvider: "bedrock" });
+    assert.ok(valid.success);
+
+    const invalid = orgSettingsSchema.safeParse({ aiProvider: "openai" });
+    assert.ok(!invalid.success);
+  });
+
+  it("accepts branding with default appName", () => {
+    const result = orgSettingsSchema.safeParse({
+      branding: {},
+    });
+    assert.ok(result.success);
+    assert.equal(result.data.branding?.appName, "Observatory");
+  });
+});
+
+// --- orgId FIELD TESTS (cross-schema) ---
+describe("orgId field across insert schemas", () => {
+  it("insertCallSchema accepts orgId", () => {
+    const result = insertCallSchema.safeParse({
+      orgId: "org-1",
+      status: "pending",
+    });
+    assert.ok(result.success);
+    assert.equal(result.data.orgId, "org-1");
+  });
+
+  it("insertCallAnalysisSchema accepts orgId", () => {
+    const result = insertCallAnalysisSchema.safeParse({
+      orgId: "org-1",
+      callId: "call-1",
+    });
+    assert.ok(result.success);
+    assert.equal(result.data.orgId, "org-1");
+  });
+
+  it("insertTranscriptSchema accepts orgId", () => {
+    const result = insertTranscriptSchema.safeParse({
+      orgId: "org-1",
+      callId: "call-1",
+    });
+    assert.ok(result.success);
+  });
+
+  it("insertSentimentAnalysisSchema accepts orgId", () => {
+    const result = insertSentimentAnalysisSchema.safeParse({
+      orgId: "org-1",
+      callId: "call-1",
+    });
+    assert.ok(result.success);
+  });
+
+  it("insertCoachingSessionSchema accepts orgId", () => {
+    const result = insertCoachingSessionSchema.safeParse({
+      orgId: "org-1",
+      employeeId: "emp-1",
+      assignedBy: "mgr-1",
+      title: "Test",
+    });
+    assert.ok(result.success);
+  });
+
+  it("insertAccessRequestSchema accepts orgId", () => {
+    const result = insertAccessRequestSchema.safeParse({
+      orgId: "org-1",
+      name: "John",
+      email: "john@example.com",
+    });
+    assert.ok(result.success);
+  });
+
+  it("insertPromptTemplateSchema accepts orgId", () => {
+    const result = insertPromptTemplateSchema.safeParse({
+      orgId: "org-1",
+      callCategory: "inbound",
+      name: "Default Inbound",
+      evaluationCriteria: "Check greeting and compliance",
+    });
+    assert.ok(result.success);
+  });
+
+  it("insertUserSchema accepts orgId", () => {
+    const result = insertUserSchema.safeParse({
+      orgId: "org-1",
+      username: "testuser",
+      passwordHash: "hash",
+      name: "Test User",
+    });
+    assert.ok(result.success);
+  });
+
+  it("all insert schemas work without orgId (backward compat)", () => {
+    // Verify none of the insert schemas require orgId
+    const results = [
+      insertCallSchema.safeParse({ status: "pending" }),
+      insertCallAnalysisSchema.safeParse({ callId: "c1" }),
+      insertTranscriptSchema.safeParse({ callId: "c1" }),
+      insertSentimentAnalysisSchema.safeParse({ callId: "c1" }),
+      insertCoachingSessionSchema.safeParse({ employeeId: "e1", assignedBy: "m1", title: "T" }),
+      insertAccessRequestSchema.safeParse({ name: "J", email: "j@x.com" }),
+      insertUserSchema.safeParse({ username: "u", passwordHash: "h", name: "N" }),
+      insertEmployeeSchema.safeParse({ name: "E", email: "e@x.com" }),
+    ];
+    results.forEach((r, i) => {
+      assert.ok(r.success, `Insert schema ${i} failed without orgId: ${JSON.stringify(r.error?.issues)}`);
+    });
   });
 });

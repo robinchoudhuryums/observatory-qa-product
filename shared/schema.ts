@@ -1,7 +1,37 @@
 import { z } from "zod";
 
+// --- ORGANIZATION SCHEMAS ---
+export const orgBrandingSchema = z.object({
+  appName: z.string().default("Observatory"),
+  logoUrl: z.string().optional(),
+});
+
+export const orgSettingsSchema = z.object({
+  emailDomain: z.string().optional(),
+  departments: z.array(z.string()).optional(),
+  subTeams: z.record(z.string(), z.array(z.string())).optional(),
+  callCategories: z.array(z.string()).optional(),
+  callPartyTypes: z.array(z.string()).optional(),
+  retentionDays: z.number().default(90),
+  branding: orgBrandingSchema.optional(),
+  aiProvider: z.enum(["bedrock", "gemini"]).optional(),
+});
+
+export const insertOrganizationSchema = z.object({
+  name: z.string().min(1),
+  slug: z.string().min(1).regex(/^[a-z0-9-]+$/, "Slug must be lowercase alphanumeric with hyphens"),
+  settings: orgSettingsSchema.optional(),
+  status: z.enum(["active", "suspended", "trial"]).default("active"),
+});
+
+export const organizationSchema = insertOrganizationSchema.extend({
+  id: z.string(),
+  createdAt: z.string().optional(),
+});
+
 // --- USER SCHEMAS ---
 export const insertUserSchema = z.object({
+  orgId: z.string().optional(),
   username: z.string(),
   passwordHash: z.string(),
   name: z.string(),
@@ -10,11 +40,13 @@ export const insertUserSchema = z.object({
 
 export const userSchema = insertUserSchema.extend({
   id: z.string(),
+  orgId: z.string(),
   createdAt: z.string().optional(),
 });
 
 // --- EMPLOYEE SCHEMAS ---
 export const insertEmployeeSchema = z.object({
+  orgId: z.string().optional(),
   name: z.string(),
   role: z.string().optional(),
   email: z.string(),
@@ -25,21 +57,28 @@ export const insertEmployeeSchema = z.object({
 
 export const employeeSchema = insertEmployeeSchema.extend({
   id: z.string(),
+  orgId: z.string(),
   createdAt: z.string().optional(),
 });
 
-// --- POWER MOBILITY SUB-TEAMS (in chronological process order) ---
-export const POWER_MOBILITY_SUBTEAMS = [
-  "PPD",
-  "MA Education",
-  "Appt Scheduling",
-  "PT Education",
-  "Appt Passed",
-  "PT Eval",
-  "MDO Follow-Up",
-  "Medical Review",
-  "Prior Authorization",
-] as const;
+// --- DEFAULT SUB-TEAMS (originally UMS Power Mobility, now used as defaults) ---
+// Organizations can override these via org settings (orgSettings.subTeams)
+export const DEFAULT_SUBTEAMS: Record<string, readonly string[]> = {
+  "Intake - Power Mobility": [
+    "PPD",
+    "MA Education",
+    "Appt Scheduling",
+    "PT Education",
+    "Appt Passed",
+    "PT Eval",
+    "MDO Follow-Up",
+    "Medical Review",
+    "Prior Authorization",
+  ],
+};
+
+/** @deprecated Use org settings subTeams instead. Kept for backward compatibility. */
+export const POWER_MOBILITY_SUBTEAMS = DEFAULT_SUBTEAMS["Intake - Power Mobility"]!;
 
 // --- CALL CATEGORY ---
 export const CALL_CATEGORIES = [
@@ -53,6 +92,7 @@ export type CallCategory = typeof CALL_CATEGORIES[number]["value"];
 
 // --- CALL SCHEMAS ---
 export const insertCallSchema = z.object({
+  orgId: z.string().optional(),
   employeeId: z.string().optional(),
   fileName: z.string().optional(),
   filePath: z.string().optional(),
@@ -64,11 +104,13 @@ export const insertCallSchema = z.object({
 
 export const callSchema = insertCallSchema.extend({
   id: z.string(),
+  orgId: z.string(),
   uploadedAt: z.string().optional(),
 });
 
 // --- TRANSCRIPT SCHEMAS ---
 export const insertTranscriptSchema = z.object({
+  orgId: z.string().optional(),
   callId: z.string(),
   text: z.string().optional(),
   confidence: z.string().optional(),
@@ -77,11 +119,13 @@ export const insertTranscriptSchema = z.object({
 
 export const transcriptSchema = insertTranscriptSchema.extend({
   id: z.string(),
+  orgId: z.string(),
   createdAt: z.string().optional(),
 });
 
 // --- SENTIMENT ANALYSIS SCHEMAS ---
 export const insertSentimentAnalysisSchema = z.object({
+  orgId: z.string().optional(),
   callId: z.string(),
   overallSentiment: z.string().optional(),
   overallScore: z.string().optional(),
@@ -90,11 +134,13 @@ export const insertSentimentAnalysisSchema = z.object({
 
 export const sentimentAnalysisSchema = insertSentimentAnalysisSchema.extend({
   id: z.string(),
+  orgId: z.string(),
   createdAt: z.string().optional(),
 });
 
 // --- CALL ANALYSIS SCHEMAS ---
 export const insertCallAnalysisSchema = z.object({
+  orgId: z.string().optional(),
   callId: z.string(),
   performanceScore: z.string().optional(),
   talkTimeRatio: z.string().optional(),
@@ -121,10 +167,16 @@ export const insertCallAnalysisSchema = z.object({
 
 export const callAnalysisSchema = insertCallAnalysisSchema.extend({
   id: z.string(),
+  orgId: z.string(),
   createdAt: z.string().optional(),
 });
 
 // --- TYPES ---
+export type InsertOrganization = z.infer<typeof insertOrganizationSchema>;
+export type Organization = z.infer<typeof organizationSchema>;
+export type OrgSettings = z.infer<typeof orgSettingsSchema>;
+export type OrgBranding = z.infer<typeof orgBrandingSchema>;
+
 export type InsertUser = z.infer<typeof insertUserSchema>;
 export type User = z.infer<typeof userSchema>;
 
@@ -145,6 +197,7 @@ export type CallAnalysis = z.infer<typeof callAnalysisSchema>;
 
 // --- ACCESS REQUEST SCHEMAS ---
 export const insertAccessRequestSchema = z.object({
+  orgId: z.string().optional(),
   name: z.string().min(1),
   email: z.string().email(),
   reason: z.string().optional(),
@@ -153,6 +206,7 @@ export const insertAccessRequestSchema = z.object({
 
 export const accessRequestSchema = insertAccessRequestSchema.extend({
   id: z.string(),
+  orgId: z.string(),
   status: z.enum(["pending", "approved", "denied"]).default("pending"),
   reviewedBy: z.string().optional(),
   reviewedAt: z.string().optional(),
@@ -165,6 +219,7 @@ export type AccessRequest = z.infer<typeof accessRequestSchema>;
 // --- PROMPT TEMPLATE SCHEMAS ---
 export const promptTemplateSchema = z.object({
   id: z.string(),
+  orgId: z.string(),
   callCategory: z.string(),
   name: z.string(),
   evaluationCriteria: z.string(),
@@ -221,6 +276,7 @@ export const COACHING_CATEGORIES = [
 ] as const;
 
 export const insertCoachingSessionSchema = z.object({
+  orgId: z.string().optional(),
   employeeId: z.string(),
   callId: z.string().optional(),
   assignedBy: z.string(),
@@ -237,6 +293,7 @@ export const insertCoachingSessionSchema = z.object({
 
 export const coachingSessionSchema = insertCoachingSessionSchema.extend({
   id: z.string(),
+  orgId: z.string(),
   createdAt: z.string().optional(),
   completedAt: z.string().optional(),
 });
