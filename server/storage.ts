@@ -14,6 +14,7 @@ import {
   type CallWithDetails,
   type DashboardMetrics,
   type SentimentDistribution,
+  type TopPerformer,
   type AccessRequest,
   type InsertAccessRequest,
   type PromptTemplate,
@@ -26,6 +27,25 @@ import {
 import { GcsClient } from "./services/gcs";
 import { S3Client } from "./services/s3";
 import { randomUUID } from "crypto";
+
+/**
+ * Run async tasks with bounded concurrency.
+ * Avoids overwhelming S3/GCS with hundreds of simultaneous requests.
+ */
+async function mapConcurrent<T, R>(items: T[], concurrency: number, fn: (item: T) => Promise<R>): Promise<R[]> {
+  const results: R[] = new Array(items.length);
+  let index = 0;
+
+  async function worker() {
+    while (index < items.length) {
+      const i = index++;
+      results[i] = await fn(items[i]);
+    }
+  }
+
+  await Promise.all(Array.from({ length: Math.min(concurrency, items.length) }, () => worker()));
+  return results;
+}
 
 /**
  * Normalize a CallAnalysis for backward-compatibility with older stored data.
@@ -103,7 +123,7 @@ export interface IStorage {
   // Dashboard metrics (org-scoped)
   getDashboardMetrics(orgId: string): Promise<DashboardMetrics>;
   getSentimentDistribution(orgId: string): Promise<SentimentDistribution>;
-  getTopPerformers(orgId: string, limit?: number): Promise<any[]>;
+  getTopPerformers(orgId: string, limit?: number): Promise<TopPerformer[]>;
 
   // Search and filtering (org-scoped)
   searchCalls(orgId: string, query: string): Promise<CallWithDetails[]>;
@@ -337,7 +357,7 @@ export class MemStorage implements IStorage {
   async getSentimentDistribution(orgId: string): Promise<SentimentDistribution> {
     const distribution: SentimentDistribution = { positive: 0, neutral: 0, negative: 0 };
     const orgCallIds = new Set(Array.from(this.calls.values()).filter(c => c.orgId === orgId).map(c => c.id));
-    for (const s of this.sentiments.values()) {
+    for (const s of Array.from(this.sentiments.values())) {
       if (!orgCallIds.has(s.callId)) continue;
       const key = s.overallSentiment as keyof SentimentDistribution;
       if (key in distribution) distribution[key]++;
@@ -345,7 +365,7 @@ export class MemStorage implements IStorage {
     return distribution;
   }
 
-  async getTopPerformers(orgId: string, limit = 3): Promise<any[]> {
+  async getTopPerformers(orgId: string, limit = 3): Promise<TopPerformer[]> {
     const orgCalls = Array.from(this.calls.values()).filter(c => c.orgId === orgId);
     const employeeStats = new Map<string, { totalScore: number; callCount: number }>();
     for (const call of orgCalls) {
@@ -623,28 +643,24 @@ export class CloudStorage implements IStorage {
     console.log(`Fetching calls with details for org ${orgId}, filters:`, filters);
 
     const calls = await this.getAllCalls(orgId);
-    const results: CallWithDetails[] = [];
 
-    await Promise.all(
-      calls.map(async (call) => {
-        const [employee, transcript, sentiment, analysis] = await Promise.all([
-          call.employeeId ? this.getEmployee(orgId, call.employeeId) : Promise.resolve(undefined),
-          this.getTranscript(orgId, call.id),
-          this.getSentimentAnalysis(orgId, call.id),
-          this.getCallAnalysis(orgId, call.id),
-        ]);
+    // Use bounded concurrency to avoid overwhelming S3 with hundreds of parallel requests
+    const results = await mapConcurrent(calls, 10, async (call) => {
+      const [employee, transcript, sentiment, analysis] = await Promise.all([
+        call.employeeId ? this.getEmployee(orgId, call.employeeId) : Promise.resolve(undefined),
+        this.getTranscript(orgId, call.id),
+        this.getSentimentAnalysis(orgId, call.id),
+        this.getCallAnalysis(orgId, call.id),
+      ]);
 
-        const normalizedAnalysis = normalizeAnalysis(analysis);
-
-        results.push({
-          ...call,
-          employee,
-          transcript: transcript || undefined,
-          sentiment: sentiment || undefined,
-          analysis: normalizedAnalysis,
-        });
-      })
-    );
+      return {
+        ...call,
+        employee,
+        transcript: transcript || undefined,
+        sentiment: sentiment || undefined,
+        analysis: normalizeAnalysis(analysis),
+      } as CallWithDetails;
+    });
 
     results.sort(
       (a, b) => new Date(b.uploadedAt || 0).getTime() - new Date(a.uploadedAt || 0).getTime()
@@ -768,7 +784,7 @@ export class CloudStorage implements IStorage {
     return distribution;
   }
 
-  async getTopPerformers(orgId: string, limit = 3): Promise<any[]> {
+  async getTopPerformers(orgId: string, limit = 3): Promise<TopPerformer[]> {
     const prefix = this.orgPrefix(orgId);
     const [employees, calls, analyses] = await Promise.all([
       this.getAllEmployees(orgId),

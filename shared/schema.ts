@@ -109,12 +109,20 @@ export const callSchema = insertCallSchema.extend({
 });
 
 // --- TRANSCRIPT SCHEMAS ---
+export const transcriptWordSchema = z.object({
+  text: z.string(),
+  start: z.number(),
+  end: z.number(),
+  confidence: z.number(),
+  speaker: z.string().optional(),
+});
+
 export const insertTranscriptSchema = z.object({
   orgId: z.string().optional(),
   callId: z.string(),
   text: z.string().optional(),
   confidence: z.string().optional(),
-  words: z.any().optional(),
+  words: z.array(transcriptWordSchema).optional(),
 });
 
 export const transcriptSchema = insertTranscriptSchema.extend({
@@ -124,12 +132,20 @@ export const transcriptSchema = insertTranscriptSchema.extend({
 });
 
 // --- SENTIMENT ANALYSIS SCHEMAS ---
+export const sentimentSegmentSchema = z.object({
+  text: z.string(),
+  sentiment: z.enum(["POSITIVE", "NEUTRAL", "NEGATIVE"]),
+  confidence: z.number(),
+  start: z.number(),
+  end: z.number(),
+});
+
 export const insertSentimentAnalysisSchema = z.object({
   orgId: z.string().optional(),
   callId: z.string(),
   overallSentiment: z.string().optional(),
   overallScore: z.string().optional(),
-  segments: z.any().optional(),
+  segments: z.array(sentimentSegmentSchema).optional(),
 });
 
 export const sentimentAnalysisSchema = insertSentimentAnalysisSchema.extend({
@@ -139,23 +155,45 @@ export const sentimentAnalysisSchema = insertSentimentAnalysisSchema.extend({
 });
 
 // --- CALL ANALYSIS SCHEMAS ---
+export const analysisFeedbackSchema = z.object({
+  strengths: z.array(z.union([z.string(), z.object({ text: z.string(), timestamp: z.string().optional() })])).optional(),
+  suggestions: z.array(z.union([z.string(), z.object({ text: z.string(), timestamp: z.string().optional() })])).optional(),
+});
+
+export const manualEditSchema = z.object({
+  editedBy: z.string(),
+  editedAt: z.string(),
+  reason: z.string(),
+  fieldsChanged: z.array(z.string()),
+  previousValues: z.record(z.unknown()),
+});
+
+export const confidenceFactorsSchema = z.object({
+  transcriptConfidence: z.number(),
+  wordCount: z.number(),
+  callDurationSeconds: z.number(),
+  transcriptLength: z.number(),
+  aiAnalysisCompleted: z.boolean(),
+  overallScore: z.number(),
+});
+
 export const insertCallAnalysisSchema = z.object({
   orgId: z.string().optional(),
   callId: z.string(),
   performanceScore: z.string().optional(),
   talkTimeRatio: z.string().optional(),
   responseTime: z.string().optional(),
-  keywords: z.any().optional(),
-  topics: z.any().optional(),
+  keywords: z.array(z.string()).optional(),
+  topics: z.array(z.string()).optional(),
   summary: z.string().optional(),
-  actionItems: z.any().optional(),
-  feedback: z.any().optional(),
-  lemurResponse: z.any().optional(),
+  actionItems: z.array(z.string()).optional(),
+  feedback: analysisFeedbackSchema.optional(),
+  lemurResponse: z.unknown().optional(),
   callPartyType: z.string().optional(),
-  flags: z.any().optional(),
-  manualEdits: z.any().optional(),
+  flags: z.array(z.string()).optional(),
+  manualEdits: z.array(manualEditSchema).optional(),
   confidenceScore: z.string().optional(),
-  confidenceFactors: z.any().optional(),
+  confidenceFactors: confidenceFactorsSchema.optional(),
   subScores: z.object({
     compliance: z.number().min(0).max(10).optional(),
     customerExperience: z.number().min(0).max(10).optional(),
@@ -320,4 +358,12 @@ export type SentimentDistribution = {
   positive: number;
   neutral: number;
   negative: number;
+};
+
+export type TopPerformer = {
+  id: string;
+  name: string;
+  role?: string;
+  avgPerformanceScore: number | null;
+  totalCalls: number;
 };

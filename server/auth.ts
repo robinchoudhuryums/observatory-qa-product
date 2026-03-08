@@ -15,6 +15,16 @@ const MAX_FAILED_ATTEMPTS = 5;
 const LOCKOUT_DURATION_MS = 15 * 60 * 1000; // 15 minutes
 const loginAttempts = new Map<string, { count: number; lastAttempt: number; lockedUntil?: number }>();
 
+// Prune expired lockout entries every 5 minutes to prevent unbounded memory growth
+setInterval(() => {
+  const now = Date.now();
+  for (const [key, record] of Array.from(loginAttempts)) {
+    // Remove entries whose lockout has expired, or that are stale (no activity for 2x lockout window)
+    const expiry = record.lockedUntil || (record.lastAttempt + LOCKOUT_DURATION_MS * 2);
+    if (now > expiry) loginAttempts.delete(key);
+  }
+}, 5 * 60 * 1000).unref();
+
 function isAccountLocked(username: string): boolean {
   const record = loginAttempts.get(username);
   if (!record?.lockedUntil) return false;

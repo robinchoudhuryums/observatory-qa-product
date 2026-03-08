@@ -9,7 +9,7 @@
  */
 
 export interface AuditEntry {
-  timestamp: string;
+  timestamp?: string;
   event: string;
   orgId?: string;
   userId?: string;
