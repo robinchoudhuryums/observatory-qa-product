@@ -11,16 +11,33 @@
  */
 import pino from "pino";
 
+const isProduction = process.env.NODE_ENV === "production";
+const betterstackToken = process.env.BETTERSTACK_SOURCE_TOKEN;
+
+function buildTransport(): pino.TransportSingleOptions | pino.TransportMultiOptions | undefined {
+  if (!isProduction) {
+    return {
+      target: "pino/file",
+      options: { destination: 1 }, // stdout
+    };
+  }
+
+  if (betterstackToken) {
+    return {
+      targets: [
+        { target: "pino/file", options: { destination: 1 } },
+        { target: "@logtail/pino", options: { sourceToken: betterstackToken } },
+      ],
+    };
+  }
+
+  return undefined;
+}
+
+const transport = buildTransport();
+
 export const logger = pino({
   level: process.env.LOG_LEVEL || "info",
-  ...(process.env.NODE_ENV !== "production"
-    ? {
-        transport: {
-          target: "pino/file",
-          options: { destination: 1 }, // stdout
-        },
-      }
-    : {}),
   formatters: {
     level: (label) => ({ level: label }),
   },
@@ -29,4 +46,5 @@ export const logger = pino({
     paths: ["password", "passwordHash", "sessionSecret", "apiKey", "*.password", "*.passwordHash"],
     censor: "[REDACTED]",
   },
+  ...(transport ? { transport } : {}),
 });
