@@ -34,8 +34,7 @@ export function initRedis(): Redis | null {
         if (times > 5) return null; // Stop retrying
         return Math.min(times * 200, 2000);
       },
-      // HIPAA: TLS in production
-      tls: process.env.NODE_ENV === "production" ? {} : undefined,
+      // TLS is negotiated automatically when REDIS_URL uses the rediss:// scheme
     });
 
     redisClient.on("error", (err) => {
