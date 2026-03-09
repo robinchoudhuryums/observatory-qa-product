@@ -35,12 +35,16 @@ function buildTransport(): pino.TransportSingleOptions | pino.TransportMultiOpti
 }
 
 const transport = buildTransport();
+const isMultiTarget = transport && "targets" in transport;
 
 export const logger = pino({
   level: process.env.LOG_LEVEL || "info",
-  formatters: {
-    level: (label) => ({ level: label }),
-  },
+  // Pino disallows custom level formatters with multi-target transports
+  ...(!isMultiTarget ? {
+    formatters: {
+      level: (label: string) => ({ level: label }),
+    },
+  } : {}),
   // HIPAA: Never log sensitive fields
   redact: {
     paths: ["password", "passwordHash", "sessionSecret", "apiKey", "*.password", "*.passwordHash"],

@@ -37,12 +37,16 @@ function buildTransport(): pino.TransportSingleOptions | pino.TransportMultiOpti
 }
 
 const transport = buildTransport();
+const isMultiTarget = transport && "targets" in transport;
 
 export const logger = pino({
   level: process.env.LOG_LEVEL || (isProduction ? "info" : "debug"),
-  formatters: {
-    level: (label: string) => ({ level: label }),
-  },
+  // Pino disallows custom level formatters with multi-target transports
+  ...(!isMultiTarget ? {
+    formatters: {
+      level: (label: string) => ({ level: label }),
+    },
+  } : {}),
   timestamp: pino.stdTimeFunctions.isoTime,
   ...(transport ? { transport } : {}),
 });
