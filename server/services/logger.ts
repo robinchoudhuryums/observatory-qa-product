@@ -22,6 +22,7 @@ function buildTransport(): pino.TransportSingleOptions | pino.TransportMultiOpti
 
   if (betterstackToken) {
     // Stream to both stdout (for Render logs) and Betterstack
+    console.log("[LOGGER] Betterstack transport enabled");
     return {
       targets: [
         { target: "pino/file", options: { destination: 1 } },
@@ -31,6 +32,7 @@ function buildTransport(): pino.TransportSingleOptions | pino.TransportMultiOpti
   }
 
   // Production without Betterstack: structured JSON to stdout
+  console.log("[LOGGER] BETTERSTACK_SOURCE_TOKEN not set — logging to stdout only");
   return undefined;
 }
 

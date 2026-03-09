@@ -71,7 +71,8 @@ export function initQueues(): boolean {
       host: url.hostname,
       port: parseInt(url.port || "6379"),
       password: url.password || undefined,
-      ...(process.env.NODE_ENV === "production" ? { tls: {} } : {}),
+      // TLS is negotiated automatically when REDIS_URL uses the rediss:// scheme
+      ...(url.protocol === "rediss:" ? { tls: {} } : {}),
     };
 
     const defaultOpts = {
@@ -166,7 +167,7 @@ export async function trackUsage(event: UsageMeteringJob): Promise<void> {
 export async function enqueueRetention(orgId: string, retentionDays: number): Promise<void> {
   if (retentionQueue) {
     await retentionQueue.add("retention", { orgId, retentionDays }, {
-      jobId: `retention:${orgId}`, // Deduplicate per org
+      jobId: `retention-${orgId}`, // Deduplicate per org (BullMQ disallows colons in job IDs)
     });
   }
 }

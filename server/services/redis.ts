@@ -60,6 +60,45 @@ export function getRedis(): Redis | null {
 }
 
 /**
+ * Adapter that wraps an ioredis client to match the node-redis v5 API
+ * expected by connect-redis v9 (which passes { expiration: { type, value } }
+ * to set() instead of positional "EX", ttl args).
+ */
+function ioredisAdapter(client: Redis) {
+  return {
+    get: (key: string) => client.get(key),
+    set: (key: string, val: string, opts?: { expiration?: { type: string; value: number } }) => {
+      if (opts?.expiration) {
+        return client.set(key, val, opts.expiration.type as "EX", opts.expiration.value);
+      }
+      return client.set(key, val);
+    },
+    del: (key: string) => client.del(key),
+    expire: (key: string, ttl: number) => client.expire(key, ttl),
+    scanIterator: (opts: { MATCH: string; COUNT: number }) => {
+      // connect-redis uses this for destroy-all; provide a basic async iterator
+      let cursor = "0";
+      let done = false;
+      return {
+        [Symbol.asyncIterator]() {
+          return {
+            async next() {
+              if (done) return { done: true, value: undefined };
+              const [nextCursor, keys] = await client.scan(
+                cursor, "MATCH", opts.MATCH, "COUNT", opts.COUNT,
+              );
+              cursor = nextCursor;
+              if (cursor === "0") done = true;
+              return { done: false, value: keys };
+            },
+          };
+        },
+      };
+    },
+  };
+}
+
+/**
  * Create a Redis-backed session store (connect-redis).
  * Falls back to null if Redis is unavailable (caller should use MemoryStore).
  */
@@ -68,7 +107,7 @@ export function createRedisSessionStore(sessionModule: typeof session): Instance
 
   try {
     const store = new RedisStore({
-      client: redisClient,
+      client: ioredisAdapter(redisClient) as any,
       prefix: "observatory:sess:",
       ttl: 15 * 60, // 15 min idle timeout (matches HIPAA session config)
     });
