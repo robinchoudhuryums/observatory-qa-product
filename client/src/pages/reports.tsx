@@ -9,6 +9,8 @@ import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import type { Employee } from "@shared/schema";
+import { DEFAULT_CALL_PARTY_TYPES } from "@shared/schema";
+import { useOrgSettings } from "@/hooks/use-org-settings";
 import { BarChart, Bar, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend } from "recharts";
 
 // ---- Types ----
@@ -105,6 +107,12 @@ export default function ReportsPage() {
   const [selectedEmployee, setSelectedEmployee] = useState(initialEmployee);
   const [selectedDepartment, setSelectedDepartment] = useState("");
   const [callPartyFilter, setCallPartyFilter] = useState("all");
+
+  const { callPartyTypes: orgCallPartyTypes } = useOrgSettings();
+  // Use org-configured call party types, or fall back to defaults
+  const callPartyTypes = orgCallPartyTypes
+    ? orgCallPartyTypes.map(v => ({ value: v.toLowerCase().replace(/\s+/g, "_"), label: v }))
+    : [...DEFAULT_CALL_PARTY_TYPES];
 
   // Comparison state
   const [compareEnabled, setCompareEnabled] = useState(false);
@@ -361,12 +369,9 @@ export default function ReportsPage() {
               <SelectTrigger><SelectValue /></SelectTrigger>
               <SelectContent>
                 <SelectItem value="all"><span className="flex items-center gap-1.5"><Phone className="w-3.5 h-3.5" /> All Parties</span></SelectItem>
-                <SelectItem value="customer">Customer</SelectItem>
-                <SelectItem value="insurance">Insurance</SelectItem>
-                <SelectItem value="medical_facility">Medical Facility</SelectItem>
-                <SelectItem value="medicare">Medicare</SelectItem>
-                <SelectItem value="vendor">Vendor</SelectItem>
-                <SelectItem value="internal">Internal</SelectItem>
+                {callPartyTypes.map(pt => (
+                  <SelectItem key={pt.value} value={pt.value}>{pt.label}</SelectItem>
+                ))}
               </SelectContent>
             </Select>
           </div>

@@ -11,7 +11,7 @@ import { buildAgentSummaryPrompt } from "./services/ai-provider";
 import { requireAuth, requireRole, injectOrgContext } from "./auth";
 import { broadcastCallUpdate } from "./services/websocket";
 import { logPhiAccess, auditContext } from "./services/audit-log";
-import { insertEmployeeSchema, insertAccessRequestSchema, insertPromptTemplateSchema, insertCoachingSessionSchema } from "@shared/schema";
+import { insertEmployeeSchema, insertAccessRequestSchema, insertPromptTemplateSchema, insertCoachingSessionSchema, insertOrganizationSchema } from "@shared/schema";
 import { z } from "zod";
 import csv from "csv-parser";
 import { notifyFlaggedCall } from "./services/notifications";
@@ -2047,6 +2047,82 @@ app.get("/api/performance", requireAuth, injectOrgContext, async (req, res) => {
     } catch (error) {
       logger.error({ err: error }, "Failed to update organization settings");
       res.status(500).json({ message: "Failed to update settings" });
+    }
+  });
+
+  // ============================================================
+  // PLATFORM ADMIN — Organization CRUD (super-admin only)
+  // These routes are for managing all organizations across the
+  // platform. Only admins can access these endpoints.
+  // ============================================================
+
+  // List all organizations
+  app.get("/api/admin/organizations", requireAuth, requireRole("admin"), async (_req, res) => {
+    try {
+      const orgs = await storage.listOrganizations();
+      res.json(orgs);
+    } catch (error) {
+      logger.error({ err: error }, "Failed to list organizations");
+      res.status(500).json({ message: "Failed to list organizations" });
+    }
+  });
+
+  // Get a specific organization by ID
+  app.get("/api/admin/organizations/:orgId", requireAuth, requireRole("admin"), async (req, res) => {
+    try {
+      const org = await storage.getOrganization(req.params.orgId);
+      if (!org) return res.status(404).json({ message: "Organization not found" });
+      res.json(org);
+    } catch (error) {
+      logger.error({ err: error }, "Failed to fetch organization");
+      res.status(500).json({ message: "Failed to fetch organization" });
+    }
+  });
+
+  // Create a new organization
+  app.post("/api/admin/organizations", requireAuth, requireRole("admin"), async (req, res) => {
+    try {
+      const parsed = insertOrganizationSchema.parse(req.body);
+
+      // Check slug uniqueness
+      const existing = await storage.getOrganizationBySlug(parsed.slug);
+      if (existing) {
+        return res.status(409).json({ message: `Organization with slug "${parsed.slug}" already exists` });
+      }
+
+      const org = await storage.createOrganization(parsed);
+      logger.info({ orgId: org.id, slug: org.slug }, "Organization created");
+      res.status(201).json(org);
+    } catch (error) {
+      if (error instanceof z.ZodError) {
+        return res.status(400).json({ message: "Invalid organization data", errors: error.errors });
+      }
+      logger.error({ err: error }, "Failed to create organization");
+      res.status(500).json({ message: "Failed to create organization" });
+    }
+  });
+
+  // Update an organization (name, status, settings)
+  app.patch("/api/admin/organizations/:orgId", requireAuth, requireRole("admin"), async (req, res) => {
+    try {
+      const org = await storage.getOrganization(req.params.orgId);
+      if (!org) return res.status(404).json({ message: "Organization not found" });
+
+      const { name, status, settings } = req.body;
+      const updates: Record<string, unknown> = {};
+      if (name !== undefined) updates.name = name;
+      if (status !== undefined) updates.status = status;
+      if (settings !== undefined) {
+        // Merge settings rather than replace
+        updates.settings = { ...org.settings, ...settings };
+      }
+
+      const updated = await storage.updateOrganization(req.params.orgId, updates);
+      logger.info({ orgId: req.params.orgId }, "Organization updated via platform admin");
+      res.json(updated);
+    } catch (error) {
+      logger.error({ err: error }, "Failed to update organization");
+      res.status(500).json({ message: "Failed to update organization" });
     }
   });
 

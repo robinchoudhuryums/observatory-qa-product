@@ -6,6 +6,7 @@ import { useQuery } from "@tanstack/react-query";
 import { apiRequest, queryClient, getQueryFn } from "@/lib/queryClient";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import type { CallWithDetails, Employee, AccessRequest, AuthUser } from "@shared/schema";
+import { useOrgSettings } from "@/hooks/use-org-settings";
 
 type NavItem = { name: string; href: string; icon: any; section?: string; requireRole?: string[] };
 
@@ -50,6 +51,8 @@ export default function Sidebar() {
     queryFn: getQueryFn({ on401: "returnNull" }),
     staleTime: Infinity,
   });
+
+  const { appName } = useOrgSettings();
 
   // Fetch calls for flagged count badge
   const { data: calls } = useQuery<CallWithDetails[]>({
@@ -101,7 +104,7 @@ export default function Sidebar() {
               <Mic className="text-primary-foreground w-4 h-4" />
             </div>
             <div>
-              <h1 className="font-bold text-lg text-foreground">Observatory</h1>
+              <h1 className="font-bold text-lg text-foreground">{appName}</h1>
               <p className="text-xs text-muted-foreground">QA Dashboard</p>
             </div>
           </div>

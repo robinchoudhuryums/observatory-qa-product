@@ -11,9 +11,7 @@ import { UserPlus, Users, Upload, ChevronDown, ChevronRight, Pencil, Eye, GitCom
 import { Link } from "wouter";
 import { DEFAULT_SUBTEAMS } from "@shared/schema";
 import type { Employee } from "@shared/schema";
-
-// Departments that use sub-teams (uses shared defaults; org-specific overrides come from org settings)
-const DEPARTMENTS_WITH_SUBTEAMS: Record<string, readonly string[]> = DEFAULT_SUBTEAMS;
+import { useOrgSettings } from "@/hooks/use-org-settings";
 
 interface DepartmentGroup {
   department: string;
@@ -21,7 +19,10 @@ interface DepartmentGroup {
   employees: Employee[]; // employees without a sub-team (or dept has no sub-teams)
 }
 
-function groupByDepartment(employees: Employee[]): DepartmentGroup[] {
+function groupByDepartment(
+  employees: Employee[],
+  subTeamsByDept: Record<string, readonly string[] | string[]> = DEFAULT_SUBTEAMS,
+): DepartmentGroup[] {
   const deptMap = new Map<string, Employee[]>();
   for (const emp of employees) {
     const dept = emp.role || "Unassigned";
@@ -34,7 +35,7 @@ function groupByDepartment(employees: Employee[]): DepartmentGroup[] {
 
   for (const dept of sortedDepts) {
     const deptEmployees = deptMap.get(dept)!;
-    const subTeamDefs = DEPARTMENTS_WITH_SUBTEAMS[dept];
+    const subTeamDefs = subTeamsByDept[dept];
 
     if (subTeamDefs) {
       const subTeamMap = new Map<string, Employee[]>();
@@ -139,6 +140,11 @@ function CompareCard({ employee }: { employee: Employee }) {
 export default function EmployeesPage() {
   const { toast } = useToast();
   const queryClient = useQueryClient();
+  const { subTeams: orgSubTeams } = useOrgSettings();
+  // Merge org-specific sub-teams with defaults (org settings take priority)
+  const subTeamsByDept: Record<string, readonly string[] | string[]> = orgSubTeams
+    ? { ...DEFAULT_SUBTEAMS, ...orgSubTeams }
+    : DEFAULT_SUBTEAMS;
   const [addOpen, setAddOpen] = useState(false);
   const [editOpen, setEditOpen] = useState(false);
   const [editEmployee, setEditEmployee] = useState<Employee | null>(null);
@@ -172,8 +178,8 @@ export default function EmployeesPage() {
 
   const departments = useMemo(() => {
     if (!employees) return [];
-    return groupByDepartment(employees);
-  }, [employees]);
+    return groupByDepartment(employees, subTeamsByDept);
+  }, [employees, subTeamsByDept]);
 
   const allDepartments = useMemo(() => {
     if (!employees) return [];
@@ -287,8 +293,8 @@ export default function EmployeesPage() {
     });
   };
 
-  const getSubTeamsForDept = (dept: string): readonly string[] | undefined => {
-    return DEPARTMENTS_WITH_SUBTEAMS[dept];
+  const getSubTeamsForDept = (dept: string): readonly string[] | string[] | undefined => {
+    return subTeamsByDept[dept];
   };
 
   const totalActive = employees?.filter(e => e.status === "Active").length || 0;

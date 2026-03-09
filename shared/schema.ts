@@ -83,6 +83,16 @@ export const DEFAULT_SUBTEAMS: Record<string, readonly string[]> = {
 /** @deprecated Use org settings subTeams instead. Kept for backward compatibility. */
 export const POWER_MOBILITY_SUBTEAMS = DEFAULT_SUBTEAMS["Intake - Power Mobility"]!;
 
+// --- DEFAULT CALL PARTY TYPES (used as fallback when org settings don't specify) ---
+export const DEFAULT_CALL_PARTY_TYPES = [
+  { value: "customer", label: "Customer" },
+  { value: "insurance", label: "Insurance" },
+  { value: "medical_facility", label: "Medical Facility" },
+  { value: "medicare", label: "Medicare" },
+  { value: "vendor", label: "Vendor" },
+  { value: "internal", label: "Internal" },
+] as const;
+
 // --- CALL CATEGORY ---
 export const CALL_CATEGORIES = [
   { value: "inbound", label: "Inbound Call", description: "Customer/patient calling into the company" },
