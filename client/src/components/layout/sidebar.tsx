@@ -33,15 +33,18 @@ export default function Sidebar() {
     localStorage.setItem("theme", next ? "dark" : "light");
   };
 
-  // Initialize dark mode from localStorage on mount
+  // Initialize dark mode from localStorage or system preference on mount
   useEffect(() => {
     const saved = localStorage.getItem("theme");
-    if (saved === "dark") {
-      document.documentElement.classList.add("dark");
-      setIsDark(true);
-    } else if (saved === "light") {
-      document.documentElement.classList.remove("dark");
-      setIsDark(false);
+    if (saved) {
+      const isDarkMode = saved === "dark";
+      document.documentElement.classList.toggle("dark", isDarkMode);
+      setIsDark(isDarkMode);
+    } else {
+      // Respect system preference when no explicit choice saved
+      const prefersDark = window.matchMedia("(prefers-color-scheme: dark)").matches;
+      document.documentElement.classList.toggle("dark", prefersDark);
+      setIsDark(prefersDark);
     }
   }, []);
 

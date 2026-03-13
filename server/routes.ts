@@ -1,5 +1,6 @@
 import type { Express } from "express";
 import { createServer, type Server } from "http";
+import { createHash } from "crypto";
 import multer from "multer";
 import path from "path";
 import fs from "fs";
@@ -517,10 +518,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.post("/api/employees/import-csv", requireAuth, injectOrgContext, requireRole("admin"), async (req, res) => {
     try {
       const csvFilePath = path.resolve("employees.csv");
-      if (!fs.existsSync(csvFilePath)) {
-        res.status(404).json({ message: "employees.csv not found on server" });
-        return;
-      }
 
       // Use org email domain from settings (falls back to "company.com")
       const org = await storage.getOrganization(req.orgId!);
@@ -530,8 +527,16 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const rows: any[] = [];
       const MAX_CSV_ROWS = 10000;
 
+      // Stream CSV — handle ENOENT via error event (avoids TOCTOU race with existsSync)
       await new Promise<void>((resolve, reject) => {
         const stream = fs.createReadStream(csvFilePath)
+          .on("error", (err: NodeJS.ErrnoException) => {
+            if (err.code === "ENOENT") {
+              reject(new Error("FILE_NOT_FOUND"));
+            } else {
+              reject(err);
+            }
+          })
           .pipe(csv())
           .on("data", (row: any) => {
             if (rows.length >= MAX_CSV_ROWS) {
@@ -543,7 +548,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
           })
           .on("end", resolve)
           .on("error", reject);
+      }).catch((err: Error) => {
+        if (err.message === "FILE_NOT_FOUND") {
+          res.status(404).json({ message: "employees.csv not found on server" });
+          return;
+        }
+        throw err;
       });
+      if (res.headersSent) return;
 
       for (const row of rows) {
         const name = (row["Agent Name"] || "").trim();
@@ -553,7 +565,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
         if (!name) continue;
 
-        const email = extension && extension !== "NA" && extension !== "N/A" && extension !== "a"
+        const isValidExtension = extension && extension !== "NA" && extension !== "N/A" && extension !== "a"
+          && /^[a-zA-Z0-9._-]+$/.test(extension);
+        const email = isValidExtension
           ? `${extension}@${emailDomain}`
           : `${name.toLowerCase().replace(/\s+/g, ".")}@${emailDomain}`;
 
@@ -659,17 +673,26 @@ app.get("/api/calls", requireAuth, injectOrgContext, async (req, res) => {
         }
       }
 
+      // Idempotency: check for duplicate upload by file hash (prevents double-processing on retry)
+      const audioBuffer = fs.readFileSync(req.file.path);
+      const fileHash = createHash("sha256").update(audioBuffer).digest("hex");
+      const existingCalls = await storage.getCallsWithDetails(req.orgId!, {});
+      const duplicate = existingCalls.find(c => c.fileHash === fileHash && c.status !== "failed");
+      if (duplicate) {
+        await cleanupFile(req.file.path);
+        res.status(200).json(duplicate);
+        return;
+      }
+
       // Create call record (employeeId is optional — can be assigned later)
       const call = await storage.createCall(req.orgId!, {
         employeeId: employeeId || undefined,
         fileName: req.file.originalname,
         filePath: req.file.path,
+        fileHash,
         status: "processing",
         callCategory: callCategory || undefined,
       });
-
-      // Read file buffer for API upload, then start async processing
-      const audioBuffer = fs.readFileSync(req.file.path);
       const originalName = req.file.originalname;
       const mimeType = req.file.mimetype || "audio/mpeg";
       // Capture orgId before async — req may not be available in .catch()

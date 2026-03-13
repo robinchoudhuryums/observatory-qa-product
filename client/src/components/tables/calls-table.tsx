@@ -4,6 +4,7 @@ import { Eye, Play, Download, Star, Trash2, UserCheck, AlertTriangle, Award, Che
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
+import { getSentimentBadge as getSentimentBadgeHelper, getStatusBadge as getStatusBadgeHelper } from "@/lib/badge-helpers";
 import { Link } from "wouter";
 import type { CallWithDetails, Employee } from "@shared/schema";
 import { AudioWaveform } from "lucide-react";
@@ -221,39 +222,16 @@ export default function CallsTable() {
     );
   }
 
-  const getSentimentBadge = (sentiment?: string) => {
-    if (!sentiment) return <Badge variant="secondary">Unknown</Badge>;
-    const variants: Record<string, any> = {
-      positive: "default", neutral: "secondary", negative: "destructive",
-    };
-    return (
-      <Badge variant={variants[sentiment] || "secondary"}>
-        {sentiment.charAt(0).toUpperCase() + sentiment.slice(1)}
-      </Badge>
-    );
-  };
-
-  const getStatusBadge = (status?: string) => {
-    if (!status) return <Badge variant="secondary">Unknown</Badge>;
-    const colors: Record<string, string> = {
-      completed: "bg-green-100 text-green-800",
-      processing: "bg-blue-100 text-blue-800",
-      failed: "bg-red-100 text-red-800",
-    };
-    return (
-      <Badge className={colors[status] || "bg-gray-100 text-gray-800"}>
-        {status.charAt(0).toUpperCase() + status.slice(1)}
-      </Badge>
-    );
-  };
+  const getSentimentBadge = getSentimentBadgeHelper;
+  const getStatusBadge = getStatusBadgeHelper;
 
   const renderStars = (score: number) => {
     const filledStars = Math.floor(score / 2);
     const emptyStars = 5 - filledStars;
     return (
       <div className="flex text-yellow-400 text-xs">
-        {[...Array(filledStars)].map((_, i) => <Star key={i} className="w-3 h-3 fill-current" />)}
-        {[...Array(emptyStars)].map((_, i) => <Star key={i} className="w-3 h-3" />)}
+        {[...Array(filledStars)].map((_, i) => <Star key={`filled-${i}`} className="w-3 h-3 fill-current" />)}
+        {[...Array(emptyStars)].map((_, i) => <Star key={`empty-${i}`} className="w-3 h-3" />)}
       </div>
     );
   };
@@ -323,28 +301,28 @@ export default function CallsTable() {
           <thead>
             <tr className="border-b border-border">
               <th className="py-3 px-2 w-8">
-                <button onClick={toggleAll} className="text-muted-foreground hover:text-foreground">
+                <button onClick={toggleAll} className="text-muted-foreground hover:text-foreground" aria-label={allOnPageSelected ? "Deselect all calls" : "Select all calls"}>
                   {allOnPageSelected ? <CheckSquare className="w-4 h-4" /> : <Square className="w-4 h-4" />}
                 </button>
               </th>
               <th className="text-left py-3 px-2 font-medium text-muted-foreground">
-                <button className="flex items-center hover:text-foreground" onClick={() => toggleSort("date")}>
+                <button className="flex items-center hover:text-foreground" onClick={() => toggleSort("date")} aria-label="Sort by date">
                   Date <SortIcon field="date" />
                 </button>
               </th>
               <th className="text-left py-3 px-2 font-medium text-muted-foreground">Employee</th>
               <th className="text-left py-3 px-2 font-medium text-muted-foreground">
-                <button className="flex items-center hover:text-foreground" onClick={() => toggleSort("duration")}>
+                <button className="flex items-center hover:text-foreground" onClick={() => toggleSort("duration")} aria-label="Sort by duration">
                   Duration <SortIcon field="duration" />
                 </button>
               </th>
               <th className="text-left py-3 px-2 font-medium text-muted-foreground">
-                <button className="flex items-center hover:text-foreground" onClick={() => toggleSort("sentiment")}>
+                <button className="flex items-center hover:text-foreground" onClick={() => toggleSort("sentiment")} aria-label="Sort by sentiment">
                   Sentiment <SortIcon field="sentiment" />
                 </button>
               </th>
               <th className="text-left py-3 px-2 font-medium text-muted-foreground">
-                <button className="flex items-center hover:text-foreground" onClick={() => toggleSort("score")}>
+                <button className="flex items-center hover:text-foreground" onClick={() => toggleSort("score")} aria-label="Sort by score">
                   Score <SortIcon field="score" />
                 </button>
               </th>
@@ -357,7 +335,7 @@ export default function CallsTable() {
             {pagedCalls.map((call) => (
               <tr key={call.id} className={`border-b border-border hover:bg-muted transition-colors ${selectedIds.has(call.id) ? "bg-primary/5" : ""}`}>
                 <td className="py-3 px-2">
-                  <button onClick={() => toggleOne(call.id)} className="text-muted-foreground hover:text-foreground">
+                  <button onClick={() => toggleOne(call.id)} className="text-muted-foreground hover:text-foreground" aria-label={selectedIds.has(call.id) ? "Deselect call" : "Select call"}>
                     {selectedIds.has(call.id) ? <CheckSquare className="w-4 h-4 text-primary" /> : <Square className="w-4 h-4" />}
                   </button>
                 </td>

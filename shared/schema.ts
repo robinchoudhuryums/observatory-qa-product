@@ -99,6 +99,7 @@ export const insertCallSchema = z.object({
   employeeId: z.string().optional(),
   fileName: z.string().optional(),
   filePath: z.string().optional(),
+  fileHash: z.string().optional(),
   status: z.string().default("pending"),
   duration: z.number().optional(),
   assemblyAiId: z.string().optional(),

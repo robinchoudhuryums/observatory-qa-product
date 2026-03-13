@@ -1,6 +1,6 @@
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import type { Employee } from "@shared/schema";
-import { AudioWaveform } from "lucide-react";
+import { AlertTriangle, RefreshCw } from "lucide-react";
 
 // Define a more robust type for a performer
 type TopPerformer = Partial<Employee> & {
@@ -10,9 +10,25 @@ type TopPerformer = Partial<Employee> & {
 };
 
 export default function PerformanceCard() {
-  const { data: performers, isLoading } = useQuery<TopPerformer[]>({
+  const queryClient = useQueryClient();
+  const { data: performers, isLoading, error } = useQuery<TopPerformer[]>({
     queryKey: ["/api/dashboard/performers"],
   });
+
+  if (error) {
+    return (
+      <div className="bg-card rounded-lg border border-destructive/30 p-6 text-center">
+        <AlertTriangle className="w-6 h-6 text-destructive mx-auto mb-2" />
+        <p className="text-sm font-medium text-destructive">Failed to load performers</p>
+        <button
+          onClick={() => queryClient.invalidateQueries({ queryKey: ["/api/dashboard/performers"] })}
+          className="mt-2 inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground"
+        >
+          <RefreshCw className="w-3 h-3" /> Retry
+        </button>
+      </div>
+    );
+  }
 
   if (isLoading) {
     return (
