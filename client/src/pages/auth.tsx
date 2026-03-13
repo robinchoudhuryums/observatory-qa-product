@@ -6,6 +6,7 @@ import { useToast } from "@/hooks/use-toast";
 import { AudioWaveform, LogIn, UserPlus, Shield, Eye, Settings } from "lucide-react";
 import { apiRequest } from "@/lib/queryClient";
 import { USER_ROLES } from "@shared/schema";
+import { useAppName } from "@/hooks/use-organization";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 
 interface AuthPageProps {
@@ -20,6 +21,7 @@ export default function AuthPage({ onLogin }: AuthPageProps) {
   const [password, setPassword] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const { toast } = useToast();
+  const appName = useAppName();
 
   // Request access form state
   const [requestName, setRequestName] = useState("");
@@ -92,7 +94,7 @@ export default function AuthPage({ onLogin }: AuthPageProps) {
                 <AudioWaveform className="w-6 h-6 text-primary" />
               </div>
             </div>
-            <CardTitle className="text-2xl">Observatory</CardTitle>
+            <CardTitle className="text-2xl">{appName}</CardTitle>
             <CardDescription>
               {view === "login"
                 ? "Sign in to access the call analysis dashboard"

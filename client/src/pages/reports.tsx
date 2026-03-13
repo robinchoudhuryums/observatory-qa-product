@@ -10,6 +10,7 @@ import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import type { Employee } from "@shared/schema";
 import { BarChart, Bar, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend } from "recharts";
+import { useAppName } from "@/hooks/use-organization";
 
 // ---- Types ----
 
@@ -105,6 +106,7 @@ export default function ReportsPage() {
   const [selectedEmployee, setSelectedEmployee] = useState(initialEmployee);
   const [selectedDepartment, setSelectedDepartment] = useState("");
   const [callPartyFilter, setCallPartyFilter] = useState("all");
+  const appName = useAppName();
 
   // Comparison state
   const [compareEnabled, setCompareEnabled] = useState(false);
@@ -206,7 +208,7 @@ export default function ReportsPage() {
       ? `Department Report: ${selectedDepartment}`
       : "Overall Report";
 
-    lines.push("Observatory Performance Report");
+    lines.push(`${appName} Performance Report`);
     lines.push("===============================");
     lines.push(`Type: ${typeLabel}`);
     lines.push(`Period: ${dateRange.from} to ${dateRange.to} (${PRESET_LABELS[datePreset]})`);

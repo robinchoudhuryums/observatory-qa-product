@@ -4,6 +4,7 @@ import { z } from "zod";
 export const orgBrandingSchema = z.object({
   appName: z.string().default("Observatory"),
   logoUrl: z.string().optional(),
+  primaryColor: z.string().optional(), // Hex color (e.g., "#10b981") to override default theme
 });
 
 export const orgSettingsSchema = z.object({

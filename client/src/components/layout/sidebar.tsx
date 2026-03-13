@@ -1,11 +1,12 @@
 import { useState, useEffect } from "react";
 import { Link, useLocation } from "wouter";
-import { Mic, BarChart3, Upload, FileText, Heart, Users, UserPlus, Search, LogOut, User, TrendingUp, Sun, Moon, Shield, Building2, SlidersHorizontal, ClipboardCheck } from "lucide-react";
+import { Mic, BarChart3, Upload, FileText, Heart, Users, UserPlus, Search, LogOut, User, TrendingUp, Sun, Moon, Shield, Building2, SlidersHorizontal, ClipboardCheck, Palette } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useQuery } from "@tanstack/react-query";
 import { apiRequest, queryClient, getQueryFn } from "@/lib/queryClient";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import type { CallWithDetails, Employee, AccessRequest, AuthUser } from "@shared/schema";
+import { useAppName, useOrganization } from "@/hooks/use-organization";
 
 type NavItem = { name: string; href: string; icon: any; section?: string; requireRole?: string[] };
 
@@ -47,6 +48,10 @@ export default function Sidebar() {
       setIsDark(prefersDark);
     }
   }, []);
+
+  const appName = useAppName();
+  const { data: orgData } = useOrganization();
+  const logoUrl = orgData?.settings?.branding?.logoUrl;
 
   const { data: user } = useQuery<AuthUser>({
     queryKey: ["/api/auth/me"],
@@ -100,11 +105,15 @@ export default function Sidebar() {
       <div className="p-6 border-b border-border">
         <div className="flex items-center justify-between">
           <div className="flex items-center space-x-3">
-            <div className="w-8 h-8 bg-primary rounded-lg flex items-center justify-center">
-              <Mic className="text-primary-foreground w-4 h-4" />
-            </div>
+            {logoUrl ? (
+              <img src={logoUrl} alt="Logo" className="w-8 h-8 rounded-lg object-contain" />
+            ) : (
+              <div className="w-8 h-8 bg-primary rounded-lg flex items-center justify-center">
+                <Mic className="text-primary-foreground w-4 h-4" />
+              </div>
+            )}
             <div>
-              <h1 className="font-bold text-lg text-foreground">Observatory</h1>
+              <h1 className="font-bold text-lg text-foreground">{appName}</h1>
               <p className="text-xs text-muted-foreground">QA Dashboard</p>
             </div>
           </div>
@@ -202,6 +211,19 @@ export default function Sidebar() {
             >
               <SlidersHorizontal className="w-5 h-5" />
               <span>Prompt Templates</span>
+            </Link>
+            <Link
+              href="/admin/settings"
+              className={cn(
+                "flex items-center space-x-3 px-3 py-2 rounded-md font-medium transition-colors",
+                location === "/admin/settings"
+                  ? "bg-primary text-primary-foreground"
+                  : "text-muted-foreground hover:bg-muted hover:text-foreground"
+              )}
+              data-testid="nav-link-settings"
+            >
+              <Palette className="w-5 h-5" />
+              <span>Settings</span>
             </Link>
           </>
         )}
