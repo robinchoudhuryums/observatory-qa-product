@@ -1,6 +1,7 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import type { Employee } from "@shared/schema";
 import { AlertTriangle, RefreshCw } from "lucide-react";
+import { motion } from "framer-motion";
 
 // Define a more robust type for a performer
 type TopPerformer = Partial<Employee> & {
@@ -61,7 +62,13 @@ export default function PerformanceCard() {
   };
 
   return (
-    <div className="modern-card rounded-xl p-6" data-testid="performance-card">
+    <motion.div
+      initial={{ opacity: 0, y: 12 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.4, ease: "easeOut", delay: 0.1 }}
+      className="modern-card rounded-xl p-6"
+      data-testid="performance-card"
+    >
       <div className="flex items-center justify-between mb-4">
         <h3 className="text-lg font-semibold text-foreground">Top Performers</h3>
         <button className="text-sm font-medium" style={{ color: "hsl(var(--brand-from))" }} data-testid="view-all-performers">
@@ -72,7 +79,13 @@ export default function PerformanceCard() {
       <div className="space-y-4">
         {/* Add a filter to remove any invalid performer data before rendering */}
         {performers?.filter(p => p && p.id && p.name).map((employee, index) => (
-          <div key={employee.id} className="flex items-center justify-between p-3 bg-muted/50 rounded-xl transition-colors hover:bg-muted">
+          <motion.div
+            key={employee.id}
+            initial={{ opacity: 0, x: -10 }}
+            animate={{ opacity: 1, x: 0 }}
+            transition={{ delay: index * 0.06, duration: 0.3, ease: "easeOut" }}
+            className="flex items-center justify-between p-3 bg-muted/50 rounded-xl transition-colors hover:bg-muted"
+          >
             <div className="flex items-center space-x-3">
               <div className={`w-10 h-10 rounded-full flex items-center justify-center ${getInitialsColor(employee.initials)}`}>
                 <span className="font-semibold text-sm">{employee.initials ?? 'N/A'}</span>
@@ -90,7 +103,7 @@ export default function PerformanceCard() {
               </p>
               <p className="text-xs text-muted-foreground">Score</p>
             </div>
-          </div>
+          </motion.div>
         ))}
 
         {!performers?.length && (
@@ -99,6 +112,6 @@ export default function PerformanceCard() {
           </div>
         )}
       </div>
-    </div>
+    </motion.div>
   );
 }

@@ -332,8 +332,8 @@ export default function CallsTable() {
             </tr>
           </thead>
           <tbody>
-            {pagedCalls.map((call) => (
-              <tr key={call.id} className={`border-b border-border hover:bg-muted transition-colors ${selectedIds.has(call.id) ? "bg-primary/5" : ""}`}>
+            {pagedCalls.map((call, rowIdx) => (
+              <tr key={call.id} className={`border-b border-border hover:bg-muted transition-colors animate-row ${selectedIds.has(call.id) ? "bg-primary/5" : ""}`} style={{ animationDelay: `${rowIdx * 30}ms` }}>
                 <td className="py-3 px-2">
                   <button onClick={() => toggleOne(call.id)} className="text-muted-foreground hover:text-foreground" aria-label={selectedIds.has(call.id) ? "Deselect call" : "Select call"}>
                     {selectedIds.has(call.id) ? <CheckSquare className="w-4 h-4 text-primary" /> : <Square className="w-4 h-4" />}

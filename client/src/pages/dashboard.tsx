@@ -210,9 +210,9 @@ export default function Dashboard() {
                 <YAxis tick={{ fontSize: 11 }} stroke="hsl(var(--muted-foreground))" />
                 <Tooltip contentStyle={{ backgroundColor: "hsl(var(--card))", border: "1px solid hsl(var(--border))", fontSize: 12 }} />
                 <Legend />
-                <Area type="monotone" dataKey="positive" name="Positive" stackId="sentiment" stroke="#22c55e" fill="url(#greenGrad)" />
-                <Area type="monotone" dataKey="neutral" name="Neutral" stackId="sentiment" stroke="#94a3b8" fill="url(#grayGrad)" />
-                <Area type="monotone" dataKey="negative" name="Negative" stackId="sentiment" stroke="#ef4444" fill="url(#redGrad)" />
+                <Area type="monotone" dataKey="positive" name="Positive" stackId="sentiment" stroke="#22c55e" fill="url(#greenGrad)" animationDuration={1200} animationEasing="ease-out" />
+                <Area type="monotone" dataKey="neutral" name="Neutral" stackId="sentiment" stroke="#94a3b8" fill="url(#grayGrad)" animationDuration={1200} animationEasing="ease-out" animationBegin={150} />
+                <Area type="monotone" dataKey="negative" name="Negative" stackId="sentiment" stroke="#ef4444" fill="url(#redGrad)" animationDuration={1200} animationEasing="ease-out" animationBegin={300} />
               </AreaChart>
             </ResponsiveContainer>
           </div>
