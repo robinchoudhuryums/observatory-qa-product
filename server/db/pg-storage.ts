@@ -30,6 +30,7 @@ import type {
   Organization, InsertOrganization,
   Invitation, InsertInvitation,
   ApiKey, InsertApiKey,
+  Subscription, InsertSubscription,
 } from "@shared/schema";
 import * as tables from "./schema";
 import { normalizeAnalysis } from "../storage";
@@ -1008,6 +1009,100 @@ export class PostgresStorage implements IStorage {
       expiresAt: toISOString(row.expiresAt),
       lastUsedAt: toISOString(row.lastUsedAt),
       createdAt: toISOString(row.createdAt),
+    };
+  }
+
+  // --- Subscription operations ---
+  async getSubscription(orgId: string): Promise<Subscription | undefined> {
+    const rows = await this.db.select().from(tables.subscriptions)
+      .where(eq(tables.subscriptions.orgId, orgId))
+      .limit(1);
+    return rows[0] ? this.mapSubscription(rows[0]) : undefined;
+  }
+
+  async getSubscriptionByStripeCustomerId(stripeCustomerId: string): Promise<Subscription | undefined> {
+    const rows = await this.db.select().from(tables.subscriptions)
+      .where(eq(tables.subscriptions.stripeCustomerId, stripeCustomerId))
+      .limit(1);
+    return rows[0] ? this.mapSubscription(rows[0]) : undefined;
+  }
+
+  async getSubscriptionByStripeSubId(stripeSubscriptionId: string): Promise<Subscription | undefined> {
+    const rows = await this.db.select().from(tables.subscriptions)
+      .where(eq(tables.subscriptions.stripeSubscriptionId, stripeSubscriptionId))
+      .limit(1);
+    return rows[0] ? this.mapSubscription(rows[0]) : undefined;
+  }
+
+  async upsertSubscription(orgId: string, sub: InsertSubscription): Promise<Subscription> {
+    const existing = await this.getSubscription(orgId);
+    const id = existing?.id || randomUUID();
+    const now = new Date();
+
+    if (existing) {
+      const [row] = await this.db.update(tables.subscriptions).set({
+        planTier: sub.planTier,
+        status: sub.status,
+        stripeCustomerId: sub.stripeCustomerId,
+        stripeSubscriptionId: sub.stripeSubscriptionId,
+        stripePriceId: sub.stripePriceId,
+        billingInterval: sub.billingInterval,
+        currentPeriodStart: sub.currentPeriodStart ? new Date(sub.currentPeriodStart) : undefined,
+        currentPeriodEnd: sub.currentPeriodEnd ? new Date(sub.currentPeriodEnd) : undefined,
+        cancelAtPeriodEnd: sub.cancelAtPeriodEnd,
+        updatedAt: now,
+      }).where(eq(tables.subscriptions.orgId, orgId)).returning();
+      return this.mapSubscription(row);
+    }
+
+    const [row] = await this.db.insert(tables.subscriptions).values({
+      id,
+      orgId,
+      planTier: sub.planTier,
+      status: sub.status,
+      stripeCustomerId: sub.stripeCustomerId || null,
+      stripeSubscriptionId: sub.stripeSubscriptionId || null,
+      stripePriceId: sub.stripePriceId || null,
+      billingInterval: sub.billingInterval || "monthly",
+      currentPeriodStart: sub.currentPeriodStart ? new Date(sub.currentPeriodStart) : null,
+      currentPeriodEnd: sub.currentPeriodEnd ? new Date(sub.currentPeriodEnd) : null,
+      cancelAtPeriodEnd: sub.cancelAtPeriodEnd || false,
+    }).returning();
+    return this.mapSubscription(row);
+  }
+
+  async updateSubscription(orgId: string, updates: Partial<Subscription>): Promise<Subscription | undefined> {
+    const setValues: Record<string, unknown> = { updatedAt: new Date() };
+    if (updates.planTier) setValues.planTier = updates.planTier;
+    if (updates.status) setValues.status = updates.status;
+    if (updates.stripeCustomerId) setValues.stripeCustomerId = updates.stripeCustomerId;
+    if (updates.stripeSubscriptionId) setValues.stripeSubscriptionId = updates.stripeSubscriptionId;
+    if (updates.stripePriceId) setValues.stripePriceId = updates.stripePriceId;
+    if (updates.billingInterval) setValues.billingInterval = updates.billingInterval;
+    if (updates.currentPeriodStart) setValues.currentPeriodStart = new Date(updates.currentPeriodStart);
+    if (updates.currentPeriodEnd) setValues.currentPeriodEnd = new Date(updates.currentPeriodEnd);
+    if (updates.cancelAtPeriodEnd !== undefined) setValues.cancelAtPeriodEnd = updates.cancelAtPeriodEnd;
+
+    const [row] = await this.db.update(tables.subscriptions).set(setValues)
+      .where(eq(tables.subscriptions.orgId, orgId)).returning();
+    return row ? this.mapSubscription(row) : undefined;
+  }
+
+  private mapSubscription(row: any): Subscription {
+    return {
+      id: row.id,
+      orgId: row.orgId,
+      planTier: row.planTier,
+      status: row.status,
+      stripeCustomerId: row.stripeCustomerId || undefined,
+      stripeSubscriptionId: row.stripeSubscriptionId || undefined,
+      stripePriceId: row.stripePriceId || undefined,
+      billingInterval: row.billingInterval,
+      currentPeriodStart: toISOString(row.currentPeriodStart),
+      currentPeriodEnd: toISOString(row.currentPeriodEnd),
+      cancelAtPeriodEnd: row.cancelAtPeriodEnd || false,
+      createdAt: toISOString(row.createdAt),
+      updatedAt: toISOString(row.updatedAt),
     };
   }
 

@@ -27,6 +27,8 @@ import {
   type InsertInvitation,
   type ApiKey,
   type InsertApiKey,
+  type Subscription,
+  type InsertSubscription,
 } from "@shared/schema";
 import { randomUUID, randomBytes } from "crypto";
 import { type IStorage, applyCallFilters } from "./types";
@@ -479,6 +481,45 @@ export class MemStorage implements IStorage {
   async deleteApiKey(orgId: string, id: string): Promise<void> {
     const key = this.apiKeys.get(id);
     if (key?.orgId === orgId) this.apiKeys.delete(id);
+  }
+
+  // --- Subscription operations ---
+  private subscriptions = new Map<string, Subscription>();
+
+  async getSubscription(orgId: string): Promise<Subscription | undefined> {
+    return Array.from(this.subscriptions.values()).find(s => s.orgId === orgId);
+  }
+
+  async getSubscriptionByStripeCustomerId(stripeCustomerId: string): Promise<Subscription | undefined> {
+    return Array.from(this.subscriptions.values()).find(s => s.stripeCustomerId === stripeCustomerId);
+  }
+
+  async getSubscriptionByStripeSubId(stripeSubscriptionId: string): Promise<Subscription | undefined> {
+    return Array.from(this.subscriptions.values()).find(s => s.stripeSubscriptionId === stripeSubscriptionId);
+  }
+
+  async upsertSubscription(orgId: string, sub: InsertSubscription): Promise<Subscription> {
+    const existing = await this.getSubscription(orgId);
+    const id = existing?.id || randomUUID();
+    const now = new Date().toISOString();
+    const record: Subscription = {
+      ...sub,
+      id,
+      orgId,
+      cancelAtPeriodEnd: sub.cancelAtPeriodEnd ?? false,
+      createdAt: existing?.createdAt || now,
+      updatedAt: now,
+    };
+    this.subscriptions.set(id, record);
+    return record;
+  }
+
+  async updateSubscription(orgId: string, updates: Partial<Subscription>): Promise<Subscription | undefined> {
+    const existing = await this.getSubscription(orgId);
+    if (!existing) return undefined;
+    const updated = { ...existing, ...updates, orgId, updatedAt: new Date().toISOString() };
+    this.subscriptions.set(existing.id, updated);
+    return updated;
   }
 
   // --- Data retention (org-scoped) ---

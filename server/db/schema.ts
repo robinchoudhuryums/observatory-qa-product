@@ -230,6 +230,27 @@ export const invitations = pgTable("invitations", {
   index("invitations_email_idx").on(t.orgId, t.email),
 ]);
 
+// --- SUBSCRIPTIONS ---
+export const subscriptions = pgTable("subscriptions", {
+  id: text("id").primaryKey(),
+  orgId: text("org_id").notNull().references(() => organizations.id),
+  planTier: varchar("plan_tier", { length: 20 }).notNull().default("free"),
+  status: varchar("status", { length: 20 }).notNull().default("active"),
+  stripeCustomerId: varchar("stripe_customer_id", { length: 255 }),
+  stripeSubscriptionId: varchar("stripe_subscription_id", { length: 255 }),
+  stripePriceId: varchar("stripe_price_id", { length: 255 }),
+  billingInterval: varchar("billing_interval", { length: 10 }).notNull().default("monthly"),
+  currentPeriodStart: timestamp("current_period_start"),
+  currentPeriodEnd: timestamp("current_period_end"),
+  cancelAtPeriodEnd: boolean("cancel_at_period_end").notNull().default(false),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+}, (t) => [
+  uniqueIndex("subscriptions_org_id_idx").on(t.orgId),
+  index("subscriptions_stripe_customer_idx").on(t.stripeCustomerId),
+  index("subscriptions_stripe_sub_idx").on(t.stripeSubscriptionId),
+]);
+
 // --- USAGE EVENTS (per-org metering for billing) ---
 export const usageEvents = pgTable("usage_events", {
   id: text("id").primaryKey(),

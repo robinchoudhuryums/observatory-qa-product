@@ -304,6 +304,94 @@ export const apiKeySchema = insertApiKeySchema.extend({
 export type InsertApiKey = z.infer<typeof insertApiKeySchema>;
 export type ApiKey = z.infer<typeof apiKeySchema>;
 
+// --- BILLING & SUBSCRIPTION SCHEMAS ---
+export const PLAN_TIERS = ["free", "pro", "enterprise"] as const;
+export type PlanTier = (typeof PLAN_TIERS)[number];
+
+export const planLimitsSchema = z.object({
+  callsPerMonth: z.number(), // -1 = unlimited
+  storageMb: z.number(),
+  aiAnalysesPerMonth: z.number(),
+  apiCallsPerMonth: z.number(),
+  maxUsers: z.number(),
+  customPromptTemplates: z.boolean(),
+  ssoEnabled: z.boolean(),
+  prioritySupport: z.boolean(),
+});
+export type PlanLimits = z.infer<typeof planLimitsSchema>;
+
+/** Static plan definitions — no DB needed for these */
+export const PLAN_DEFINITIONS: Record<PlanTier, { name: string; description: string; monthlyPriceUsd: number; yearlyPriceUsd: number; limits: PlanLimits }> = {
+  free: {
+    name: "Free",
+    description: "For small teams getting started",
+    monthlyPriceUsd: 0,
+    yearlyPriceUsd: 0,
+    limits: {
+      callsPerMonth: 50,
+      storageMb: 500,
+      aiAnalysesPerMonth: 50,
+      apiCallsPerMonth: 1000,
+      maxUsers: 3,
+      customPromptTemplates: false,
+      ssoEnabled: false,
+      prioritySupport: false,
+    },
+  },
+  pro: {
+    name: "Pro",
+    description: "For growing teams with advanced needs",
+    monthlyPriceUsd: 99,
+    yearlyPriceUsd: 948, // $79/mo billed yearly
+    limits: {
+      callsPerMonth: 1000,
+      storageMb: 10000,
+      aiAnalysesPerMonth: 1000,
+      apiCallsPerMonth: 50000,
+      maxUsers: 25,
+      customPromptTemplates: true,
+      ssoEnabled: false,
+      prioritySupport: false,
+    },
+  },
+  enterprise: {
+    name: "Enterprise",
+    description: "For large organizations with custom requirements",
+    monthlyPriceUsd: 499,
+    yearlyPriceUsd: 4788, // $399/mo billed yearly
+    limits: {
+      callsPerMonth: -1, // unlimited
+      storageMb: 100000,
+      aiAnalysesPerMonth: -1,
+      apiCallsPerMonth: -1,
+      maxUsers: -1,
+      customPromptTemplates: true,
+      ssoEnabled: true,
+      prioritySupport: true,
+    },
+  },
+};
+
+export const subscriptionSchema = z.object({
+  id: z.string(),
+  orgId: z.string(),
+  planTier: z.enum(PLAN_TIERS),
+  status: z.enum(["active", "past_due", "canceled", "trialing", "incomplete"]),
+  stripeCustomerId: z.string().optional(),
+  stripeSubscriptionId: z.string().optional(),
+  stripePriceId: z.string().optional(),
+  billingInterval: z.enum(["monthly", "yearly"]).default("monthly"),
+  currentPeriodStart: z.string().optional(),
+  currentPeriodEnd: z.string().optional(),
+  cancelAtPeriodEnd: z.boolean().default(false),
+  createdAt: z.string().optional(),
+  updatedAt: z.string().optional(),
+});
+export type Subscription = z.infer<typeof subscriptionSchema>;
+
+export const insertSubscriptionSchema = subscriptionSchema.omit({ id: true, createdAt: true, updatedAt: true }).partial({ cancelAtPeriodEnd: true });
+export type InsertSubscription = z.infer<typeof insertSubscriptionSchema>;
+
 // --- PROMPT TEMPLATE SCHEMAS ---
 export const promptTemplateSchema = z.object({
   id: z.string(),

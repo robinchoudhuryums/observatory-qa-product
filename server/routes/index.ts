@@ -13,6 +13,7 @@ import { registerInsightRoutes } from "./insights";
 import { registerRegistrationRoutes } from "./registration";
 import { registerApiKeyRoutes, apiKeyAuth } from "./api-keys";
 import { registerOAuthRoutes, setupGoogleOAuth } from "./oauth";
+import { registerBillingRoutes } from "./billing";
 
 export async function registerRoutes(app: Express): Promise<Server> {
   // API key auth middleware (before routes, after session middleware)
@@ -28,6 +29,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   registerAccessRoutes(app);
   registerAdminRoutes(app);
   registerApiKeyRoutes(app);
+  registerBillingRoutes(app);
   registerDashboardRoutes(app);
   registerEmployeeRoutes(app);
   registerCallRoutes(app);

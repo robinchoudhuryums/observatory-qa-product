@@ -27,6 +27,8 @@ import {
   type InsertInvitation,
   type ApiKey,
   type InsertApiKey,
+  type Subscription,
+  type InsertSubscription,
 } from "@shared/schema";
 
 /**
@@ -190,6 +192,13 @@ export interface IStorage {
   listApiKeys(orgId: string): Promise<ApiKey[]>;
   updateApiKey(orgId: string, id: string, updates: Partial<ApiKey>): Promise<ApiKey | undefined>;
   deleteApiKey(orgId: string, id: string): Promise<void>;
+
+  // Subscription operations (org-scoped)
+  getSubscription(orgId: string): Promise<Subscription | undefined>;
+  getSubscriptionByStripeCustomerId(stripeCustomerId: string): Promise<Subscription | undefined>;
+  getSubscriptionByStripeSubId(stripeSubscriptionId: string): Promise<Subscription | undefined>;
+  upsertSubscription(orgId: string, sub: InsertSubscription): Promise<Subscription>;
+  updateSubscription(orgId: string, updates: Partial<Subscription>): Promise<Subscription | undefined>;
 }
 
 export interface UsageSummary {

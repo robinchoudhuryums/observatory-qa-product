@@ -11,6 +11,7 @@ import { logPhiAccess, auditContext } from "../services/audit-log";
 import { notifyFlaggedCall } from "../services/notifications";
 import { trackUsage } from "../services/queue";
 import { upload, safeFloat, withRetry } from "./helpers";
+import { enforceQuota } from "./billing";
 
 // Delete uploaded file after processing
 async function cleanupFile(filePath: string) {
@@ -290,7 +291,7 @@ export function registerCallRoutes(app: Express): void {
     }
   });
 
-  app.post("/api/calls/upload", requireAuth, injectOrgContext, upload.single('audioFile'), async (req, res) => {
+  app.post("/api/calls/upload", requireAuth, injectOrgContext, enforceQuota("transcription"), upload.single('audioFile'), async (req, res) => {
     try {
       if (!req.file) {
         res.status(400).json({ message: "No audio file provided" });
