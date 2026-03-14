@@ -282,6 +282,28 @@ export const invitationSchema = insertInvitationSchema.extend({
 export type InsertInvitation = z.infer<typeof insertInvitationSchema>;
 export type Invitation = z.infer<typeof invitationSchema>;
 
+// --- API KEY SCHEMAS ---
+export const insertApiKeySchema = z.object({
+  orgId: z.string().optional(),
+  name: z.string().min(1),
+  keyHash: z.string(), // SHA-256 hash of the key (never store plaintext)
+  keyPrefix: z.string(), // First 8 chars for display (e.g., "obs_k_ab")
+  permissions: z.array(z.string()).default(["read"]), // "read", "write", "admin"
+  createdBy: z.string(),
+  expiresAt: z.string().optional(),
+});
+
+export const apiKeySchema = insertApiKeySchema.extend({
+  id: z.string(),
+  orgId: z.string(),
+  lastUsedAt: z.string().optional(),
+  status: z.enum(["active", "revoked"]).default("active"),
+  createdAt: z.string().optional(),
+});
+
+export type InsertApiKey = z.infer<typeof insertApiKeySchema>;
+export type ApiKey = z.infer<typeof apiKeySchema>;
+
 // --- PROMPT TEMPLATE SCHEMAS ---
 export const promptTemplateSchema = z.object({
   id: z.string(),

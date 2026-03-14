@@ -25,6 +25,8 @@ import {
   type InsertOrganization,
   type Invitation,
   type InsertInvitation,
+  type ApiKey,
+  type InsertApiKey,
 } from "@shared/schema";
 
 /**
@@ -181,6 +183,13 @@ export interface IStorage {
   listInvitations(orgId: string): Promise<Invitation[]>;
   updateInvitation(orgId: string, id: string, updates: Partial<Invitation>): Promise<Invitation | undefined>;
   deleteInvitation(orgId: string, id: string): Promise<void>;
+
+  // API key operations (org-scoped)
+  createApiKey(orgId: string, apiKey: InsertApiKey): Promise<ApiKey>;
+  getApiKeyByHash(keyHash: string): Promise<ApiKey | undefined>;
+  listApiKeys(orgId: string): Promise<ApiKey[]>;
+  updateApiKey(orgId: string, id: string, updates: Partial<ApiKey>): Promise<ApiKey | undefined>;
+  deleteApiKey(orgId: string, id: string): Promise<void>;
 }
 
 export interface UsageSummary {

@@ -194,6 +194,24 @@ export const coachingSessions = pgTable("coaching_sessions", {
   index("coaching_status_idx").on(t.orgId, t.status),
 ]);
 
+// --- API KEYS ---
+export const apiKeys = pgTable("api_keys", {
+  id: text("id").primaryKey(),
+  orgId: text("org_id").notNull().references(() => organizations.id),
+  name: varchar("name", { length: 255 }).notNull(),
+  keyHash: varchar("key_hash", { length: 128 }).notNull(), // SHA-256 hex
+  keyPrefix: varchar("key_prefix", { length: 16 }).notNull(), // e.g., "obs_k_ab12cd34"
+  permissions: jsonb("permissions").$type<string[]>().notNull(),
+  createdBy: varchar("created_by", { length: 255 }).notNull(),
+  status: varchar("status", { length: 20 }).notNull().default("active"),
+  expiresAt: timestamp("expires_at"),
+  lastUsedAt: timestamp("last_used_at"),
+  createdAt: timestamp("created_at").defaultNow(),
+}, (t) => [
+  uniqueIndex("api_keys_hash_idx").on(t.keyHash),
+  index("api_keys_org_id_idx").on(t.orgId),
+]);
+
 // --- INVITATIONS ---
 export const invitations = pgTable("invitations", {
   id: text("id").primaryKey(),

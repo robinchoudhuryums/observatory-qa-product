@@ -25,6 +25,8 @@ import {
   type InsertOrganization,
   type Invitation,
   type InsertInvitation,
+  type ApiKey,
+  type InsertApiKey,
 } from "@shared/schema";
 import { randomUUID, randomBytes } from "crypto";
 import { type IStorage, applyCallFilters } from "./types";
@@ -438,6 +440,45 @@ export class MemStorage implements IStorage {
   async deleteInvitation(orgId: string, id: string): Promise<void> {
     const inv = this.invitations.get(id);
     if (inv?.orgId === orgId) this.invitations.delete(id);
+  }
+
+  // --- API Key operations ---
+  private apiKeys = new Map<string, ApiKey>();
+
+  async createApiKey(orgId: string, apiKey: InsertApiKey): Promise<ApiKey> {
+    const id = randomUUID();
+    const newKey: ApiKey = {
+      ...apiKey,
+      id,
+      orgId,
+      status: "active",
+      createdAt: new Date().toISOString(),
+    };
+    this.apiKeys.set(id, newKey);
+    return newKey;
+  }
+
+  async getApiKeyByHash(keyHash: string): Promise<ApiKey | undefined> {
+    return Array.from(this.apiKeys.values()).find(k => k.keyHash === keyHash && k.status === "active");
+  }
+
+  async listApiKeys(orgId: string): Promise<ApiKey[]> {
+    return Array.from(this.apiKeys.values())
+      .filter(k => k.orgId === orgId)
+      .sort((a, b) => (b.createdAt || "").localeCompare(a.createdAt || ""));
+  }
+
+  async updateApiKey(orgId: string, id: string, updates: Partial<ApiKey>): Promise<ApiKey | undefined> {
+    const key = this.apiKeys.get(id);
+    if (!key || key.orgId !== orgId) return undefined;
+    const updated = { ...key, ...updates, orgId };
+    this.apiKeys.set(id, updated);
+    return updated;
+  }
+
+  async deleteApiKey(orgId: string, id: string): Promise<void> {
+    const key = this.apiKeys.get(id);
+    if (key?.orgId === orgId) this.apiKeys.delete(id);
   }
 
   // --- Data retention (org-scoped) ---

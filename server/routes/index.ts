@@ -11,13 +11,23 @@ import { registerReportRoutes } from "./reports";
 import { registerCoachingRoutes } from "./coaching";
 import { registerInsightRoutes } from "./insights";
 import { registerRegistrationRoutes } from "./registration";
+import { registerApiKeyRoutes, apiKeyAuth } from "./api-keys";
+import { registerOAuthRoutes, setupGoogleOAuth } from "./oauth";
 
 export async function registerRoutes(app: Express): Promise<Server> {
+  // API key auth middleware (before routes, after session middleware)
+  app.use("/api", apiKeyAuth);
+
+  // Set up Google OAuth if configured
+  await setupGoogleOAuth();
+
   registerHealthRoutes(app);
   registerAuthRoutes(app);
+  registerOAuthRoutes(app);
   registerRegistrationRoutes(app);
   registerAccessRoutes(app);
   registerAdminRoutes(app);
+  registerApiKeyRoutes(app);
   registerDashboardRoutes(app);
   registerEmployeeRoutes(app);
   registerCallRoutes(app);

@@ -476,6 +476,15 @@ export class CloudStorage implements IStorage {
     return [];
   }
 
+  // --- API Key operations (not supported in cloud storage) ---
+  async createApiKey(_orgId: string, _apiKey: any): Promise<any> {
+    throw new Error("API keys require PostgreSQL or in-memory storage");
+  }
+  async getApiKeyByHash(_keyHash: string): Promise<any> { return undefined; }
+  async listApiKeys(_orgId: string): Promise<any[]> { return []; }
+  async updateApiKey(_orgId: string, _id: string, _updates: any): Promise<any> { return undefined; }
+  async deleteApiKey(_orgId: string, _id: string): Promise<void> {}
+
   // --- Invitation operations (not supported in cloud storage) ---
   async createInvitation(_orgId: string, _invitation: any): Promise<any> {
     throw new Error("Invitations require PostgreSQL or in-memory storage");

@@ -29,6 +29,7 @@ import type {
   CoachingSession, InsertCoachingSession,
   Organization, InsertOrganization,
   Invitation, InsertInvitation,
+  ApiKey, InsertApiKey,
 } from "@shared/schema";
 import * as tables from "./schema";
 import { normalizeAnalysis } from "../storage";
@@ -739,6 +740,55 @@ export class PostgresStorage implements IStorage {
     }));
   }
 
+  // --- API Key operations ---
+  async createApiKey(orgId: string, apiKey: InsertApiKey): Promise<ApiKey> {
+    const id = randomUUID();
+    const [row] = await this.db.insert(tables.apiKeys).values({
+      id,
+      orgId,
+      name: apiKey.name,
+      keyHash: apiKey.keyHash,
+      keyPrefix: apiKey.keyPrefix,
+      permissions: apiKey.permissions || ["read"],
+      createdBy: apiKey.createdBy,
+      status: "active",
+      expiresAt: apiKey.expiresAt ? new Date(apiKey.expiresAt) : undefined,
+    }).returning();
+    return this.mapApiKey(row);
+  }
+
+  async getApiKeyByHash(keyHash: string): Promise<ApiKey | undefined> {
+    const rows = await this.db.select().from(tables.apiKeys)
+      .where(and(eq(tables.apiKeys.keyHash, keyHash), eq(tables.apiKeys.status, "active")))
+      .limit(1);
+    return rows[0] ? this.mapApiKey(rows[0]) : undefined;
+  }
+
+  async listApiKeys(orgId: string): Promise<ApiKey[]> {
+    const rows = await this.db.select().from(tables.apiKeys)
+      .where(eq(tables.apiKeys.orgId, orgId))
+      .orderBy(desc(tables.apiKeys.createdAt));
+    return rows.map(r => this.mapApiKey(r));
+  }
+
+  async updateApiKey(orgId: string, id: string, updates: Partial<ApiKey>): Promise<ApiKey | undefined> {
+    const setValues: Record<string, unknown> = {};
+    if (updates.status) setValues.status = updates.status;
+    if (updates.lastUsedAt) setValues.lastUsedAt = new Date(updates.lastUsedAt);
+    if (updates.name) setValues.name = updates.name;
+
+    const [row] = await this.db.update(tables.apiKeys)
+      .set(setValues)
+      .where(and(eq(tables.apiKeys.id, id), eq(tables.apiKeys.orgId, orgId)))
+      .returning();
+    return row ? this.mapApiKey(row) : undefined;
+  }
+
+  async deleteApiKey(orgId: string, id: string): Promise<void> {
+    await this.db.delete(tables.apiKeys)
+      .where(and(eq(tables.apiKeys.id, id), eq(tables.apiKeys.orgId, orgId)));
+  }
+
   // --- Invitation operations ---
   async createInvitation(orgId: string, invitation: InsertInvitation): Promise<Invitation> {
     const { randomBytes } = await import("crypto");
@@ -942,6 +992,22 @@ export class PostgresStorage implements IStorage {
       dueDate: toISOString(row.dueDate),
       createdAt: toISOString(row.createdAt),
       completedAt: toISOString(row.completedAt),
+    };
+  }
+
+  private mapApiKey(row: any): ApiKey {
+    return {
+      id: row.id,
+      orgId: row.orgId,
+      name: row.name,
+      keyHash: row.keyHash,
+      keyPrefix: row.keyPrefix,
+      permissions: row.permissions as string[],
+      createdBy: row.createdBy,
+      status: row.status,
+      expiresAt: toISOString(row.expiresAt),
+      lastUsedAt: toISOString(row.lastUsedAt),
+      createdAt: toISOString(row.createdAt),
     };
   }
 
