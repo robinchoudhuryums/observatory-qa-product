@@ -1,7 +1,7 @@
 # Observatory QA — AI-Powered Call Quality Analysis Platform
 
 ## Project Overview
-Observatory QA is a multi-tenant, HIPAA-compliant SaaS platform for call quality analysis. Organizations upload call recordings, which are transcribed by AssemblyAI and analyzed by AI (AWS Bedrock Claude or Google Gemini) for performance scoring, compliance, sentiment analysis, and coaching insights. Includes a RAG knowledge base for grounding AI analysis in each organization's own documentation.
+Observatory QA is a multi-tenant, HIPAA-compliant SaaS platform for call quality analysis. Organizations upload call recordings, which are transcribed by AssemblyAI and analyzed by AI (AWS Bedrock Claude) for performance scoring, compliance, sentiment analysis, and coaching insights. Includes a RAG knowledge base for grounding AI analysis in each organization's own documentation.
 
 **Product origin**: Evolved from a single-tenant internal tool (CallAnalyzer for UMS) into a multi-tenant SaaS product. The multi-tenant transformation plan is documented in `MULTI_TENANT_TRANSFORMATION_PLAN.md`.
 
@@ -9,10 +9,10 @@ Observatory QA is a multi-tenant, HIPAA-compliant SaaS platform for call quality
 - **Frontend**: React 18 + TypeScript, Vite, TailwindCSS 3, shadcn/ui, Recharts, Wouter (routing), TanStack Query, Framer Motion
 - **Backend**: Express.js + TypeScript (ESM), Node.js
 - **Database**: PostgreSQL (via Drizzle ORM) — recommended for production SaaS
-- **AI Analysis**: AWS Bedrock (Claude Sonnet) or Google Gemini — per-org configurable via `ai-factory.ts`
+- **AI Analysis**: AWS Bedrock (Claude Sonnet) via `ai-factory.ts`
 - **Transcription**: AssemblyAI
 - **RAG**: pgvector for vector similarity search, Amazon Titan Embed V2 for embeddings, BM25 keyword boosting
-- **Object Storage**: AWS S3 or Google Cloud Storage — for audio files and blob storage
+- **Object Storage**: AWS S3 — for audio files and blob storage
 - **Job Queues**: BullMQ (Redis-backed) — audio processing, reanalysis, retention, usage metering, document indexing
 - **Sessions & Rate Limiting**: Redis (connect-redis, ioredis) — falls back to in-memory when unavailable
 - **Billing**: Stripe (subscriptions, checkout, customer portal, webhooks)
@@ -33,11 +33,9 @@ Observatory QA is a multi-tenant, HIPAA-compliant SaaS platform for call quality
    - **Storage backend** (pick one):
      - `STORAGE_BACKEND=postgres` + `DATABASE_URL` — recommended for SaaS (requires PostgreSQL + pgvector extension)
      - `S3_BUCKET` — S3-backed JSON file storage (original single-tenant approach)
-     - `GCS_BUCKET` + `GCS_CREDENTIALS` — Google Cloud Storage
      - No config → **in-memory storage (data lost on restart, dev only)**
-   - **AI provider** (pick one):
+   - **AI provider**:
      - `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `AWS_REGION` — for Bedrock (Claude)
-     - `GEMINI_API_KEY` — for Google Gemini
    - **Optional**: `REDIS_URL` (enables distributed sessions, rate limiting, job queues), `DATABASE_URL` (PostgreSQL)
 
 3. Start the dev server:
@@ -131,7 +129,6 @@ server/services/             # Business logic & integrations
   ai-factory.ts              #   AI provider selection (per-org or global)
   ai-provider.ts             #   AI analysis interface, prompt building, JSON parsing
   bedrock.ts                 #   AWS Bedrock Claude provider (raw REST + SigV4)
-  gemini.ts                  #   Google Gemini provider (AI Studio + Vertex AI)
   assemblyai.ts              #   AssemblyAI transcription + transcript processing
   s3.ts                      #   S3 client (raw REST + SigV4, no AWS SDK)
   gcs.ts                     #   Google Cloud Storage client

@@ -1,4 +1,3 @@
-import { GcsClient } from "../services/gcs";
 import { S3Client } from "../services/s3";
 import { MemStorage } from "./memory";
 import { CloudStorage } from "./cloud";
@@ -16,10 +15,9 @@ export { CloudStorage } from "./cloud";
  * Priority:
  *   1. STORAGE_BACKEND=postgres + DATABASE_URL → PostgresStorage (recommended for SaaS)
  *   2. STORAGE_BACKEND=s3 or S3_BUCKET → CloudStorage (S3)
- *   3. STORAGE_BACKEND=gcs or GCS_CREDENTIALS → CloudStorage (GCS)
- *   4. No config → MemStorage (development only)
+ *   3. No config → MemStorage (development only)
  *
- * When using PostgresStorage, an optional S3/GCS client can be provided
+ * When using PostgresStorage, an optional S3 client can be provided
  * for audio blob storage. Set S3_BUCKET alongside DATABASE_URL for this.
  */
 function createStorage(): IStorage {
@@ -47,19 +45,9 @@ function createStorage(): IStorage {
     return new CloudStorage(new S3Client(bucket));
   }
 
-  // Explicit GCS or auto-detect via GCS credentials
-  if (storageBackend === "gcs" || process.env.GCS_CREDENTIALS || process.env.GOOGLE_APPLICATION_CREDENTIALS) {
-    const bucket = process.env.GCS_BUCKET;
-    if (!bucket) {
-      throw new Error("GCS_BUCKET environment variable is required when using GCS storage backend");
-    }
-    logger.info({ bucket }, "Using GCS storage backend");
-    return new CloudStorage(new GcsClient(bucket));
-  }
-
   // PRODUCTION SAFETY: Warn loudly if no persistent backend is configured
   if (process.env.NODE_ENV === "production") {
-    logger.error("No persistent storage backend configured in production. Set STORAGE_BACKEND=postgres with DATABASE_URL, or configure S3/GCS. Data WILL BE LOST on restart with in-memory storage.");
+    logger.error("No persistent storage backend configured in production. Set STORAGE_BACKEND=postgres with DATABASE_URL, or configure S3. Data WILL BE LOST on restart with in-memory storage.");
   }
 
   logger.info("No cloud credentials — using in-memory storage (data will not persist across restarts)");
@@ -70,7 +58,7 @@ export let storage: IStorage = createStorage();
 
 /**
  * Optional object storage client for file operations (logo uploads, reference docs).
- * Available when S3/GCS is configured, regardless of primary storage backend.
+ * Available when S3 is configured, regardless of primary storage backend.
  */
 export let objectStorage: ObjectStorageClient | null = null;
 
@@ -79,11 +67,6 @@ export let objectStorage: ObjectStorageClient | null = null;
   const bucket = process.env.S3_BUCKET;
   if (bucket) {
     objectStorage = new S3Client(bucket);
-    return;
-  }
-  const gcsBucket = process.env.GCS_BUCKET;
-  if (gcsBucket && (process.env.GCS_CREDENTIALS || process.env.GOOGLE_APPLICATION_CREDENTIALS)) {
-    objectStorage = new GcsClient(gcsBucket);
   }
 })();
 

@@ -256,7 +256,7 @@ describe("insertOrganizationSchema", () => {
         callPartyTypes: ["customer", "vendor"],
         retentionDays: 180,
         branding: { appName: "AcmeQA", logoUrl: "https://acme.com/logo.png" },
-        aiProvider: "bedrock",
+        bedrockModel: "us.anthropic.claude-sonnet-4-6",
       },
       status: "active",
     });
@@ -351,12 +351,10 @@ describe("orgSettingsSchema", () => {
     assert.equal(result.data.retentionDays, 90);
   });
 
-  it("validates aiProvider enum", () => {
-    const valid = orgSettingsSchema.safeParse({ aiProvider: "bedrock" });
+  it("accepts bedrockModel override", () => {
+    const valid = orgSettingsSchema.safeParse({ bedrockModel: "us.anthropic.claude-haiku-4-5-20251001" });
     assert.ok(valid.success);
-
-    const invalid = orgSettingsSchema.safeParse({ aiProvider: "openai" });
-    assert.ok(!invalid.success);
+    assert.equal(valid.data.bedrockModel, "us.anthropic.claude-haiku-4-5-20251001");
   });
 
   it("accepts branding with default appName", () => {
