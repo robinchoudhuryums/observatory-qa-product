@@ -48,6 +48,7 @@ const PromptTemplatesPage = lazy(() => import("@/pages/prompt-templates"));
 const InsightsPage = lazy(() => import("@/pages/insights"));
 const CoachingPage = lazy(() => import("@/pages/coaching"));
 const SettingsPage = lazy(() => import("@/pages/settings"));
+const AuditLogsPage = lazy(() => import("@/pages/audit-logs"));
 const OnboardingWizard = lazy(() => import("@/pages/onboarding"));
 const AuthPage = lazy(() => import("@/pages/auth"));
 const LandingPage = lazy(() => import("@/pages/landing"));
@@ -189,6 +190,7 @@ function Router() {
               <Route path="/admin">{() => <ErrorBoundary><AnimatedPage><ProtectedRoute minRole="admin"><AdminPage /></ProtectedRoute></AnimatedPage></ErrorBoundary>}</Route>
               <Route path="/admin/templates">{() => <ErrorBoundary><AnimatedPage><ProtectedRoute minRole="admin"><PromptTemplatesPage /></ProtectedRoute></AnimatedPage></ErrorBoundary>}</Route>
               <Route path="/admin/settings">{() => <ErrorBoundary><AnimatedPage><ProtectedRoute minRole="admin"><SettingsPage /></ProtectedRoute></AnimatedPage></ErrorBoundary>}</Route>
+              <Route path="/admin/audit-logs">{() => <ErrorBoundary><AnimatedPage><ProtectedRoute minRole="admin"><AuditLogsPage /></ProtectedRoute></AnimatedPage></ErrorBoundary>}</Route>
               <Route path="/onboarding">{() => <ErrorBoundary><OnboardingWizard /></ErrorBoundary>}</Route>
               <Route>{() => <AnimatedPage><NotFound /></AnimatedPage>}</Route>
             </Switch>

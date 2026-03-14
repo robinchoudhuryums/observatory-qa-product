@@ -518,6 +518,23 @@ export const coachingSessionSchema = insertCoachingSessionSchema.extend({
 export type InsertCoachingSession = z.infer<typeof insertCoachingSessionSchema>;
 export type CoachingSession = z.infer<typeof coachingSessionSchema>;
 
+// --- COACHING RECOMMENDATIONS ---
+export type CoachingRecommendationRecord = {
+  id: string;
+  orgId: string;
+  employeeId: string;
+  trigger: string;
+  category: string;
+  title: string;
+  description?: string | null;
+  severity: string;
+  callIds?: string[] | null;
+  metrics?: Record<string, unknown> | null;
+  status: string;
+  coachingSessionId?: string | null;
+  createdAt?: string | null;
+};
+
 // --- COMBINED TYPES ---
 export type CallWithDetails = Call & {
   employee?: Employee;
@@ -552,6 +569,21 @@ export type TopPerformer = {
   role?: string;
   avgPerformanceScore: number | null;
   totalCalls: number;
+};
+
+/** Audit log entry shape for the audit log viewer */
+export type AuditEntry = {
+  timestamp?: string;
+  event: string;
+  orgId?: string;
+  userId?: string;
+  username?: string;
+  role?: string;
+  resourceType: string;
+  resourceId?: string;
+  ip?: string;
+  userAgent?: string;
+  detail?: string;
 };
 
 /** Authenticated user shape returned by /api/auth/me and stored in session */

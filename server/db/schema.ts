@@ -218,6 +218,27 @@ export const coachingSessions = pgTable("coaching_sessions", {
   index("coaching_status_idx").on(t.orgId, t.status),
 ]);
 
+// --- COACHING RECOMMENDATIONS (auto-generated) ---
+export const coachingRecommendations = pgTable("coaching_recommendations", {
+  id: text("id").primaryKey(),
+  orgId: text("org_id").notNull().references(() => organizations.id),
+  employeeId: text("employee_id").notNull().references(() => employees.id),
+  trigger: varchar("trigger", { length: 100 }).notNull(), // e.g. "low_compliance", "negative_sentiment_trend"
+  category: varchar("category", { length: 50 }).notNull(),
+  title: varchar("title", { length: 500 }).notNull(),
+  description: text("description"),
+  severity: varchar("severity", { length: 20 }).notNull().default("medium"), // low, medium, high
+  callIds: jsonb("call_ids"), // array of call IDs that triggered this
+  metrics: jsonb("metrics"), // snapshot of metrics at time of recommendation
+  status: varchar("status", { length: 20 }).notNull().default("pending"), // pending, accepted, dismissed
+  coachingSessionId: text("coaching_session_id").references(() => coachingSessions.id),
+  createdAt: timestamp("created_at").defaultNow(),
+}, (t) => [
+  index("coaching_rec_org_id_idx").on(t.orgId),
+  index("coaching_rec_employee_idx").on(t.orgId, t.employeeId),
+  index("coaching_rec_status_idx").on(t.orgId, t.status),
+]);
+
 // --- API KEYS ---
 export const apiKeys = pgTable("api_keys", {
   id: text("id").primaryKey(),
@@ -338,4 +359,23 @@ export const usageEvents = pgTable("usage_events", {
 }, (t) => [
   index("usage_org_type_idx").on(t.orgId, t.eventType),
   index("usage_created_at_idx").on(t.createdAt),
+]);
+
+// --- AUDIT LOGS (append-only, HIPAA compliance) ---
+export const auditLogs = pgTable("audit_logs", {
+  id: text("id").primaryKey(),
+  orgId: text("org_id").notNull(),
+  event: varchar("event", { length: 100 }).notNull(),
+  userId: text("user_id"),
+  username: varchar("username", { length: 100 }),
+  role: varchar("role", { length: 20 }),
+  resourceType: varchar("resource_type", { length: 50 }).notNull(),
+  resourceId: text("resource_id"),
+  ip: varchar("ip", { length: 45 }),
+  detail: text("detail"),
+  createdAt: timestamp("created_at").defaultNow(),
+}, (t) => [
+  index("audit_logs_org_idx").on(t.orgId, t.createdAt),
+  index("audit_logs_event_idx").on(t.orgId, t.event),
+  index("audit_logs_user_idx").on(t.orgId, t.userId),
 ]);

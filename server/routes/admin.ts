@@ -6,6 +6,7 @@ import { assemblyAIService } from "../services/assemblyai";
 import { broadcastCallUpdate } from "../services/websocket";
 import { insertPromptTemplateSchema, orgSettingsSchema, type OrgSettings } from "@shared/schema";
 import { logger } from "../services/logger";
+import { queryAuditLogs } from "../services/audit-log";
 import { safeInt, withRetry } from "./helpers";
 import { enqueueReanalysis } from "../services/queue";
 
@@ -316,6 +317,40 @@ export function registerAdminRoutes(app: Express): void {
     } catch (error) {
       logger.error({ err: error }, "Failed to update organization settings");
       res.status(500).json({ message: "Failed to update settings" });
+    }
+  });
+
+  // ============================================================
+  // AUDIT LOG VIEWER (admin only)
+  // ============================================================
+
+  app.get("/api/admin/audit-logs", requireAuth, requireRole("admin"), injectOrgContext, async (req, res) => {
+    try {
+      const { event, userId, resourceType, from, to, page, limit } = req.query;
+      const pageNum = Math.max(1, safeInt(page, 1));
+      const pageLimit = Math.min(safeInt(limit, 50), 200);
+
+      const result = await queryAuditLogs({
+        orgId: req.orgId!,
+        event: event as string | undefined,
+        userId: userId as string | undefined,
+        resourceType: resourceType as string | undefined,
+        from: from ? new Date(from as string) : undefined,
+        to: to ? new Date(to as string) : undefined,
+        limit: pageLimit,
+        offset: (pageNum - 1) * pageLimit,
+      });
+
+      res.json({
+        entries: result.entries,
+        total: result.total,
+        page: pageNum,
+        pageSize: pageLimit,
+        totalPages: Math.ceil(result.total / pageLimit),
+      });
+    } catch (error) {
+      logger.error({ err: error }, "Failed to fetch audit logs");
+      res.status(500).json({ message: "Failed to fetch audit logs" });
     }
   });
 }

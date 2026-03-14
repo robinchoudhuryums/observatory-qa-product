@@ -3,6 +3,8 @@ import { storage } from "../storage";
 import { requireAuth, requireRole, injectOrgContext } from "../auth";
 import { insertCoachingSessionSchema } from "@shared/schema";
 import { z } from "zod";
+import { generateRecommendations, saveRecommendations, generateCoachingPlan, calculateEffectiveness } from "../services/coaching-engine";
+import { logger } from "../services/logger";
 
 export function registerCoachingRoutes(app: Express): void {
   // ==================== COACHING ROUTES ====================
@@ -79,6 +81,138 @@ export function registerCoachingRoutes(app: Express): void {
       res.json(updated);
     } catch (error) {
       res.status(500).json({ message: "Failed to update coaching session" });
+    }
+  });
+
+  // ==================== COACHING RECOMMENDATIONS ====================
+
+  // Get recommendations for the org (or filtered by employee)
+  app.get("/api/coaching/recommendations", requireAuth, injectOrgContext, requireRole("manager", "admin"), async (req, res) => {
+    try {
+      const { getDatabase } = await import("../db/index");
+      const db = getDatabase();
+      if (!db) {
+        res.json([]);
+        return;
+      }
+
+      const { coachingRecommendations } = await import("../db/schema");
+      const { eq, and, desc } = await import("drizzle-orm");
+
+      const conditions = [eq(coachingRecommendations.orgId, req.orgId!)];
+      const employeeId = req.query.employeeId as string | undefined;
+      if (employeeId) {
+        conditions.push(eq(coachingRecommendations.employeeId, employeeId));
+      }
+      const status = req.query.status as string | undefined;
+      if (status) {
+        conditions.push(eq(coachingRecommendations.status, status));
+      }
+
+      const rows = await db.select().from(coachingRecommendations)
+        .where(and(...conditions))
+        .orderBy(desc(coachingRecommendations.createdAt))
+        .limit(50);
+
+      res.json(rows);
+    } catch (error) {
+      logger.error({ err: error }, "Failed to fetch coaching recommendations");
+      res.status(500).json({ message: "Failed to fetch recommendations" });
+    }
+  });
+
+  // Trigger recommendation generation for an employee
+  app.post("/api/coaching/recommendations/generate", requireAuth, injectOrgContext, requireRole("manager", "admin"), async (req, res) => {
+    try {
+      const { employeeId } = req.body;
+      if (!employeeId) {
+        res.status(400).json({ message: "employeeId is required" });
+        return;
+      }
+
+      const recs = await generateRecommendations(req.orgId!, employeeId);
+      const saved = await saveRecommendations(req.orgId!, recs);
+
+      res.json({ generated: recs.length, saved, recommendations: recs });
+    } catch (error) {
+      logger.error({ err: error }, "Failed to generate recommendations");
+      res.status(500).json({ message: "Failed to generate recommendations" });
+    }
+  });
+
+  // Update recommendation status (accept → create coaching session, or dismiss)
+  app.patch("/api/coaching/recommendations/:id", requireAuth, injectOrgContext, requireRole("manager", "admin"), async (req, res) => {
+    try {
+      const { status } = req.body;
+      if (!status || !["accepted", "dismissed"].includes(status)) {
+        res.status(400).json({ message: "status must be 'accepted' or 'dismissed'" });
+        return;
+      }
+
+      const { getDatabase } = await import("../db/index");
+      const db = getDatabase();
+      if (!db) {
+        res.status(503).json({ message: "Database not available" });
+        return;
+      }
+
+      const { coachingRecommendations } = await import("../db/schema");
+      const { eq, and } = await import("drizzle-orm");
+
+      const [rec] = await db.select().from(coachingRecommendations)
+        .where(and(
+          eq(coachingRecommendations.id, req.params.id),
+          eq(coachingRecommendations.orgId, req.orgId!),
+        ))
+        .limit(1);
+
+      if (!rec) {
+        res.status(404).json({ message: "Recommendation not found" });
+        return;
+      }
+
+      await db.update(coachingRecommendations)
+        .set({ status })
+        .where(eq(coachingRecommendations.id, req.params.id));
+
+      res.json({ ...rec, status });
+    } catch (error) {
+      logger.error({ err: error }, "Failed to update recommendation");
+      res.status(500).json({ message: "Failed to update recommendation" });
+    }
+  });
+
+  // ==================== AI COACHING PLAN ====================
+
+  // Generate AI coaching plan for a session
+  app.post("/api/coaching/:id/generate-plan", requireAuth, injectOrgContext, requireRole("manager", "admin"), async (req, res) => {
+    try {
+      const result = await generateCoachingPlan(req.orgId!, req.params.id);
+      if (!result) {
+        res.status(404).json({ message: "Session not found or AI not available" });
+        return;
+      }
+      res.json(result);
+    } catch (error) {
+      logger.error({ err: error }, "Failed to generate coaching plan");
+      res.status(500).json({ message: "Failed to generate coaching plan" });
+    }
+  });
+
+  // ==================== COACHING EFFECTIVENESS ====================
+
+  // Get effectiveness metrics for a coaching session
+  app.get("/api/coaching/:id/effectiveness", requireAuth, injectOrgContext, async (req, res) => {
+    try {
+      const result = await calculateEffectiveness(req.orgId!, req.params.id);
+      if (!result) {
+        res.json({ message: "Not enough data to calculate effectiveness", data: null });
+        return;
+      }
+      res.json(result);
+    } catch (error) {
+      logger.error({ err: error }, "Failed to calculate coaching effectiveness");
+      res.status(500).json({ message: "Failed to calculate effectiveness" });
     }
   });
 }

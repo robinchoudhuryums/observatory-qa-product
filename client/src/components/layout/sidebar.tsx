@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { Link, useLocation } from "wouter";
-import { Mic, BarChart3, Upload, FileText, Heart, Users, UserPlus, Search, LogOut, User, TrendingUp, Sun, Moon, Shield, Building2, SlidersHorizontal, ClipboardCheck, Palette } from "lucide-react";
+import { Mic, BarChart3, Upload, FileText, Heart, Users, UserPlus, Search, LogOut, User, TrendingUp, Sun, Moon, Shield, Building2, SlidersHorizontal, ClipboardCheck, Palette, ScrollText } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useQuery } from "@tanstack/react-query";
 import { apiRequest, queryClient, getQueryFn } from "@/lib/queryClient";
@@ -224,6 +224,19 @@ export default function Sidebar() {
             >
               <Palette className="w-5 h-5" />
               <span>Settings</span>
+            </Link>
+            <Link
+              href="/admin/audit-logs"
+              className={cn(
+                "flex items-center space-x-3 px-3 py-2 rounded-md font-medium transition-colors",
+                location === "/admin/audit-logs"
+                  ? "bg-primary text-primary-foreground"
+                  : "text-muted-foreground hover:bg-muted hover:text-foreground"
+              )}
+              data-testid="nav-link-audit-logs"
+            >
+              <ScrollText className="w-5 h-5" />
+              <span>Audit Logs</span>
             </Link>
           </>
         )}
