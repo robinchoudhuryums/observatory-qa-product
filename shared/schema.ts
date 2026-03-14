@@ -20,6 +20,16 @@ export const orgSettingsSchema = z.object({
   bedrockModel: z.string().optional(), // Per-org model override (e.g., "us.anthropic.claude-haiku-4-5-20251001")
   maxCallsPerDay: z.number().optional(), // Per-org usage quota
   maxStorageMb: z.number().optional(), // Per-org storage limit
+  // Webhook notification settings (override env vars per-org)
+  webhookUrl: z.string().url().optional(),
+  webhookPlatform: z.enum(["slack", "teams"]).optional(),
+  webhookEvents: z.array(z.string()).optional(), // e.g., ["low_score", "agent_misconduct", "exceptional_call"]
+  // SSO configuration (Enterprise plan only)
+  ssoProvider: z.enum(["saml", "oidc"]).optional(),
+  ssoEntityId: z.string().optional(),
+  ssoSignOnUrl: z.string().url().optional(),
+  ssoCertificate: z.string().optional(),
+  ssoEnforced: z.boolean().optional(), // When true, only SSO login allowed
 });
 
 export const insertOrganizationSchema = z.object({

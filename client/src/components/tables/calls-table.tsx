@@ -449,8 +449,20 @@ export default function CallsTable() {
                         <Eye className="w-4 h-4" />
                       </Button>
                     </Link>
-                    <Button size="sm" variant="ghost"><Play className="w-4 h-4" /></Button>
-                    <Button size="sm" variant="ghost" disabled={call.status !== 'completed'}><Download className="w-4 h-4" /></Button>
+                    <Link href={`/transcripts/${call.id}`}>
+                      <Button size="sm" variant="ghost" disabled={call.status !== 'completed'} title="Play audio">
+                        <Play className="w-4 h-4" />
+                      </Button>
+                    </Link>
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      disabled={call.status !== 'completed'}
+                      title="Download audio"
+                      onClick={() => window.open(`/api/calls/${call.id}/audio?download=true`, '_blank')}
+                    >
+                      <Download className="w-4 h-4" />
+                    </Button>
                     <Button
                       size="sm" variant="ghost" className="text-red-500 hover:text-red-600"
                       onClick={() => handleDelete(call.id)} disabled={deleteMutation.isPending}

@@ -2,6 +2,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import type { Employee } from "@shared/schema";
 import { AlertTriangle, RefreshCw } from "lucide-react";
 import { motion } from "framer-motion";
+import { Link } from "wouter";
 
 // Define a more robust type for a performer
 type TopPerformer = Partial<Employee> & {
@@ -71,9 +72,9 @@ export default function PerformanceCard() {
     >
       <div className="flex items-center justify-between mb-4">
         <h3 className="text-lg font-semibold text-foreground">Top Performers</h3>
-        <button className="text-sm font-medium" style={{ color: "hsl(var(--brand-from))" }} data-testid="view-all-performers">
+        <Link href="/performance" className="text-sm font-medium hover:underline" style={{ color: "hsl(var(--brand-from))" }} data-testid="view-all-performers">
           View All
-        </button>
+        </Link>
       </div>
       
       <div className="space-y-4">

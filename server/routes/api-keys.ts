@@ -40,6 +40,11 @@ export const apiKeyAuth: RequestHandler = async (req, res, next) => {
       return res.status(401).json({ message: "Invalid API key" });
     }
 
+    // Check revoked status
+    if (apiKey.status === "revoked") {
+      return res.status(401).json({ message: "API key has been revoked" });
+    }
+
     // Check expiry
     if (apiKey.expiresAt && new Date(apiKey.expiresAt) < new Date()) {
       return res.status(401).json({ message: "API key has expired" });
@@ -62,6 +67,7 @@ export const apiKeyAuth: RequestHandler = async (req, res, next) => {
       role: permLevel,
       orgId: apiKey.orgId,
       orgSlug: "",
+      apiKeyPermissions: apiKey.permissions,
     };
 
     // Update last used (fire and forget)

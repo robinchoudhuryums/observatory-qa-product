@@ -12,17 +12,43 @@
  *   WEBHOOK_EVENTS — comma-separated event types (default: "low_score,agent_misconduct,exceptional_call")
  */
 import { logger } from "./logger";
+import { storage } from "../storage";
 
 // --- Configuration ---
 
-const WEBHOOK_URL = process.env.WEBHOOK_URL;
-const WEBHOOK_COACHING_URL = process.env.WEBHOOK_COACHING_URL || WEBHOOK_URL;
-const WEBHOOK_DIGEST_URL = process.env.WEBHOOK_DIGEST_URL || WEBHOOK_URL;
-const WEBHOOK_PLATFORM = (process.env.WEBHOOK_PLATFORM || "slack") as "slack" | "teams";
-const WEBHOOK_EVENTS = (process.env.WEBHOOK_EVENTS || "low_score,agent_misconduct,exceptional_call")
+const ENV_WEBHOOK_URL = process.env.WEBHOOK_URL;
+const WEBHOOK_COACHING_URL = process.env.WEBHOOK_COACHING_URL || ENV_WEBHOOK_URL;
+const WEBHOOK_DIGEST_URL = process.env.WEBHOOK_DIGEST_URL || ENV_WEBHOOK_URL;
+const ENV_WEBHOOK_PLATFORM = (process.env.WEBHOOK_PLATFORM || "slack") as "slack" | "teams";
+const ENV_WEBHOOK_EVENTS = (process.env.WEBHOOK_EVENTS || "low_score,agent_misconduct,exceptional_call")
   .split(",")
   .map(s => s.trim())
   .filter(Boolean);
+
+// Keep backwards compat aliases
+const WEBHOOK_URL = ENV_WEBHOOK_URL;
+const WEBHOOK_PLATFORM = ENV_WEBHOOK_PLATFORM;
+const WEBHOOK_EVENTS = ENV_WEBHOOK_EVENTS;
+
+/** Resolve webhook config for an org: org settings override env vars. */
+async function resolveOrgWebhookConfig(orgId?: string): Promise<{
+  url: string | undefined;
+  platform: "slack" | "teams";
+  events: string[];
+}> {
+  if (!orgId) return { url: WEBHOOK_URL, platform: WEBHOOK_PLATFORM, events: WEBHOOK_EVENTS };
+  try {
+    const org = await storage.getOrganization(orgId);
+    const s = org?.settings;
+    return {
+      url: s?.webhookUrl || WEBHOOK_URL,
+      platform: s?.webhookPlatform || WEBHOOK_PLATFORM,
+      events: (s?.webhookEvents && s.webhookEvents.length > 0) ? s.webhookEvents : WEBHOOK_EVENTS,
+    };
+  } catch {
+    return { url: WEBHOOK_URL, platform: WEBHOOK_PLATFORM, events: WEBHOOK_EVENTS };
+  }
+}
 
 // --- Types ---
 
@@ -97,14 +123,19 @@ function shouldNotify(flags: string[]): boolean {
  * Non-blocking — failures are logged but never throw.
  */
 export async function notifyFlaggedCall(notification: CallNotification): Promise<void> {
-  if (!shouldNotify(notification.flags)) return;
-
   try {
-    const payload = WEBHOOK_PLATFORM === "teams"
+    const config = await resolveOrgWebhookConfig(notification.orgId);
+    if (!config.url || notification.flags.length === 0) return;
+    const matched = notification.flags.some(flag =>
+      config.events.some(event => flag === event || flag.startsWith(`${event}:`))
+    );
+    if (!matched) return;
+
+    const payload = config.platform === "teams"
       ? buildTeamsCallPayload(notification)
       : buildSlackCallPayload(notification);
 
-    const sent = await sendWebhook(WEBHOOK_URL!, payload);
+    const sent = await sendWebhook(config.url, payload);
     if (sent) {
       logger.info({ callId: notification.callId, flags: notification.flags }, "Webhook sent for flagged call");
     }
@@ -117,14 +148,15 @@ export async function notifyFlaggedCall(notification: CallNotification): Promise
  * Send a Slack/Teams notification with custom payload.
  * Used by proactive alerts and coaching engine.
  */
-export async function sendSlackNotification(payload: SlackNotificationPayload): Promise<boolean> {
-  const url = getChannelUrl(payload.channel);
+export async function sendSlackNotification(payload: SlackNotificationPayload, orgId?: string): Promise<boolean> {
+  const config = await resolveOrgWebhookConfig(orgId);
+  const url = config.url ? (getChannelUrl(payload.channel) || config.url) : undefined;
   if (!url) {
     logger.debug("No webhook URL configured for channel, skipping notification");
     return false;
   }
 
-  if (WEBHOOK_PLATFORM === "teams") {
+  if (config.platform === "teams") {
     return sendWebhook(url, convertToTeamsFormat(payload));
   }
 
