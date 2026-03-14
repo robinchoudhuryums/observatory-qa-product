@@ -70,6 +70,25 @@ function createStorage(): IStorage {
 export let storage: IStorage = createStorage();
 
 /**
+ * Optional object storage client for file operations (logo uploads, reference docs).
+ * Available when S3/GCS is configured, regardless of primary storage backend.
+ */
+export let objectStorage: ObjectStorageClient | null = null;
+
+// Initialize object storage from environment
+(function initObjectStorage() {
+  const bucket = process.env.S3_BUCKET;
+  if (bucket) {
+    objectStorage = new S3Client(bucket);
+    return;
+  }
+  const gcsBucket = process.env.GCS_BUCKET;
+  if (gcsBucket && (process.env.GCS_CREDENTIALS || process.env.GOOGLE_APPLICATION_CREDENTIALS)) {
+    objectStorage = new GcsClient(gcsBucket);
+  }
+})();
+
+/**
  * Initialize PostgreSQL storage backend (called during server startup).
  * Replaces the placeholder MemStorage with a real PostgresStorage instance.
  */

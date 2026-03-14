@@ -27,6 +27,7 @@ const PromptTemplatesPage = lazy(() => import("@/pages/prompt-templates"));
 const InsightsPage = lazy(() => import("@/pages/insights"));
 const CoachingPage = lazy(() => import("@/pages/coaching"));
 const SettingsPage = lazy(() => import("@/pages/settings"));
+const OnboardingWizard = lazy(() => import("@/pages/onboarding"));
 const AuthPage = lazy(() => import("@/pages/auth"));
 const LandingPage = lazy(() => import("@/pages/landing"));
 const InviteAcceptPage = lazy(() => import("@/pages/invite-accept"));
@@ -90,6 +91,21 @@ function Router() {
   // WebSocket listener for real-time notifications
   useWebSocket();
 
+  // Redirect to onboarding wizard if not yet completed (admin only, one-time)
+  const { data: orgData } = useQuery<{ settings?: { branding?: { onboardingCompleted?: boolean } } }>({
+    queryKey: ["/api/organization"],
+    staleTime: 5 * 60 * 1000,
+  });
+  useEffect(() => {
+    if (
+      orgData &&
+      !orgData.settings?.branding?.onboardingCompleted &&
+      location !== "/onboarding"
+    ) {
+      navigate("/onboarding");
+    }
+  }, [orgData, location, navigate]);
+
   // Global keyboard shortcuts
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
@@ -152,6 +168,7 @@ function Router() {
               <Route path="/admin">{() => <ErrorBoundary><AnimatedPage><AdminPage /></AnimatedPage></ErrorBoundary>}</Route>
               <Route path="/admin/templates">{() => <ErrorBoundary><AnimatedPage><PromptTemplatesPage /></AnimatedPage></ErrorBoundary>}</Route>
               <Route path="/admin/settings">{() => <ErrorBoundary><AnimatedPage><SettingsPage /></AnimatedPage></ErrorBoundary>}</Route>
+              <Route path="/onboarding">{() => <ErrorBoundary><OnboardingWizard /></ErrorBoundary>}</Route>
               <Route>{() => <AnimatedPage><NotFound /></AnimatedPage>}</Route>
             </Switch>
           </AnimatePresence>

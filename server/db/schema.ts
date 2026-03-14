@@ -251,6 +251,27 @@ export const subscriptions = pgTable("subscriptions", {
   index("subscriptions_stripe_sub_idx").on(t.stripeSubscriptionId),
 ]);
 
+// --- REFERENCE DOCUMENTS ---
+export const referenceDocuments = pgTable("reference_documents", {
+  id: text("id").primaryKey(),
+  orgId: text("org_id").notNull().references(() => organizations.id),
+  name: varchar("name", { length: 255 }).notNull(),
+  category: varchar("category", { length: 50 }).notNull(),
+  description: text("description"),
+  fileName: varchar("file_name", { length: 255 }).notNull(),
+  fileSize: integer("file_size").notNull(),
+  mimeType: varchar("mime_type", { length: 100 }).notNull(),
+  storagePath: text("storage_path").notNull(),
+  extractedText: text("extracted_text"),
+  appliesTo: jsonb("applies_to"), // string[]
+  isActive: boolean("is_active").notNull().default(true),
+  uploadedBy: varchar("uploaded_by", { length: 255 }),
+  createdAt: timestamp("created_at").defaultNow(),
+}, (t) => [
+  index("ref_docs_org_id_idx").on(t.orgId),
+  index("ref_docs_category_idx").on(t.orgId, t.category),
+]);
+
 // --- USAGE EVENTS (per-org metering for billing) ---
 export const usageEvents = pgTable("usage_events", {
   id: text("id").primaryKey(),

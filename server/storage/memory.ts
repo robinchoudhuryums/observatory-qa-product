@@ -29,6 +29,8 @@ import {
   type InsertApiKey,
   type Subscription,
   type InsertSubscription,
+  type ReferenceDocument,
+  type InsertReferenceDocument,
 } from "@shared/schema";
 import { randomUUID, randomBytes } from "crypto";
 import { type IStorage, applyCallFilters } from "./types";
@@ -520,6 +522,45 @@ export class MemStorage implements IStorage {
     const updated = { ...existing, ...updates, orgId, updatedAt: new Date().toISOString() };
     this.subscriptions.set(existing.id, updated);
     return updated;
+  }
+
+  // --- Reference document operations ---
+  private referenceDocuments = new Map<string, ReferenceDocument>();
+
+  async createReferenceDocument(orgId: string, doc: InsertReferenceDocument): Promise<ReferenceDocument> {
+    const id = randomUUID();
+    const record: ReferenceDocument = { ...doc, id, orgId, isActive: doc.isActive ?? true, createdAt: new Date().toISOString() };
+    this.referenceDocuments.set(id, record);
+    return record;
+  }
+
+  async getReferenceDocument(orgId: string, id: string): Promise<ReferenceDocument | undefined> {
+    const doc = this.referenceDocuments.get(id);
+    return doc?.orgId === orgId ? doc : undefined;
+  }
+
+  async listReferenceDocuments(orgId: string): Promise<ReferenceDocument[]> {
+    return Array.from(this.referenceDocuments.values()).filter(d => d.orgId === orgId);
+  }
+
+  async getReferenceDocumentsForCategory(orgId: string, callCategory: string): Promise<ReferenceDocument[]> {
+    return Array.from(this.referenceDocuments.values()).filter(d =>
+      d.orgId === orgId && d.isActive &&
+      (!d.appliesTo || d.appliesTo.length === 0 || d.appliesTo.includes(callCategory))
+    );
+  }
+
+  async updateReferenceDocument(orgId: string, id: string, updates: Partial<ReferenceDocument>): Promise<ReferenceDocument | undefined> {
+    const existing = await this.getReferenceDocument(orgId, id);
+    if (!existing) return undefined;
+    const updated = { ...existing, ...updates, id, orgId };
+    this.referenceDocuments.set(id, updated);
+    return updated;
+  }
+
+  async deleteReferenceDocument(orgId: string, id: string): Promise<void> {
+    const doc = this.referenceDocuments.get(id);
+    if (doc?.orgId === orgId) this.referenceDocuments.delete(id);
   }
 
   // --- Data retention (org-scoped) ---

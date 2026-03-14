@@ -31,6 +31,7 @@ import type {
   Invitation, InsertInvitation,
   ApiKey, InsertApiKey,
   Subscription, InsertSubscription,
+  ReferenceDocument, InsertReferenceDocument,
 } from "@shared/schema";
 import * as tables from "./schema";
 import { normalizeAnalysis } from "../storage";
@@ -1103,6 +1104,95 @@ export class PostgresStorage implements IStorage {
       cancelAtPeriodEnd: row.cancelAtPeriodEnd || false,
       createdAt: toISOString(row.createdAt),
       updatedAt: toISOString(row.updatedAt),
+    };
+  }
+
+  // --- Reference document operations ---
+  async createReferenceDocument(orgId: string, doc: InsertReferenceDocument): Promise<ReferenceDocument> {
+    const id = randomUUID();
+    const [row] = await this.db.insert(tables.referenceDocuments).values({
+      id,
+      orgId,
+      name: doc.name,
+      category: doc.category,
+      description: doc.description || null,
+      fileName: doc.fileName,
+      fileSize: doc.fileSize,
+      mimeType: doc.mimeType,
+      storagePath: doc.storagePath,
+      extractedText: doc.extractedText || null,
+      appliesTo: doc.appliesTo || null,
+      isActive: doc.isActive ?? true,
+      uploadedBy: doc.uploadedBy || null,
+    }).returning();
+    return this.mapReferenceDocument(row);
+  }
+
+  async getReferenceDocument(orgId: string, id: string): Promise<ReferenceDocument | undefined> {
+    const rows = await this.db.select().from(tables.referenceDocuments)
+      .where(and(eq(tables.referenceDocuments.orgId, orgId), eq(tables.referenceDocuments.id, id)))
+      .limit(1);
+    return rows[0] ? this.mapReferenceDocument(rows[0]) : undefined;
+  }
+
+  async listReferenceDocuments(orgId: string): Promise<ReferenceDocument[]> {
+    const rows = await this.db.select().from(tables.referenceDocuments)
+      .where(eq(tables.referenceDocuments.orgId, orgId))
+      .orderBy(desc(tables.referenceDocuments.createdAt));
+    return rows.map(r => this.mapReferenceDocument(r));
+  }
+
+  async getReferenceDocumentsForCategory(orgId: string, callCategory: string): Promise<ReferenceDocument[]> {
+    const rows = await this.db.select().from(tables.referenceDocuments)
+      .where(and(
+        eq(tables.referenceDocuments.orgId, orgId),
+        eq(tables.referenceDocuments.isActive, true),
+      ));
+    // Filter in-memory since appliesTo is JSONB — either empty (applies to all) or includes the category
+    return rows
+      .filter(r => {
+        const applies = r.appliesTo as string[] | null;
+        return !applies || applies.length === 0 || applies.includes(callCategory);
+      })
+      .map(r => this.mapReferenceDocument(r));
+  }
+
+  async updateReferenceDocument(orgId: string, id: string, updates: Partial<ReferenceDocument>): Promise<ReferenceDocument | undefined> {
+    const setValues: Record<string, unknown> = {};
+    if (updates.name) setValues.name = updates.name;
+    if (updates.category) setValues.category = updates.category;
+    if (updates.description !== undefined) setValues.description = updates.description;
+    if (updates.extractedText !== undefined) setValues.extractedText = updates.extractedText;
+    if (updates.appliesTo !== undefined) setValues.appliesTo = updates.appliesTo;
+    if (updates.isActive !== undefined) setValues.isActive = updates.isActive;
+
+    const [row] = await this.db.update(tables.referenceDocuments).set(setValues)
+      .where(and(eq(tables.referenceDocuments.orgId, orgId), eq(tables.referenceDocuments.id, id)))
+      .returning();
+    return row ? this.mapReferenceDocument(row) : undefined;
+  }
+
+  async deleteReferenceDocument(orgId: string, id: string): Promise<void> {
+    await this.db.delete(tables.referenceDocuments)
+      .where(and(eq(tables.referenceDocuments.orgId, orgId), eq(tables.referenceDocuments.id, id)));
+  }
+
+  private mapReferenceDocument(row: any): ReferenceDocument {
+    return {
+      id: row.id,
+      orgId: row.orgId,
+      name: row.name,
+      category: row.category,
+      description: row.description || undefined,
+      fileName: row.fileName,
+      fileSize: row.fileSize,
+      mimeType: row.mimeType,
+      storagePath: row.storagePath,
+      extractedText: row.extractedText || undefined,
+      appliesTo: (row.appliesTo as string[]) || undefined,
+      isActive: row.isActive,
+      uploadedBy: row.uploadedBy || undefined,
+      createdAt: toISOString(row.createdAt),
     };
   }
 

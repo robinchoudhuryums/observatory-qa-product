@@ -29,6 +29,8 @@ import {
   type InsertApiKey,
   type Subscription,
   type InsertSubscription,
+  type ReferenceDocument,
+  type InsertReferenceDocument,
 } from "@shared/schema";
 
 /**
@@ -199,6 +201,14 @@ export interface IStorage {
   getSubscriptionByStripeSubId(stripeSubscriptionId: string): Promise<Subscription | undefined>;
   upsertSubscription(orgId: string, sub: InsertSubscription): Promise<Subscription>;
   updateSubscription(orgId: string, updates: Partial<Subscription>): Promise<Subscription | undefined>;
+
+  // Reference document operations (org-scoped)
+  createReferenceDocument(orgId: string, doc: InsertReferenceDocument): Promise<ReferenceDocument>;
+  getReferenceDocument(orgId: string, id: string): Promise<ReferenceDocument | undefined>;
+  listReferenceDocuments(orgId: string): Promise<ReferenceDocument[]>;
+  getReferenceDocumentsForCategory(orgId: string, callCategory: string): Promise<ReferenceDocument[]>;
+  updateReferenceDocument(orgId: string, id: string, updates: Partial<ReferenceDocument>): Promise<ReferenceDocument | undefined>;
+  deleteReferenceDocument(orgId: string, id: string): Promise<void>;
 }
 
 export interface UsageSummary {

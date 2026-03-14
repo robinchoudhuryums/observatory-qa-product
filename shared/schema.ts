@@ -5,6 +5,8 @@ export const orgBrandingSchema = z.object({
   appName: z.string().default("Observatory"),
   logoUrl: z.string().optional(),
   primaryColor: z.string().optional(), // Hex color (e.g., "#10b981") to override default theme
+  secondaryColor: z.string().optional(), // Hex color for accent/secondary elements
+  onboardingCompleted: z.boolean().optional(),
 });
 
 export const orgSettingsSchema = z.object({
@@ -391,6 +393,42 @@ export type Subscription = z.infer<typeof subscriptionSchema>;
 
 export const insertSubscriptionSchema = subscriptionSchema.omit({ id: true, createdAt: true, updatedAt: true }).partial({ cancelAtPeriodEnd: true });
 export type InsertSubscription = z.infer<typeof insertSubscriptionSchema>;
+
+// --- REFERENCE DOCUMENT SCHEMAS ---
+export const REFERENCE_DOC_CATEGORIES = [
+  "employee_handbook",
+  "process_manual",
+  "product_manual",
+  "compliance_guide",
+  "training_material",
+  "script_template",
+  "faq",
+  "other",
+] as const;
+export type ReferenceDocCategory = (typeof REFERENCE_DOC_CATEGORIES)[number];
+
+export const referenceDocumentSchema = z.object({
+  id: z.string(),
+  orgId: z.string(),
+  name: z.string().min(1),
+  category: z.enum(REFERENCE_DOC_CATEGORIES),
+  description: z.string().optional(),
+  fileName: z.string(),
+  fileSize: z.number(), // bytes
+  mimeType: z.string(),
+  storagePath: z.string(), // S3/cloud path
+  /** Extracted text content (for injection into AI prompts) */
+  extractedText: z.string().optional(),
+  /** Which call categories should include this doc in analysis */
+  appliesTo: z.array(z.string()).optional(), // e.g., ["inbound", "outbound"] or empty for all
+  isActive: z.boolean().default(true),
+  uploadedBy: z.string().optional(),
+  createdAt: z.string().optional(),
+});
+export type ReferenceDocument = z.infer<typeof referenceDocumentSchema>;
+
+export const insertReferenceDocumentSchema = referenceDocumentSchema.omit({ id: true, createdAt: true });
+export type InsertReferenceDocument = z.infer<typeof insertReferenceDocumentSchema>;
 
 // --- PROMPT TEMPLATE SCHEMAS ---
 export const promptTemplateSchema = z.object({

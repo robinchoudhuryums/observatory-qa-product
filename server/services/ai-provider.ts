@@ -104,6 +104,8 @@ export interface PromptTemplateConfig {
   requiredPhrases?: Array<{ phrase: string; label: string; severity: string }>;
   scoringWeights?: { compliance: number; customerExperience: number; communication: number; resolution: number };
   additionalInstructions?: string;
+  /** Extracted text from company reference documents (injected automatically) */
+  referenceDocuments?: Array<{ name: string; category: string; text: string }>;
 }
 
 /**
@@ -167,6 +169,25 @@ export function buildAnalysisPrompt(transcriptText: string, callCategory?: strin
     }
   }
 
+  // Build reference documents section
+  let referenceSection = "";
+  if (template?.referenceDocuments && template.referenceDocuments.length > 0) {
+    // Budget ~15K chars total for reference docs to leave room for transcript
+    const maxRefChars = 15000;
+    let totalChars = 0;
+    const docSnippets: string[] = [];
+
+    for (const doc of template.referenceDocuments) {
+      const remaining = maxRefChars - totalChars;
+      if (remaining <= 200) break;
+      const snippet = doc.text.slice(0, remaining);
+      docSnippets.push(`--- ${doc.name} (${doc.category}) ---\n${snippet}`);
+      totalChars += snippet.length;
+    }
+
+    referenceSection = `\n- COMPANY REFERENCE DOCUMENTS: Use the following company-specific materials as context for your evaluation. Reference these when scoring compliance, product knowledge, and adherence to company procedures:\n${docSnippets.join("\n\n")}`;
+  }
+
   // Build additional instructions
   let additionalSection = "";
   if (template?.additionalInstructions) {
@@ -185,7 +206,7 @@ Guidelines:
 - sentiment_score: 0.0-1.0 (1.0 = most positive)
 - performance_score: 0.0-10.0 (overall weighted score)
 - sub_scores (each 0.0-10.0): compliance (procedures, HIPAA, policies), customer_experience (empathy, patience, tone), communication (clarity, listening, completeness), resolution (issue resolution effectiveness)
-${evaluationCriteria}${scoringSection}${phrasesSection}${additionalSection}
+${evaluationCriteria}${scoringSection}${phrasesSection}${referenceSection}${additionalSection}
 - For EACH strength/suggestion, include approximate timestamp (MM:SS) of the referenced moment
 - 2-4 concrete, actionable action items
 - Topics: specific (e.g. "order tracking", "billing dispute"), not generic

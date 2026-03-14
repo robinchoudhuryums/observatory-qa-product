@@ -483,6 +483,14 @@ export class CloudStorage implements IStorage {
   async upsertSubscription(_orgId: string, sub: any): Promise<any> { return { id: "mock", ...sub }; }
   async updateSubscription(_orgId: string, _updates: any): Promise<any> { return undefined; }
 
+  // --- Reference document operations (not supported in cloud storage) ---
+  async createReferenceDocument(_orgId: string, doc: any): Promise<any> { return { id: "mock", ...doc }; }
+  async getReferenceDocument(_orgId: string, _id: string): Promise<any> { return undefined; }
+  async listReferenceDocuments(_orgId: string): Promise<any[]> { return []; }
+  async getReferenceDocumentsForCategory(_orgId: string, _cat: string): Promise<any[]> { return []; }
+  async updateReferenceDocument(_orgId: string, _id: string, _updates: any): Promise<any> { return undefined; }
+  async deleteReferenceDocument(_orgId: string, _id: string): Promise<void> {}
+
   // --- API Key operations (not supported in cloud storage) ---
   async createApiKey(_orgId: string, _apiKey: any): Promise<any> {
     throw new Error("API keys require PostgreSQL or in-memory storage");

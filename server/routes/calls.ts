@@ -1,4 +1,5 @@
 import type { Express } from "express";
+import type { PromptTemplateConfig } from "../services/ai-provider";
 import { createHash } from "crypto";
 import path from "path";
 import fs from "fs";
@@ -72,7 +73,7 @@ async function processAudioFile(orgId: string, callId: string, filePath: string,
     let aiAnalysis = null;
 
     // Load custom prompt template for this call category (if configured)
-    let promptTemplate = undefined;
+    let promptTemplate: PromptTemplateConfig | undefined = undefined;
     if (callCategory) {
       try {
         const tmpl = await storage.getPromptTemplateByCategory(orgId, callCategory);
@@ -88,6 +89,23 @@ async function processAudioFile(orgId: string, callId: string, filePath: string,
       } catch (tmplError) {
         console.warn(`[${callId}] Failed to load prompt template (using defaults):`, (tmplError as Error).message);
       }
+    }
+
+    // Load reference documents for AI context (non-blocking)
+    try {
+      const refDocs = await storage.getReferenceDocumentsForCategory(orgId, callCategory || "");
+      const docsWithText = refDocs.filter(d => d.extractedText && d.extractedText.length > 0);
+      if (docsWithText.length > 0) {
+        if (!promptTemplate) promptTemplate = {};
+        promptTemplate.referenceDocuments = docsWithText.map(d => ({
+          name: d.name,
+          category: d.category,
+          text: d.extractedText!,
+        }));
+        console.log(`[${callId}] Injecting ${docsWithText.length} reference document(s) into AI analysis`);
+      }
+    } catch (refDocError) {
+      console.warn(`[${callId}] Failed to load reference documents (continuing without):`, (refDocError as Error).message);
     }
 
     if (aiProvider.isAvailable && transcriptResponse.text) {
