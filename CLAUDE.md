@@ -126,12 +126,11 @@ server/routes/               # Modular API route files
   helpers.ts                 #   Shared route utilities
 
 server/services/             # Business logic & integrations
-  ai-factory.ts              #   AI provider selection (per-org or global)
+  ai-factory.ts              #   AI provider setup (Bedrock, per-org model config)
   ai-provider.ts             #   AI analysis interface, prompt building, JSON parsing
   bedrock.ts                 #   AWS Bedrock Claude provider (raw REST + SigV4)
   assemblyai.ts              #   AssemblyAI transcription + transcript processing
   s3.ts                      #   S3 client (raw REST + SigV4, no AWS SDK)
-  gcs.ts                     #   Google Cloud Storage client
   redis.ts                   #   Redis connection, session store, rate limiter, pub/sub
   queue.ts                   #   BullMQ queue definitions (5 queues)
   websocket.ts               #   WebSocket for real-time call processing updates (org-scoped)
@@ -146,8 +145,8 @@ server/services/             # Business logic & integrations
 
 server/storage/              # Storage abstraction layer
   types.ts                   #   IStorage interface (all methods org-scoped)
-  index.ts                   #   Storage backend factory (postgres > S3 > GCS > memory)
-  cloud.ts                   #   CloudStorage implementation (S3/GCS JSON files)
+  index.ts                   #   Storage backend factory (postgres > S3 > memory)
+  cloud.ts                   #   CloudStorage implementation (S3 JSON files)
   memory.ts                  #   MemStorage (in-memory, dev only)
 
 server/db/                   # PostgreSQL (Drizzle ORM)
@@ -222,7 +221,7 @@ Every data entity has an `orgId` field. All storage methods take `orgId` as the 
 3. Send to AssemblyAI for transcription (polling until complete)
 4. Load org's custom prompt template by call category (falls back to default)
 5. If RAG enabled: retrieve relevant document chunks from pgvector, inject into AI prompt
-6. Send transcript + context to AI provider (Bedrock or Gemini) for analysis
+6. Send transcript + context to AI provider (Bedrock) for analysis
 7. Normalize results: confidence scores, agent name detection, flag setting
 8. Store transcript, sentiment, and analysis
 9. Auto-assign call to employee if agent name detected
@@ -247,8 +246,7 @@ RAG requires: PostgreSQL with pgvector extension + AWS credentials for Titan emb
 Priority order:
 1. `STORAGE_BACKEND=postgres` + `DATABASE_URL` → **PostgresStorage** (Drizzle ORM, recommended)
 2. `STORAGE_BACKEND=s3` or `S3_BUCKET` → **CloudStorage** (S3 JSON files)
-3. `STORAGE_BACKEND=gcs` or GCS creds → **CloudStorage** (GCS JSON files)
-4. No config → **MemStorage** (in-memory, data lost on restart)
+3. No config → **MemStorage** (in-memory, data lost on restart)
 
 PostgreSQL + S3 hybrid: When using PostgresStorage, set `S3_BUCKET` alongside `DATABASE_URL` for audio blob storage in S3 while structured data lives in PostgreSQL.
 
@@ -265,12 +263,7 @@ Five queues, all Redis-backed with fallback to in-process execution:
 Workers run as a separate process: `npm run workers` (dev) or `node dist/workers.js` (prod).
 
 ### AI Provider System (server/services/ai-factory.ts)
-Selection priority:
-1. Per-org `aiProvider` setting (from org's `OrgSettings`)
-2. `AI_PROVIDER` env var (`bedrock` or `gemini`)
-3. Auto-detect based on available credentials
-
-Both providers implement the `AIAnalysisProvider` interface defined in `ai-provider.ts`. Per-org providers are cached to avoid re-creation on every call.
+Uses AWS Bedrock (Claude) for AI analysis. Per-org `bedrockModel` can be configured via org's `OrgSettings`. The provider implements the `AIAnalysisProvider` interface defined in `ai-provider.ts`. Per-org providers are cached to avoid re-creation on every call.
 
 ## API Routes Overview
 
@@ -408,27 +401,20 @@ AUTH_USERS                      # Format: user:pass:role:name:orgSlug (comma-sep
 DEFAULT_ORG_SLUG                # Default org for users without explicit orgSlug (default: "default")
 
 # ─── Storage Backend (pick one) ───────────────────────────────────────
-STORAGE_BACKEND                 # "postgres", "s3", or "gcs" (auto-detects if unset)
+STORAGE_BACKEND                 # "postgres" or "s3" (auto-detects if unset)
 DATABASE_URL                    # PostgreSQL connection string (required for postgres backend)
 S3_BUCKET                       # S3 bucket name (also used for audio blobs alongside postgres)
-GCS_BUCKET                      # GCS bucket name
-GCS_CREDENTIALS                 # GCS service account JSON
 
 # ─── Redis ────────────────────────────────────────────────────────────
 REDIS_URL                       # Redis connection (sessions, rate limiting, job queues)
                                 # Without this: in-memory fallback (single-instance only)
 
-# ─── AI Analysis (pick one or both) ──────────────────────────────────
-AI_PROVIDER                     # "bedrock" or "gemini" (auto-detects if unset)
-# Bedrock (Claude):
+# ─── AI Analysis (AWS Bedrock) ───────────────────────────────────────
 AWS_ACCESS_KEY_ID
 AWS_SECRET_ACCESS_KEY
 AWS_REGION                      # Default: us-east-1
 AWS_SESSION_TOKEN               # Optional, for IAM roles/STS
 BEDROCK_MODEL                   # Default: us.anthropic.claude-sonnet-4-6
-# Gemini:
-GEMINI_API_KEY                  # Google AI Studio key
-GEMINI_MODEL                    # Default: gemini-2.5-flash
 
 # ─── Billing ─────────────────────────────────────────────────────────
 STRIPE_SECRET_KEY               # Stripe API secret
@@ -501,10 +487,9 @@ Requires pgvector extension: `CREATE EXTENSION IF NOT EXISTS vector;`
 
 ## Key Design Decisions
 - **No AWS SDK**: S3, Bedrock, and Titan Embed all use raw REST APIs with manual SigV4 signing — reduces bundle size but means signing logic must be maintained manually in `s3.ts`, `bedrock.ts`, and `embeddings.ts`
-- **Hybrid storage**: PostgreSQL for structured data + S3 for audio blobs. The IStorage interface abstracts this — CloudStorage (S3/GCS JSON files) still works as an alternative backend
-- **Per-org AI providers**: Each org can use Bedrock or Gemini independently via `ai-factory.ts`
+- **Hybrid storage**: PostgreSQL for structured data + S3 for audio blobs. The IStorage interface abstracts this — CloudStorage (S3 JSON files) still works as an alternative backend
 - **RAG as a plan feature**: RAG is gated by plan tier (`ragEnabled` in plan limits). Free tier doesn't include it
-- **Graceful degradation**: Every infrastructure dependency (Redis, PostgreSQL, S3, Bedrock, Gemini, Stripe) has a fallback or graceful failure mode. The app runs with just `ASSEMBLYAI_API_KEY` and `SESSION_SECRET` (in-memory storage, no AI analysis, no billing)
+- **Graceful degradation**: Every infrastructure dependency (Redis, PostgreSQL, S3, Bedrock, Stripe) has a fallback or graceful failure mode. The app runs with just `ASSEMBLYAI_API_KEY` and `SESSION_SECRET` (in-memory storage, no AI analysis, no billing)
 - **Custom prompt templates**: Per-org, per-call-category evaluation criteria with required phrases and scoring weights
 - **Dark mode**: Toggle in settings; Recharts dark mode fixes use `!important` in `index.css` (`.dark .recharts-*`)
 - **Hooks ordering**: All React hooks in `transcript-viewer.tsx` MUST be called before early returns (isLoading/!call guards)

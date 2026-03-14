@@ -6,7 +6,7 @@ AI-powered call quality analysis for healthcare and compliance-driven organizati
 
 1. **Upload** a call recording (audio file)
 2. **Transcribe** automatically via AssemblyAI
-3. **Analyze** with AI (AWS Bedrock Claude or Google Gemini) — performance score, compliance flags, sentiment, coaching suggestions
+3. **Analyze** with AI (AWS Bedrock Claude) — performance score, compliance flags, sentiment, coaching suggestions
 4. **Ground** analysis in your organization's own documentation via RAG knowledge base
 5. **Track** agent performance, coaching progress, and team trends over time
 
@@ -29,8 +29,8 @@ AI-powered call quality analysis for healthcare and compliance-driven organizati
 |-------|-----------|
 | Frontend | React 18, TypeScript, Vite, TailwindCSS, shadcn/ui, Recharts, Wouter, TanStack Query |
 | Backend | Express.js, TypeScript (ESM), Node.js |
-| Database | PostgreSQL + Drizzle ORM (recommended) or S3/GCS JSON files |
-| AI | AWS Bedrock (Claude) or Google Gemini — configurable per-org |
+| Database | PostgreSQL + Drizzle ORM (recommended) or S3 JSON files |
+| AI | AWS Bedrock (Claude) |
 | Transcription | AssemblyAI |
 | RAG | pgvector, Amazon Titan Embed V2, BM25 hybrid search |
 | Jobs | BullMQ (Redis-backed) |
@@ -112,8 +112,8 @@ server/
   index.ts            # App entry point
   auth.ts             # Authentication + org context middleware
   routes/             # 16 modular route files
-  services/           # AI providers, S3, Redis, RAG, Stripe, logging
-  storage/            # Storage abstraction (PostgreSQL, S3, GCS, memory)
+  services/           # AI provider (Bedrock), S3, Redis, RAG, Stripe, logging
+  storage/            # Storage abstraction (PostgreSQL, S3, memory)
   db/                 # Drizzle ORM schema + PostgreSQL storage
   workers/            # BullMQ worker processes
 
@@ -147,21 +147,15 @@ The app supports multiple storage backends, chosen by environment configuration:
 |---------|--------|----------|
 | **PostgreSQL** | `STORAGE_BACKEND=postgres` + `DATABASE_URL` | Production SaaS (recommended) |
 | **S3** | `S3_BUCKET=your-bucket` | Single-tenant, AWS-native deployments |
-| **GCS** | `GCS_BUCKET` + `GCS_CREDENTIALS` | Google Cloud deployments |
 | **Memory** | (no config) | Local development only (data lost on restart) |
 
 When using PostgreSQL, add `S3_BUCKET` for audio file storage alongside the database.
 
-## AI Providers
+## AI Provider
 
-Two AI providers are supported, configurable per-organization:
+The platform uses AWS Bedrock (Claude) for AI analysis. HIPAA-eligible with BAA. Default model: `claude-sonnet-4-6`.
 
-| Provider | Config | Notes |
-|----------|--------|-------|
-| **AWS Bedrock (Claude)** | `AWS_ACCESS_KEY_ID` + `AWS_SECRET_ACCESS_KEY` | HIPAA-eligible with BAA. Default model: `claude-sonnet-4-6` |
-| **Google Gemini** | `GEMINI_API_KEY` | AI Studio (testing) or Vertex AI (production). Default model: `gemini-2.5-flash` |
-
-Set `AI_PROVIDER=bedrock` or `AI_PROVIDER=gemini` to force a specific provider, or let the app auto-detect from available credentials.
+Configure with `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, and `AWS_REGION`. Per-org model override available via org settings (`bedrockModel`).
 
 ## Plan Tiers
 

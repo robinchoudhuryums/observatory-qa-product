@@ -127,7 +127,7 @@ No `.github/workflows/`, `.gitlab-ci.yml`, or any CI configuration exists. This 
 
 ### 9. `console.log` / `console.warn` Used Instead of Structured Logger
 
-**Files**: `server/routes/calls.ts`, `server/auth.ts`, `server/services/websocket.ts`, `server/services/bedrock.ts`, `server/services/gemini.ts`, `server/services/assemblyai.ts`, `server/services/notifications.ts`, and others (~50+ instances)
+**Files**: `server/routes/calls.ts`, `server/auth.ts`, `server/services/websocket.ts`, `server/services/bedrock.ts`, `server/services/assemblyai.ts`, `server/services/notifications.ts`, and others (~50+ instances)
 
 The project has Pino structured logging (`server/services/logger.ts`) with Betterstack transport, but many files use `console.*`. This is a **HIPAA compliance gap** — unstructured console logs bypass the audit trail and aren't captured by Betterstack.
 
@@ -175,27 +175,7 @@ No multer `limits.fileSize` configured. `fs.readFileSync` at line 384 reads the 
 
 ---
 
-### 14. Vertex AI / GCS Token Refresh Race Condition
-
-**Files**: `server/services/gemini.ts:115-135`, `server/services/gcs.ts:66-87`
-
-Both `getAccessToken()` methods check if the token is expired and refresh it, but multiple concurrent requests can bypass the check simultaneously, causing redundant JWT token requests to Google's OAuth endpoint.
-
-**Recommendation**: Use a mutex/promise lock pattern — store the pending refresh promise and return it to concurrent callers.
-
----
-
-### 15. Missing Timeout on Vertex AI and GCS API Calls
-
-**Files**: `server/services/gemini.ts:225-232`, `server/services/gcs.ts` (multiple)
-
-The Vertex AI analysis call and all GCS file operations use raw `fetch()` without `AbortSignal.timeout()`. If the service is slow/unresponsive, requests hang indefinitely.
-
-**Recommendation**: Wrap with `AbortSignal.timeout(30000)` like the AI Studio path does.
-
----
-
-### 16. Missing Frontend Route Guards
+### 14. Missing Frontend Route Guards
 
 **File**: `client/src/App.tsx:157-172`
 
@@ -205,7 +185,7 @@ All routes are accessible to any authenticated user regardless of role. Admin/ma
 
 ---
 
-### 17. WebSocket Server Missing Error Handlers and Shutdown
+### 15. WebSocket Server Missing Error Handlers and Shutdown
 
 **File**: `server/services/websocket.ts`
 
@@ -218,7 +198,7 @@ All routes are accessible to any authenticated user regardless of role. Admin/ma
 
 ---
 
-### 18. Indexing Worker Missing Error Handler
+### 16. Indexing Worker Missing Error Handler
 
 **File**: `server/workers/indexing.worker.ts:30-48`
 
@@ -230,7 +210,7 @@ The indexing worker is the only worker without a `.on("failed")` error handler. 
 
 ## Medium Priority Issues
 
-### 19. Missing CSRF Protection
+### 17. Missing CSRF Protection
 
 **File**: `server/index.ts`
 
@@ -238,7 +218,7 @@ Cookie-based sessions with `sameSite: "lax"` — doesn't protect against same-si
 
 ---
 
-### 20. Error Handler Exposes Internal Error Messages
+### 18. Error Handler Exposes Internal Error Messages
 
 **File**: `server/index.ts:165-173`
 
@@ -248,7 +228,7 @@ For 500 errors, `err.message` is sent to the client. Could leak database connect
 
 ---
 
-### 21. No Pagination on List Endpoints
+### 19. No Pagination on List Endpoints
 
 **Files**: `server/routes/calls.ts:316`, `server/routes/admin.ts:167`, others
 
@@ -256,7 +236,7 @@ All list endpoints return unbounded results.
 
 ---
 
-### 22. SigV4 Signing Code Duplicated in 3 Files
+### 20. SigV4 Signing Code Duplicated in 3 Files
 
 **Files**: `server/services/s3.ts`, `server/services/bedrock.ts`, `server/services/embeddings.ts`
 
@@ -264,7 +244,7 @@ All list endpoints return unbounded results.
 
 ---
 
-### 23. `setInterval` Timers Not Stored for Cleanup
+### 21. `setInterval` Timers Not Stored for Cleanup
 
 **Files**: `server/index.ts:58-63`, `server/auth.ts:21-28`, `server/index.ts:233`
 
@@ -272,7 +252,7 @@ Multiple `setInterval` calls aren't stored for cleanup during graceful shutdown,
 
 ---
 
-### 24. CloudStorage N+1 Query Pattern
+### 22. CloudStorage N+1 Query Pattern
 
 **File**: `server/storage/cloud.ts:189-204`
 
@@ -280,7 +260,7 @@ Multiple `setInterval` calls aren't stored for cleanup during graceful shutdown,
 
 ---
 
-### 25. RAG Worker Database Pool Never Closed
+### 23. RAG Worker Database Pool Never Closed
 
 **File**: `server/services/rag-worker.ts:15-25`
 
@@ -288,7 +268,7 @@ The in-process RAG worker creates a PostgreSQL pool that's never closed on shutd
 
 ---
 
-### 26. Stripe Webhook Metadata Not Validated
+### 24. Stripe Webhook Metadata Not Validated
 
 **File**: `server/routes/billing.ts:334,364,394`
 
@@ -296,7 +276,7 @@ The in-process RAG worker creates a PostgreSQL pool that's never closed on shutd
 
 ---
 
-### 27. In-Memory Rate Limiter Key Issues
+### 25. In-Memory Rate Limiter Key Issues
 
 **File**: `server/index.ts:17`
 
@@ -304,7 +284,7 @@ Rate limit key `${req.ip}:${req.path}` — `req.ip` may be `undefined` behind pr
 
 ---
 
-### 28. Build Script Missing Optimizations
+### 26. Build Script Missing Optimizations
 
 **File**: `package.json:8`
 
@@ -318,46 +298,46 @@ Missing `--minify`, `--sourcemap`, and doesn't run `tsc` type check first. Produ
 
 ## Lower Priority / Improvements
 
-### 29. ~70% Test Coverage Gap
+### 27. ~70% Test Coverage Gap
 
 12 test files exist but the following have **zero tests**:
-- All external services (AssemblyAI, Bedrock, Gemini, S3, GCS, Stripe)
+- All external services (AssemblyAI, Bedrock, S3, Stripe)
 - Entire RAG system (rag.ts, chunker.ts, embeddings.ts)
 - Infrastructure services (Redis, BullMQ, WebSocket, audit logging)
 - 12 of 17 route files (including core `calls.ts`)
 - All frontend components/pages
 - Storage implementations (pg-storage.ts, cloud.ts)
 
-### 30. Package Naming
+### 28. Package Naming
 
 `package.json:2` — Package named `"rest-express"`, should be `"observatory-qa"`.
 
-### 31. Tailwind Version Mismatch
+### 29. Tailwind Version Mismatch
 
 `package.json:99,117` — `@tailwindcss/vite: ^4.1.3` (v4 plugin) alongside `tailwindcss: ^3.4.17` (v3). Incompatible.
 
-### 32. Unused Dependencies
+### 30. Unused Dependencies
 
 - `next-themes` (`package.json:70`) — Next.js package, not used in this Vite project
 - Replit-specific plugins (`package.json:96-98`) — remove if not deploying on Replit
 
-### 33. Dashboard/Admin Error States Not Displayed
+### 31. Dashboard/Admin Error States Not Displayed
 
 **Files**: `client/src/pages/dashboard.tsx:19-28`, `client/src/pages/admin.tsx:20`
 
 Query errors are fetched but never rendered — users see blank screens on API failure.
 
-### 34. Deployment Scripts Incomplete
+### 32. Deployment Scripts Incomplete
 
 **File**: `deploy/ec2/user-data.sh:45-48`
 
 Git clone step is commented out. No database migration step in `deploy.sh`. No rollback mechanism. `.env` stored in plaintext on EBS (HIPAA encryption-at-rest gap).
 
-### 35. 16 npm Dependency Vulnerabilities
+### 33. 16 npm Dependency Vulnerabilities
 
 4 high-severity (body-parser, express, express-session, multer), 7 moderate (esbuild, vite, rollup), 5 low.
 
-### 36. Provider Cache Race Condition
+### 34. Provider Cache Race Condition
 
 **File**: `server/services/ai-factory.ts:49-71`
 
@@ -372,7 +352,7 @@ Multiple concurrent requests can create duplicate provider instances for the sam
 - **Graceful degradation** — every external dependency has a fallback
 - **HIPAA-aware design** — audit logging, session timeouts, security headers, account lockout
 - **Clean code organization** — routes, services, storage, and shared schemas well-separated
-- **Per-org AI provider configuration** via `ai-factory.ts`
+- **AI provider configuration** via `ai-factory.ts`
 - **RAG system** well-architected with hybrid search (semantic + BM25)
 - **Worker concurrency control** — bounded concurrency prevents resource exhaustion
 - **Strong systemd hardening** in deployment service file
@@ -393,7 +373,7 @@ Multiple concurrent requests can create duplicate provider instances for the sam
 | Severity | Count | Key Areas |
 |----------|-------|-----------|
 | Critical | 8 | Cross-tenant access, WebSocket auth, memory-heavy queries, no CI/CD, crash-prone JSON.parse |
-| High | 10 | Console logging, code duplication, missing timeouts, no route guards, token race conditions |
+| High | 8 | Console logging, code duplication, no route guards, missing error handlers |
 | Medium | 10 | CSRF, error leaks, no pagination, SigV4 duplication, pool leaks, webhook validation |
 | Low | 8 | Package config, test coverage, dependency vulns, deployment scripts |
 
@@ -407,5 +387,5 @@ Multiple concurrent requests can create duplicate provider instances for the sam
 6. **Rate-limit registration** (#4) — abuse vector
 7. **Replace `console.*` with structured logger** (#9) — HIPAA compliance gap
 8. **Wrap `JSON.parse` calls in try-catch** (#7) — crash risk
-9. **Add frontend route guards** (#16) — role bypass via URL
-10. **Add timeouts to Vertex AI/GCS calls** (#15) — hang risk
+9. **Add frontend route guards** (#14) — role bypass via URL
+10. **Add WebSocket error handlers** (#15) — unlogged errors, broken pipe crashes
