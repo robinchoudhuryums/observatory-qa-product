@@ -88,16 +88,16 @@ export default function Dashboard() {
         </div>
       )}
       {/* Header */}
-      <header className="bg-card border-b border-border px-6 py-4">
+      <header className="dashboard-header px-6 py-5">
         <div className="flex items-center justify-between">
           <div>
-            <h2 className="text-2xl font-bold text-foreground">Call Analysis Dashboard</h2>
-            <p className="text-muted-foreground">Monitor performance and sentiment across all customer interactions</p>
+            <h2 className="text-2xl font-bold text-foreground tracking-tight">Call Analysis Dashboard</h2>
+            <p className="text-sm text-muted-foreground mt-0.5">Monitor performance and sentiment across all customer interactions</p>
           </div>
-          <div className="flex items-center space-x-4">
+          <div className="flex items-center space-x-3">
             <Button
               variant="outline"
-              className="w-64 justify-start text-muted-foreground"
+              className="w-64 justify-start text-muted-foreground rounded-lg"
               onClick={() => navigate("/search")}
               data-testid="search-input"
             >
@@ -105,7 +105,7 @@ export default function Dashboard() {
               Search calls...
             </Button>
             <Link href="/upload">
-              <Button data-testid="upload-call-button">
+              <Button className="bg-gradient-to-r from-teal-500 to-blue-500 hover:from-teal-600 hover:to-blue-600 text-white border-0 shadow-md shadow-teal-500/15 rounded-lg" data-testid="upload-call-button">
                 <Plus className="w-4 h-4 mr-2" />
                 Upload Call
               </Button>
@@ -181,9 +181,9 @@ export default function Dashboard() {
 
         {/* Sentiment & Call Volume Trend (Last 30 Days) */}
         {trendData.length > 0 && trendData.some(d => d.calls > 0) && (
-          <div className="bg-card rounded-lg border border-border p-6">
+          <div className="modern-card rounded-xl p-6">
             <h3 className="text-lg font-semibold text-foreground mb-4 flex items-center">
-              <TrendingUp className="w-5 h-5 mr-2" />
+              <TrendingUp className="w-5 h-5 mr-2 text-teal-500" />
               Sentiment &amp; Volume — Last 30 Days
             </h3>
             <ResponsiveContainer width="100%" height={250}>

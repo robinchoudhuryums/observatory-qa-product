@@ -44,36 +44,36 @@ export default function MetricsOverview() {
       value: totalCalls,
       change: `${totalCalls} analyzed`,
       icon: Phone,
-      iconBg: "bg-gradient-to-br from-primary/20 to-primary/5",
-      iconColor: "text-primary",
-      accentBorder: "border-l-4 border-l-primary",
+      iconBg: "bg-gradient-to-br from-teal-500/20 to-blue-500/10 dark:from-teal-500/20 dark:to-blue-500/10",
+      iconColor: "text-teal-600 dark:text-teal-400",
+      glowClass: "metric-glow-teal",
     },
     {
       title: "Avg Sentiment",
       value: `${(metrics?.avgSentiment ?? 0).toFixed(1)}/10`,
       change: "Avg across calls",
       icon: Heart,
-      iconBg: "bg-gradient-to-br from-green-200 to-green-50 dark:from-green-900/40 dark:to-green-900/10",
-      iconColor: "text-green-600",
-      accentBorder: "border-l-4 border-l-green-500",
+      iconBg: "bg-gradient-to-br from-emerald-500/20 to-green-500/10 dark:from-emerald-500/20 dark:to-green-500/10",
+      iconColor: "text-emerald-600 dark:text-emerald-400",
+      glowClass: "metric-glow-green",
     },
     {
       title: "Transcription Time",
       value: `${metrics?.avgTranscriptionTime ?? 0}min`,
       change: "Avg per call",
       icon: Clock,
-      iconBg: "bg-gradient-to-br from-blue-200 to-blue-50 dark:from-blue-900/40 dark:to-blue-900/10",
-      iconColor: "text-blue-600",
-      accentBorder: "border-l-4 border-l-blue-500",
+      iconBg: "bg-gradient-to-br from-blue-500/20 to-indigo-500/10 dark:from-blue-500/20 dark:to-indigo-500/10",
+      iconColor: "text-blue-600 dark:text-blue-400",
+      glowClass: "metric-glow-blue",
     },
     {
       title: "Team Score",
       value: `${(metrics?.avgPerformanceScore ?? 0).toFixed(1)}/10`,
       change: "Avg performance",
       icon: Star,
-      iconBg: "bg-gradient-to-br from-purple-200 to-purple-50 dark:from-purple-900/40 dark:to-purple-900/10",
-      iconColor: "text-purple-600",
-      accentBorder: "border-l-4 border-l-purple-500",
+      iconBg: "bg-gradient-to-br from-purple-500/20 to-pink-500/10 dark:from-purple-500/20 dark:to-pink-500/10",
+      iconColor: "text-purple-600 dark:text-purple-400",
+      glowClass: "metric-glow-purple",
     },
   ];
 
@@ -82,18 +82,18 @@ export default function MetricsOverview() {
       {metricCards.map((metric) => {
         const Icon = metric.icon;
         return (
-          <div key={metric.title} className={`metric-card rounded-lg p-6 ${metric.accentBorder}`}>
+          <div key={metric.title} className={`metric-card rounded-xl p-6 ${metric.glowClass}`}>
             <div className="flex items-center justify-between">
               <div>
-                <p className="text-muted-foreground text-sm">{metric.title}</p>
-                <p className="text-2xl font-bold text-foreground" data-testid={`metric-${metric.title.toLowerCase().replace(/\s+/g, '-')}`}>
+                <p className="text-muted-foreground text-sm font-medium">{metric.title}</p>
+                <p className="text-3xl font-bold text-foreground mt-1" data-testid={`metric-${metric.title.toLowerCase().replace(/\s+/g, '-')}`}>
                   {metric.value}
                 </p>
-                <p className="text-xs mt-1 text-muted-foreground">
+                <p className="text-xs mt-1.5 text-muted-foreground">
                   {metric.change}
                 </p>
               </div>
-              <div className={`w-12 h-12 ${metric.iconBg} rounded-lg flex items-center justify-center`}>
+              <div className={`w-12 h-12 ${metric.iconBg} rounded-xl flex items-center justify-center`}>
                 <Icon className={`${metric.iconColor} w-5 h-5`} />
               </div>
             </div>
