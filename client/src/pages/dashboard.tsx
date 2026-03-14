@@ -13,6 +13,7 @@ import CallsTable from "@/components/tables/calls-table";
 import type { CallWithDetails, PlanTier } from "@shared/schema";
 import { PLAN_DEFINITIONS } from "@shared/schema";
 import { getQueryFn } from "@/lib/queryClient";
+import OnboardingTour from "@/components/onboarding-tour";
 
 export default function Dashboard() {
   const [, navigate] = useLocation();
@@ -113,6 +114,7 @@ export default function Dashboard() {
 
   return (
     <div className="min-h-screen" data-testid="dashboard-page">
+      <OnboardingTour />
       {callsError && (
         <div className="mx-6 mt-4 p-4 bg-destructive/10 border border-destructive/20 rounded-md text-destructive text-sm">
           Failed to load dashboard data. Please try refreshing the page.

@@ -83,6 +83,46 @@ export async function sendEmail(options: EmailOptions): Promise<boolean> {
   }
 }
 
+// --- Dark mode wrapper ---
+
+/**
+ * Wraps email HTML content with dark mode support.
+ * Uses @media (prefers-color-scheme: dark) for clients that support it
+ * (Apple Mail, iOS Mail, Outlook.com, Gmail mobile).
+ * Falls back gracefully to light mode on unsupported clients.
+ */
+function wrapWithDarkMode(innerHtml: string): string {
+  return `
+    <!DOCTYPE html>
+    <html>
+    <head>
+      <meta charset="utf-8">
+      <meta name="color-scheme" content="light dark">
+      <meta name="supported-color-schemes" content="light dark">
+      <style>
+        :root { color-scheme: light dark; }
+        @media (prefers-color-scheme: dark) {
+          .email-body { background-color: #1a1a2e !important; }
+          .email-card { background-color: #16213e !important; border-color: #2a2a4a !important; }
+          .email-text { color: #e0e0e0 !important; }
+          .email-heading { color: #f0f0f0 !important; }
+          .email-muted { color: #a0a0b0 !important; }
+          .email-border { border-color: #2a2a4a !important; }
+          .email-table-header { color: #a0a0b0 !important; border-color: #2a2a4a !important; }
+          .email-table-cell { color: #e0e0e0 !important; }
+          .email-bar-bg { background: #2a2a4a !important; }
+        }
+      </style>
+    </head>
+    <body class="email-body" style="margin: 0; padding: 20px; background-color: #f5f5f5; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;">
+      <div class="email-card" style="max-width: 520px; margin: 0 auto; background: #ffffff; border-radius: 12px; border: 1px solid #e5e7eb; overflow: hidden; padding: 24px;">
+        ${innerHtml}
+      </div>
+    </body>
+    </html>
+  `;
+}
+
 // --- Email templates ---
 
 export function buildPasswordResetEmail(
@@ -104,19 +144,17 @@ export function buildPasswordResetEmail(
     `— ${orgName} Team`,
   ].join("\n");
 
-  const html = `
-    <div style="font-family: -apple-system, sans-serif; max-width: 480px; margin: 0 auto;">
-      <h2 style="color: #1a1a1a;">Password Reset</h2>
-      <p>Hi ${escapeHtml(userName)},</p>
-      <p>You requested a password reset for your <strong>${escapeHtml(orgName)}</strong> account.</p>
+  const html = wrapWithDarkMode(`
+      <h2 class="email-heading" style="color: #1a1a1a; margin: 0 0 16px;">Password Reset</h2>
+      <p class="email-text" style="color: #333;">Hi ${escapeHtml(userName)},</p>
+      <p class="email-text" style="color: #333;">You requested a password reset for your <strong>${escapeHtml(orgName)}</strong> account.</p>
       <p style="margin: 24px 0;">
         <a href="${escapeHtml(resetUrl)}" style="background: #10b981; color: white; padding: 12px 24px; border-radius: 6px; text-decoration: none; display: inline-block;">
           Reset Password
         </a>
       </p>
-      <p style="color: #666; font-size: 14px;">This link is valid for 1 hour. If you didn't request this, ignore this email.</p>
-    </div>
-  `;
+      <p class="email-muted" style="color: #666; font-size: 14px;">This link is valid for 1 hour. If you didn't request this, ignore this email.</p>
+  `);
 
   return { to: "", subject, text, html };
 }
@@ -139,18 +177,16 @@ export function buildInvitationEmail(
     `— ${orgName} Team`,
   ].join("\n");
 
-  const html = `
-    <div style="font-family: -apple-system, sans-serif; max-width: 480px; margin: 0 auto;">
-      <h2 style="color: #1a1a1a;">You're Invited</h2>
-      <p><strong>${escapeHtml(invitedByName)}</strong> has invited you to join <strong>${escapeHtml(orgName)}</strong> as a <strong>${escapeHtml(role)}</strong>.</p>
+  const html = wrapWithDarkMode(`
+      <h2 class="email-heading" style="color: #1a1a1a; margin: 0 0 16px;">You're Invited</h2>
+      <p class="email-text" style="color: #333;"><strong>${escapeHtml(invitedByName)}</strong> has invited you to join <strong>${escapeHtml(orgName)}</strong> as a <strong>${escapeHtml(role)}</strong>.</p>
       <p style="margin: 24px 0;">
         <a href="${escapeHtml(inviteUrl)}" style="background: #10b981; color: white; padding: 12px 24px; border-radius: 6px; text-decoration: none; display: inline-block;">
           Accept Invitation
         </a>
       </p>
-      <p style="color: #666; font-size: 14px;">This invitation expires in 7 days.</p>
-    </div>
-  `;
+      <p class="email-muted" style="color: #666; font-size: 14px;">This invitation expires in 7 days.</p>
+  `);
 
   return { to: "", subject, text, html };
 }
@@ -193,25 +229,23 @@ export function buildFlaggedCallEmail(
   ].join("\n");
 
   const flagColor = isGood ? "#10b981" : "#ef4444";
-  const html = `
-    <div style="font-family: -apple-system, sans-serif; max-width: 520px; margin: 0 auto;">
+  const html = wrapWithDarkMode(`
       <div style="border-left: 4px solid ${flagColor}; padding-left: 16px; margin-bottom: 16px;">
-        <h2 style="color: #1a1a1a; margin: 0 0 4px;">Call Flagged: ${escapeHtml(flagLabels.join(", "))}</h2>
-        <p style="color: #666; font-size: 14px; margin: 0;">${escapeHtml(orgName)}</p>
+        <h2 class="email-heading" style="color: #1a1a1a; margin: 0 0 4px;">Call Flagged: ${escapeHtml(flagLabels.join(", "))}</h2>
+        <p class="email-muted" style="color: #666; font-size: 14px; margin: 0;">${escapeHtml(orgName)}</p>
       </div>
       <table style="font-size: 14px; border-collapse: collapse;">
-        <tr><td style="padding: 4px 12px 4px 0; color: #666; font-weight: 600;">Score</td><td>${escapeHtml(scoreText)}</td></tr>
-        ${agentName ? `<tr><td style="padding: 4px 12px 4px 0; color: #666; font-weight: 600;">Agent</td><td>${escapeHtml(agentName)}</td></tr>` : ""}
-        ${fileName ? `<tr><td style="padding: 4px 12px 4px 0; color: #666; font-weight: 600;">File</td><td>${escapeHtml(fileName)}</td></tr>` : ""}
+        <tr><td class="email-muted" style="padding: 4px 12px 4px 0; color: #666; font-weight: 600;">Score</td><td class="email-text" style="color: #333;">${escapeHtml(scoreText)}</td></tr>
+        ${agentName ? `<tr><td class="email-muted" style="padding: 4px 12px 4px 0; color: #666; font-weight: 600;">Agent</td><td class="email-text" style="color: #333;">${escapeHtml(agentName)}</td></tr>` : ""}
+        ${fileName ? `<tr><td class="email-muted" style="padding: 4px 12px 4px 0; color: #666; font-weight: 600;">File</td><td class="email-text" style="color: #333;">${escapeHtml(fileName)}</td></tr>` : ""}
       </table>
-      ${summary ? `<p style="font-size: 14px; color: #333; margin-top: 12px;">${escapeHtml(summary.slice(0, 500))}</p>` : ""}
+      ${summary ? `<p class="email-text" style="font-size: 14px; color: #333; margin-top: 12px;">${escapeHtml(summary.slice(0, 500))}</p>` : ""}
       <p style="margin: 20px 0;">
         <a href="${escapeHtml(callUrl)}" style="background: ${flagColor}; color: white; padding: 10px 20px; border-radius: 6px; text-decoration: none; display: inline-block;">
           View Call Details
         </a>
       </p>
-    </div>
-  `;
+  `);
 
   return { to: "", subject, text, html };
 }
@@ -243,10 +277,10 @@ export function buildQuotaAlertEmail(
   const barColor = isExhausted ? "#ef4444" : "#f59e0b";
   const warningRows = warnings.map(w => `
     <tr>
-      <td style="padding: 8px 12px; font-weight: 600; color: #333;">${escapeHtml(w.label)}</td>
-      <td style="padding: 8px 12px;">${w.used} / ${w.limit}</td>
+      <td class="email-text" style="padding: 8px 12px; font-weight: 600; color: #333;">${escapeHtml(w.label)}</td>
+      <td class="email-text" style="padding: 8px 12px; color: #333;">${w.used} / ${w.limit}</td>
       <td style="padding: 8px 12px;">
-        <div style="width: 100px; height: 8px; background: #e5e7eb; border-radius: 4px; overflow: hidden;">
+        <div class="email-bar-bg" style="width: 100px; height: 8px; background: #e5e7eb; border-radius: 4px; overflow: hidden;">
           <div style="width: ${Math.min(w.pct, 100)}%; height: 100%; background: ${barColor}; border-radius: 4px;"></div>
         </div>
       </td>
@@ -254,24 +288,23 @@ export function buildQuotaAlertEmail(
     </tr>
   `).join("");
 
-  const html = `
-    <div style="font-family: -apple-system, sans-serif; max-width: 520px; margin: 0 auto;">
+  const html = wrapWithDarkMode(`
       <div style="border-left: 4px solid ${barColor}; padding-left: 16px; margin-bottom: 16px;">
-        <h2 style="color: #1a1a1a; margin: 0 0 4px;">Plan ${escapeHtml(severity)}</h2>
-        <p style="color: #666; font-size: 14px; margin: 0;">${escapeHtml(orgName)}</p>
+        <h2 class="email-heading" style="color: #1a1a1a; margin: 0 0 4px;">Plan ${escapeHtml(severity)}</h2>
+        <p class="email-muted" style="color: #666; font-size: 14px; margin: 0;">${escapeHtml(orgName)}</p>
       </div>
       <table style="font-size: 14px; border-collapse: collapse; width: 100%;">
         <thead>
-          <tr style="border-bottom: 1px solid #e5e7eb;">
-            <th style="padding: 8px 12px; text-align: left; color: #666;">Resource</th>
-            <th style="padding: 8px 12px; text-align: left; color: #666;">Usage</th>
-            <th style="padding: 8px 12px; text-align: left; color: #666;"></th>
-            <th style="padding: 8px 12px; text-align: left; color: #666;"></th>
+          <tr class="email-border" style="border-bottom: 1px solid #e5e7eb;">
+            <th class="email-table-header" style="padding: 8px 12px; text-align: left; color: #666;">Resource</th>
+            <th class="email-table-header" style="padding: 8px 12px; text-align: left; color: #666;">Usage</th>
+            <th style="padding: 8px 12px;"></th>
+            <th style="padding: 8px 12px;"></th>
           </tr>
         </thead>
         <tbody>${warningRows}</tbody>
       </table>
-      <p style="font-size: 14px; color: #333; margin-top: 16px;">
+      <p class="email-text" style="font-size: 14px; color: #333; margin-top: 16px;">
         ${isExhausted
           ? "New uploads and analyses are <strong>blocked</strong> until the next billing cycle or you upgrade."
           : "Consider upgrading before you hit your limit."}
@@ -281,8 +314,7 @@ export function buildQuotaAlertEmail(
           ${isExhausted ? "Upgrade Now" : "Manage Plan"}
         </a>
       </p>
-    </div>
-  `;
+  `);
 
   return { to: "", subject, text, html };
 }

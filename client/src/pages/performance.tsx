@@ -3,6 +3,7 @@ import { useQuery } from "@tanstack/react-query";
 import { Star, TrendingUp, UserCheck, Calendar, ArrowUpDown, ArrowUp, ArrowDown } from "lucide-react";
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell } from "recharts";
 import { Button } from "@/components/ui/button";
+import { HelpTip } from "@/components/ui/help-tip";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
@@ -109,7 +110,10 @@ export default function PerformancePage() {
       <header className="bg-card border-b border-border px-6 py-4">
         <div className="flex items-center justify-between">
           <div>
-            <h2 className="text-2xl font-bold text-foreground">Employee Performance</h2>
+            <h2 className="text-2xl font-bold text-foreground flex items-center gap-2">
+              Employee Performance
+              <HelpTip text="AI-scored performance for each agent based on compliance, communication, customer experience, and resolution. Scores range from 0-10. Click an agent to see their detailed report." />
+            </h2>
             <p className="text-muted-foreground">Review and compare agent performance scores.</p>
           </div>
           <div className="flex items-center gap-2">

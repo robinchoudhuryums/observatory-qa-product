@@ -3,6 +3,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { ClipboardCheck, Plus, User, Calendar, CheckCircle2, Clock, X, Eye, ChevronDown, ChevronUp } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { HelpTip } from "@/components/ui/help-tip";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -90,6 +91,7 @@ export default function CoachingPage() {
         <div>
           <h2 className="text-2xl font-bold text-foreground flex items-center gap-2">
             <ClipboardCheck className="w-6 h-6" /> Coaching & Action Plans
+            <HelpTip text="Create coaching sessions from flagged calls or manually. Each session tracks action items, due dates, and completion status. Sessions auto-generate from AI analysis when calls score below threshold." />
           </h2>
           <p className="text-muted-foreground">Assign coaching sessions from flagged calls and track agent improvement.</p>
         </div>
