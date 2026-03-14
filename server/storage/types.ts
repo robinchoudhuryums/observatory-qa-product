@@ -12,6 +12,7 @@ import {
   type CallAnalysis,
   type InsertCallAnalysis,
   type CallWithDetails,
+  type CallSummary,
   type DashboardMetrics,
   type SentimentDistribution,
   type TopPerformer,
@@ -73,10 +74,10 @@ export function normalizeAnalysis(analysis: CallAnalysis | undefined): CallAnaly
 }
 
 /** Apply standard call filters (status, sentiment, employee) */
-export function applyCallFilters(
-  calls: CallWithDetails[],
+export function applyCallFilters<T extends { status?: string; employeeId?: string; sentiment?: { overallSentiment?: string } }>(
+  calls: T[],
   filters: { status?: string; sentiment?: string; employee?: string }
-): CallWithDetails[] {
+): T[] {
   let result = calls;
   if (filters.status) result = result.filter((c) => c.status === filters.status);
   if (filters.sentiment) result = result.filter((c) => c.sentiment?.overallSentiment === filters.sentiment);
@@ -128,6 +129,8 @@ export interface IStorage {
   getCallByFileHash(orgId: string, fileHash: string): Promise<Call | undefined>;
   getAllCalls(orgId: string): Promise<Call[]>;
   getCallsWithDetails(orgId: string, filters?: { status?: string; sentiment?: string; employee?: string }): Promise<CallWithDetails[]>;
+  /** Lightweight version of getCallsWithDetails — excludes transcript text/words for reporting */
+  getCallSummaries(orgId: string, filters?: { status?: string; sentiment?: string; employee?: string }): Promise<CallSummary[]>;
 
   // Transcript operations (org-scoped)
   getTranscript(orgId: string, callId: string): Promise<Transcript | undefined>;

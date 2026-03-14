@@ -23,7 +23,7 @@ import type {
   Transcript, InsertTranscript,
   SentimentAnalysis, InsertSentimentAnalysis,
   CallAnalysis, InsertCallAnalysis,
-  CallWithDetails, DashboardMetrics, SentimentDistribution, TopPerformer,
+  CallWithDetails, CallSummary, DashboardMetrics, SentimentDistribution, TopPerformer,
   AccessRequest, InsertAccessRequest,
   PromptTemplate, InsertPromptTemplate,
   CoachingSession, InsertCoachingSession,
@@ -316,6 +316,49 @@ export class PostgresStorage implements IStorage {
     });
 
     // Apply sentiment filter (post-query since it's in a separate table)
+    if (filters.sentiment) {
+      results = results.filter((c) => c.sentiment?.overallSentiment === filters.sentiment);
+    }
+
+    return results;
+  }
+
+  async getCallSummaries(
+    orgId: string,
+    filters: { status?: string; sentiment?: string; employee?: string } = {},
+  ): Promise<CallSummary[]> {
+    // Same as getCallsWithDetails but skips transcript table entirely
+    const conditions = [eq(tables.calls.orgId, orgId)];
+    if (filters.status) conditions.push(eq(tables.calls.status, filters.status));
+    if (filters.employee) conditions.push(eq(tables.calls.employeeId, filters.employee));
+
+    const callRows = await this.db.select().from(tables.calls)
+      .where(and(...conditions))
+      .orderBy(desc(tables.calls.uploadedAt));
+
+    if (callRows.length === 0) return [];
+
+    // Batch-load related data (NO transcripts)
+    const [empRows, sentRows, analysisRows] = await Promise.all([
+      this.db.select().from(tables.employees).where(eq(tables.employees.orgId, orgId)),
+      this.db.select().from(tables.sentimentAnalyses).where(eq(tables.sentimentAnalyses.orgId, orgId)),
+      this.db.select().from(tables.callAnalyses).where(eq(tables.callAnalyses.orgId, orgId)),
+    ]);
+
+    const empMap = new Map(empRows.map((e) => [e.id, this.mapEmployee(e)]));
+    const sentMap = new Map(sentRows.map((s) => [s.callId, this.mapSentiment(s)]));
+    const analysisMap = new Map(analysisRows.map((a) => [a.callId, this.mapAnalysis(a)]));
+
+    let results: CallSummary[] = callRows.map((row) => {
+      const call = this.mapCall(row);
+      return {
+        ...call,
+        employee: call.employeeId ? empMap.get(call.employeeId) : undefined,
+        sentiment: sentMap.get(call.id),
+        analysis: normalizeAnalysis(analysisMap.get(call.id)),
+      };
+    });
+
     if (filters.sentiment) {
       results = results.filter((c) => c.sentiment?.overallSentiment === filters.sentiment);
     }

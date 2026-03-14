@@ -7,6 +7,7 @@ import { broadcastCallUpdate } from "../services/websocket";
 import { insertPromptTemplateSchema, orgSettingsSchema, type OrgSettings } from "@shared/schema";
 import { logger } from "../services/logger";
 import { safeInt, withRetry } from "./helpers";
+import { enqueueReanalysis } from "../services/queue";
 
 export function registerAdminRoutes(app: Express): void {
   // ==================== PROMPT TEMPLATE ROUTES (admin only) ====================
@@ -108,12 +109,25 @@ export function registerAdminRoutes(app: Express): void {
         };
       }
 
-      // Queue re-analysis in background (respond immediately)
       const orgId = req.orgId!;
       const queued = targetCalls.length;
-      res.json({ message: `Re-analysis queued for ${queued} calls`, queued });
+      const callIds = targetCalls.map(c => c.id);
 
-      // Process in background with bounded concurrency
+      // Try BullMQ queue first; fall back to in-process execution
+      const enqueued = await enqueueReanalysis({
+        orgId,
+        callIds,
+        requestedBy: req.user?.username || "unknown",
+      });
+
+      if (enqueued) {
+        res.json({ message: `Re-analysis queued for ${queued} calls`, queued });
+        return;
+      }
+
+      // Fallback: in-process execution (no Redis)
+      res.json({ message: `Re-analysis started for ${queued} calls (in-process)`, queued });
+
       (async () => {
         let succeeded = 0;
         let failed = 0;

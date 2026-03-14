@@ -526,6 +526,13 @@ export type CallWithDetails = Call & {
   analysis?: CallAnalysis;
 };
 
+/** Lightweight call summary for reporting — excludes transcript text/words to reduce memory */
+export type CallSummary = Call & {
+  employee?: Employee;
+  sentiment?: SentimentAnalysis;
+  analysis?: CallAnalysis;
+};
+
 export type DashboardMetrics = {
   totalCalls: number;
   avgSentiment: number;

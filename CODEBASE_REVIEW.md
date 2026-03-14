@@ -370,22 +370,32 @@ Multiple concurrent requests can create duplicate provider instances for the sam
 
 ## Summary
 
-| Severity | Count | Key Areas |
-|----------|-------|-----------|
-| Critical | 8 | Cross-tenant access, WebSocket auth, memory-heavy queries, no CI/CD, crash-prone JSON.parse |
-| High | 8 | Console logging, code duplication, no route guards, missing error handlers |
-| Medium | 10 | CSRF, error leaks, no pagination, SigV4 duplication, pool leaks, webhook validation |
-| Low | 8 | Package config, test coverage, dependency vulns, deployment scripts |
+| Severity | Count | Resolved | Key Areas |
+|----------|-------|----------|-----------|
+| Critical | 8 | 8 | Cross-tenant access, WebSocket auth, memory-heavy queries, CI/CD, crash-prone JSON.parse |
+| High | 8 | 7 | Console logging, code duplication, route guards, error handlers, bulk reanalysis queue |
+| Medium | 10 | 2 | CSRF, error leaks, no pagination, SigV4 duplication, pool leaks, webhook validation |
+| Low | 8 | 1 | Package config, test coverage, dependency vulns, deployment scripts |
 
-### Top 10 Highest-Impact Fixes
+### Top 10 Highest-Impact Fixes — Status
 
-1. **Fix WebSocket org resolution for DB users** (#3) — real-time updates completely broken for registered users
-2. **Add `getCallByFileHash()`** (#2) — prevents OOM on upload for orgs with many calls
-3. **Add CI/CD pipeline** (#8) — no automated quality gates currently
-4. **Make `orgId` required in `insertUserSchema`** (#6) — tenant isolation gap
-5. **Validate org settings updates** (#5) — arbitrary JSON injection
-6. **Rate-limit registration** (#4) — abuse vector
-7. **Replace `console.*` with structured logger** (#9) — HIPAA compliance gap
-8. **Wrap `JSON.parse` calls in try-catch** (#7) — crash risk
-9. **Add frontend route guards** (#14) — role bypass via URL
-10. **Add WebSocket error handlers** (#15) — unlogged errors, broken pipe crashes
+1. ~~**Fix WebSocket org resolution for DB users** (#3)~~ — **RESOLVED**: `resolveUserOrgId()` falls back to `storage.getUser()` for DB users
+2. ~~**Add `getCallByFileHash()`** (#2)~~ — **RESOLVED**: Added to IStorage interface and all backends with DB index lookup
+3. ~~**Add CI/CD pipeline** (#8)~~ — **RESOLVED**: `.github/workflows/ci.yml` — typecheck, test, build on every PR
+4. ~~**Make `orgId` required in `insertUserSchema`** (#6)~~ — **RESOLVED**: Changed from `z.string().optional()` to `z.string()`
+5. ~~**Validate org settings updates** (#5)~~ — **RESOLVED**: Uses `orgSettingsSchema.partial().safeParse()` before merging
+6. ~~**Rate-limit registration** (#4)~~ — **RESOLVED**: 3 registrations per IP per hour via `distributedRateLimit()`
+7. ~~**Replace `console.*` with structured logger** (#9)~~ — **RESOLVED**: All server code uses Pino logger; remaining `console.*` only in bootstrap/migration scripts
+8. ~~**Wrap `JSON.parse` calls in try-catch** (#7)~~ — **RESOLVED**: `safeJsonParse()` in reports, try-catch in onboarding
+9. ~~**Add frontend route guards** (#14)~~ — **RESOLVED**: `ProtectedRoute` component with `minRole` on admin/manager routes
+10. ~~**Add WebSocket error handlers** (#15)~~ — **RESOLVED**: `wss.on("error")`, try-catch on `send()`, `closeWebSocket()` export
+
+### Additional Fixes Applied
+
+- **#10 Password hashing duplication** — **RESOLVED**: `hashPassword()` exported from `server/auth.ts`, imported elsewhere
+- **#11 Bulk re-analysis not using queue** — **RESOLVED**: Uses `enqueueReanalysis()` with BullMQ, in-process fallback when Redis unavailable
+- **#12 Reporting loads all calls into memory** — **RESOLVED**: Added `getCallSummaries()` method that skips transcript data; reports/insights use it instead of `getCallsWithDetails()`
+- **#13 No file size limit on upload** — **RESOLVED**: 100MB limit set in multer config with file type validation
+- **#16 Indexing worker missing error handler** — **RESOLVED**: `worker.on("failed")` handler added
+- **#18 Error handler exposes internal messages** — **RESOLVED**: Returns generic "Internal Server Error" for status >= 500
+- **#28 Package naming** — **RESOLVED**: Changed from `"rest-express"` to `"observatory-qa"`

@@ -12,6 +12,7 @@ import {
   type CallAnalysis,
   type InsertCallAnalysis,
   type CallWithDetails,
+  type CallSummary,
   type DashboardMetrics,
   type SentimentDistribution,
   type TopPerformer,
@@ -217,6 +218,35 @@ export class CloudStorage implements IStorage {
 
     logger.info({ orgId, count: filtered.length }, "Returning filtered calls");
     return filtered;
+  }
+
+  async getCallSummaries(
+    orgId: string,
+    filters: { status?: string; sentiment?: string; employee?: string } = {}
+  ): Promise<CallSummary[]> {
+    const calls = await this.getAllCalls(orgId);
+
+    // Skip transcript loading — only fetch employee, sentiment, analysis
+    const results = await mapConcurrent(calls, 10, async (call) => {
+      const [employee, sentiment, analysis] = await Promise.all([
+        call.employeeId ? this.getEmployee(orgId, call.employeeId) : Promise.resolve(undefined),
+        this.getSentimentAnalysis(orgId, call.id),
+        this.getCallAnalysis(orgId, call.id),
+      ]);
+
+      return {
+        ...call,
+        employee,
+        sentiment: sentiment || undefined,
+        analysis: normalizeAnalysis(analysis),
+      } as CallSummary;
+    });
+
+    results.sort(
+      (a, b) => new Date(b.uploadedAt || 0).getTime() - new Date(a.uploadedAt || 0).getTime()
+    );
+
+    return applyCallFilters(results, filters);
   }
 
   // --- Transcript Methods (org-scoped) ---

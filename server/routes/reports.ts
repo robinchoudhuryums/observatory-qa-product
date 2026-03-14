@@ -67,7 +67,7 @@ export function registerReportRoutes(app: Express): void {
     try {
       const { from, to, employeeId, department, callPartyType } = req.query;
 
-      const allCalls = await storage.getCallsWithDetails(req.orgId!, { status: "completed" });
+      const allCalls = await storage.getCallSummaries(req.orgId!, { status: "completed" });
       const employees = await storage.getAllEmployees(req.orgId!);
 
       // Build employee lookup maps
@@ -232,7 +232,7 @@ export function registerReportRoutes(app: Express): void {
         return;
       }
 
-      const allCalls = await storage.getCallsWithDetails(req.orgId!, { status: "completed" });
+      const allCalls = await storage.getCallSummaries(req.orgId!, { status: "completed" });
 
       const computePeriodMetrics = (calls: typeof allCalls, from: string, to: string) => {
         const fromDate = new Date(from);
@@ -298,7 +298,7 @@ export function registerReportRoutes(app: Express): void {
         return;
       }
 
-      const allCalls = await storage.getCallsWithDetails(req.orgId!, { status: "completed", employee: employeeId });
+      const allCalls = await storage.getCallSummaries(req.orgId!, { status: "completed", employee: employeeId });
 
       // Apply optional date filters
       let filtered = allCalls;
@@ -453,7 +453,7 @@ export function registerReportRoutes(app: Express): void {
         return;
       }
 
-      const allCalls = await storage.getCallsWithDetails(req.orgId!, { status: "completed", employee: employeeId });
+      const allCalls = await storage.getCallSummaries(req.orgId!, { status: "completed", employee: employeeId });
 
       let filtered = allCalls;
       if (from) {
@@ -562,7 +562,7 @@ export function registerReportRoutes(app: Express): void {
         return;
       }
 
-      const allCalls = await storage.getCallsWithDetails(req.orgId!, { status: "completed", employee: employeeId });
+      const allCalls = await storage.getCallSummaries(req.orgId!, { status: "completed", employee: employeeId });
       const scores = allCalls
         .map(c => c.analysis?.performanceScore ? safeFloat(c.analysis.performanceScore) : null)
         .filter((s): s is number => s !== null);

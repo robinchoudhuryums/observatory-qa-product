@@ -9,7 +9,7 @@ export function registerInsightRoutes(app: Express): void {
 
   app.get("/api/insights", requireAuth, injectOrgContext, async (req, res) => {
     try {
-      const allCalls = await storage.getCallsWithDetails(req.orgId!);
+      const allCalls = await storage.getCallSummaries(req.orgId!);
       const completed = allCalls.filter(c => c.status === "completed" && c.analysis);
 
       // Aggregate topic frequency across all calls
