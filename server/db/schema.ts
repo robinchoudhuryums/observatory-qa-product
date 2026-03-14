@@ -314,6 +314,19 @@ export const documentChunks = pgTable("document_chunks", {
   index("doc_chunks_document_id_idx").on(t.documentId),
 ]);
 
+// --- PASSWORD RESET TOKENS ---
+export const passwordResetTokens = pgTable("password_reset_tokens", {
+  id: text("id").primaryKey(),
+  userId: text("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  tokenHash: varchar("token_hash", { length: 128 }).notNull(), // SHA-256 hashed
+  expiresAt: timestamp("expires_at").notNull(),
+  usedAt: timestamp("used_at"),
+  createdAt: timestamp("created_at").defaultNow(),
+}, (t) => [
+  index("password_reset_user_idx").on(t.userId),
+  uniqueIndex("password_reset_token_hash_idx").on(t.tokenHash),
+]);
+
 // --- USAGE EVENTS (per-org metering for billing) ---
 export const usageEvents = pgTable("usage_events", {
   id: text("id").primaryKey(),

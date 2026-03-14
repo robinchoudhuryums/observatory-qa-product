@@ -7,6 +7,7 @@ import { setupWebSocket } from "./services/websocket";
 import { logger } from "./services/logger";
 import { initRedis, checkRateLimit, closeRedis } from "./services/redis";
 import { initQueues, enqueueRetention, closeQueues } from "./services/queue";
+import { initEmail } from "./services/email";
 
 const app = express();
 
@@ -158,6 +159,9 @@ app.post("/api/auth/register", distributedRateLimit(60 * 60 * 1000, 3) as any);
   if (queuesReady) {
     logger.info("BullMQ job queues active");
   }
+
+  // 4. Initialize email transport
+  initEmail();
 
   // Authentication (must come before routes) - async to hash env var passwords on startup
   await setupAuth(app);

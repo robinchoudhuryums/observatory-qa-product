@@ -22,7 +22,7 @@ export interface AuditEntry {
   detail?: string;
 }
 
-import { logger } from "../logger";
+import { logger } from "./logger";
 
 export function logPhiAccess(entry: AuditEntry): void {
   logger.info({
