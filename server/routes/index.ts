@@ -17,6 +17,8 @@ import { registerBillingRoutes } from "./billing";
 import { registerOnboardingRoutes } from "./onboarding";
 import { registerPasswordResetRoutes } from "./password-reset";
 import { registerExportRoutes } from "./export";
+import { registerSsoRoutes, setupSamlAuth } from "./sso";
+import { registerMfaRoutes } from "./mfa";
 
 export async function registerRoutes(app: Express): Promise<Server> {
   // API key auth middleware (before routes, after session middleware)
@@ -25,11 +27,16 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Set up Google OAuth if configured
   await setupGoogleOAuth();
 
+  // Set up SAML SSO (per-org IDP configuration)
+  await setupSamlAuth();
+
   registerHealthRoutes(app);
   registerAuthRoutes(app);
   registerOAuthRoutes(app);
+  registerSsoRoutes(app);
   registerRegistrationRoutes(app);
   registerPasswordResetRoutes(app);
+  registerMfaRoutes(app);
   registerAccessRoutes(app);
   registerAdminRoutes(app);
   registerApiKeyRoutes(app);

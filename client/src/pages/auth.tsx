@@ -197,6 +197,7 @@ export default function AuthPage({ onLogin, initialView }: AuthPageProps) {
                   Sign In
                 </Button>
                 <GoogleLoginButton />
+                <SsoLoginSection />
               </form>
             )}
 
@@ -246,6 +247,7 @@ export default function AuthPage({ onLogin, initialView }: AuthPageProps) {
                     minLength={8}
                     autoComplete="new-password"
                   />
+                  <p className="text-xs text-muted-foreground mt-1">Minimum 8 characters. Use a mix of letters, numbers, and symbols for a strong password.</p>
                 </div>
                 <Button type="submit" className="w-full" disabled={isLoading}>
                   {isLoading ? (
@@ -403,6 +405,50 @@ function GoogleLoginButton() {
         </svg>
         Sign in with Google
       </Button>
+    </>
+  );
+}
+
+/** Shows "Sign in with SSO" section */
+function SsoLoginSection() {
+  const [orgSlug, setOrgSlug] = useState("");
+  const [isLoading, setIsLoading] = useState(false);
+
+  const handleSsoLogin = () => {
+    if (!orgSlug.trim()) return;
+    setIsLoading(true);
+    window.location.href = `/api/auth/sso/${orgSlug.trim()}`;
+  };
+
+  return (
+    <>
+      <div className="relative my-4">
+        <div className="absolute inset-0 flex items-center">
+          <span className="w-full border-t border-border" />
+        </div>
+        <div className="relative flex justify-center text-xs uppercase">
+          <span className="bg-card px-2 text-muted-foreground">enterprise sso</span>
+        </div>
+      </div>
+      <div className="space-y-2">
+        <Input
+          type="text"
+          placeholder="Organization slug (e.g. acme-healthcare)"
+          value={orgSlug}
+          onChange={(e) => setOrgSlug(e.target.value.toLowerCase().replace(/[^a-z0-9-]/g, ""))}
+          onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); handleSsoLogin(); } }}
+        />
+        <Button
+          type="button"
+          variant="outline"
+          className="w-full"
+          onClick={handleSsoLogin}
+          disabled={!orgSlug.trim() || isLoading}
+        >
+          <Shield className="w-4 h-4 mr-2" />
+          {isLoading ? "Redirecting..." : "Sign in with SSO"}
+        </Button>
+      </div>
     </>
   );
 }

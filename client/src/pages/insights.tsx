@@ -1,5 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
-import { Building2, TrendingDown, AlertTriangle, BarChart3, MessageCircle, ShieldAlert } from "lucide-react";
+import { Building2, TrendingDown, AlertTriangle, BarChart3, MessageCircle, ShieldAlert, FileDown } from "lucide-react";
+import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { HelpTip } from "@/components/ui/help-tip";
@@ -67,14 +68,29 @@ export default function InsightsPage() {
   return (
     <div className="min-h-screen" data-testid="insights-page">
       <header className="bg-card border-b border-border px-6 py-4">
-        <div>
-          <h2 className="text-2xl font-bold text-foreground flex items-center gap-2">
-            Company Insights
-            <HelpTip text="AI-aggregated patterns across all your calls: recurring complaints, top topics, sentiment trends, and process improvement opportunities. Insights update automatically as new calls are analyzed." />
-          </h2>
-          <p className="text-muted-foreground">
-            Customer experience trends, complaint patterns, and process improvement opportunities across {insights.totalAnalyzed} analyzed calls
-          </p>
+        <div className="flex items-center justify-between">
+          <div>
+            <h2 className="text-2xl font-bold text-foreground flex items-center gap-2">
+              Company Insights
+              <HelpTip text="AI-aggregated patterns across all your calls: recurring complaints, top topics, sentiment trends, and process improvement opportunities. Insights update automatically as new calls are analyzed." />
+            </h2>
+            <p className="text-muted-foreground">
+              Customer experience trends, complaint patterns, and process improvement opportunities across {insights.totalAnalyzed} analyzed calls
+            </p>
+          </div>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => {
+              const link = document.createElement("a");
+              link.href = "/api/export/insights";
+              link.download = "";
+              link.click();
+            }}
+          >
+            <FileDown className="w-4 h-4 mr-1.5" />
+            Export CSV
+          </Button>
         </div>
       </header>
 

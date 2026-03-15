@@ -1,6 +1,6 @@
 import { useState, useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { Star, TrendingUp, UserCheck, Calendar, ArrowUpDown, ArrowUp, ArrowDown } from "lucide-react";
+import { Star, TrendingUp, UserCheck, Calendar, ArrowUpDown, ArrowUp, ArrowDown, FileDown } from "lucide-react";
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell } from "recharts";
 import { Button } from "@/components/ui/button";
 import { HelpTip } from "@/components/ui/help-tip";
@@ -117,6 +117,19 @@ export default function PerformancePage() {
             <p className="text-muted-foreground">Review and compare agent performance scores.</p>
           </div>
           <div className="flex items-center gap-2">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => {
+                const link = document.createElement("a");
+                link.href = "/api/export/performance";
+                link.download = "";
+                link.click();
+              }}
+            >
+              <FileDown className="w-4 h-4 mr-1.5" />
+              Export CSV
+            </Button>
             <Select value={deptFilter} onValueChange={setDeptFilter}>
               <SelectTrigger className="w-48">
                 <SelectValue placeholder="All Departments" />
@@ -157,8 +170,8 @@ export default function PerformancePage() {
         )}
 
         {/* Performance Table */}
-        <div className="bg-card rounded-lg border border-border overflow-hidden">
-          <table className="w-full">
+        <div className="bg-card rounded-lg border border-border overflow-hidden overflow-x-auto">
+          <table className="w-full min-w-[600px]">
             <thead>
               <tr className="border-b border-border bg-muted/50">
                 <th className="text-left px-4 py-3 text-xs font-medium text-muted-foreground">Rank</th>
@@ -167,18 +180,18 @@ export default function PerformancePage() {
                     Employee <SortIcon field="name" />
                   </button>
                 </th>
-                <th className="text-left px-4 py-3 text-xs font-medium text-muted-foreground">Department</th>
+                <th className="text-left px-4 py-3 text-xs font-medium text-muted-foreground hidden sm:table-cell">Department</th>
                 <th className="text-left px-4 py-3 text-xs font-medium text-muted-foreground">
                   <button className="flex items-center hover:text-foreground" onClick={() => toggleSort("score")}>
                     Avg Score <SortIcon field="score" />
                   </button>
                 </th>
-                <th className="text-left px-4 py-3 text-xs font-medium text-muted-foreground">
+                <th className="text-left px-4 py-3 text-xs font-medium text-muted-foreground hidden sm:table-cell">
                   <button className="flex items-center hover:text-foreground" onClick={() => toggleSort("calls")}>
                     Calls <SortIcon field="calls" />
                   </button>
                 </th>
-                <th className="text-left px-4 py-3 text-xs font-medium text-muted-foreground">Score Bar</th>
+                <th className="text-left px-4 py-3 text-xs font-medium text-muted-foreground hidden md:table-cell">Score Bar</th>
                 <th className="text-left px-4 py-3 text-xs font-medium text-muted-foreground"></th>
               </tr>
             </thead>
@@ -198,7 +211,7 @@ export default function PerformancePage() {
                         <span className="font-medium text-sm">{employee.name}</span>
                       </div>
                     </td>
-                    <td className="px-4 py-3 text-sm text-muted-foreground">{employee.role || "—"}</td>
+                    <td className="px-4 py-3 text-sm text-muted-foreground hidden sm:table-cell">{employee.role || "—"}</td>
                     <td className="px-4 py-3">
                       <div className="flex items-center gap-1">
                         <Star className="w-4 h-4 fill-current" style={{ color: getScoreColor(score) }} />
@@ -208,8 +221,8 @@ export default function PerformancePage() {
                         <span className="text-xs text-muted-foreground">/10</span>
                       </div>
                     </td>
-                    <td className="px-4 py-3 text-sm font-medium">{employee.totalCalls}</td>
-                    <td className="px-4 py-3 w-32">
+                    <td className="px-4 py-3 text-sm font-medium hidden sm:table-cell">{employee.totalCalls}</td>
+                    <td className="px-4 py-3 w-32 hidden md:table-cell">
                       <div className="w-full bg-muted rounded-full h-2">
                         <div
                           className="h-2 rounded-full transition-all"

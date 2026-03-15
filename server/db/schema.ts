@@ -61,6 +61,10 @@ export const users = pgTable("users", {
   name: varchar("name", { length: 255 }).notNull(),
   role: varchar("role", { length: 20 }).notNull().default("viewer"),
   isActive: boolean("is_active").notNull().default(true),
+  // MFA (TOTP) fields — HIPAA recommended safeguard
+  mfaEnabled: boolean("mfa_enabled").notNull().default(false),
+  mfaSecret: text("mfa_secret"), // Encrypted TOTP secret (AES-256-GCM)
+  mfaBackupCodes: jsonb("mfa_backup_codes").$type<string[]>(), // Hashed backup codes
   createdAt: timestamp("created_at").defaultNow(),
   lastLoginAt: timestamp("last_login_at"),
 }, (t) => [
@@ -361,7 +365,7 @@ export const usageEvents = pgTable("usage_events", {
   index("usage_created_at_idx").on(t.createdAt),
 ]);
 
-// --- AUDIT LOGS (append-only, HIPAA compliance) ---
+// --- AUDIT LOGS (append-only, tamper-evident, HIPAA compliance) ---
 export const auditLogs = pgTable("audit_logs", {
   id: text("id").primaryKey(),
   orgId: text("org_id").notNull(),
@@ -372,10 +376,17 @@ export const auditLogs = pgTable("audit_logs", {
   resourceType: varchar("resource_type", { length: 50 }).notNull(),
   resourceId: text("resource_id"),
   ip: varchar("ip", { length: 45 }),
+  userAgent: text("user_agent"),
   detail: text("detail"),
+  // Tamper-evident hash chain: SHA-256(prevHash + entryData)
+  // If any row is modified or deleted, the chain breaks and verification fails
+  integrityHash: varchar("integrity_hash", { length: 64 }),
+  prevHash: varchar("prev_hash", { length: 64 }),
+  sequenceNum: integer("sequence_num"),
   createdAt: timestamp("created_at").defaultNow(),
 }, (t) => [
   index("audit_logs_org_idx").on(t.orgId, t.createdAt),
   index("audit_logs_event_idx").on(t.orgId, t.event),
   index("audit_logs_user_idx").on(t.orgId, t.userId),
+  index("audit_logs_sequence_idx").on(t.orgId, t.sequenceNum),
 ]);

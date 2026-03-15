@@ -1632,8 +1632,35 @@ function OrganizationTab() {
                   />
                   <span className="text-sm font-medium text-foreground">Enforce SSO</span>
                 </label>
-                <p className="text-xs text-muted-foreground">When enabled, password login is disabled for all users.</p>
+                <p className="text-xs text-muted-foreground">When enabled, password login is disabled for all users. API keys still work.</p>
               </div>
+
+              {/* SP Metadata for IDP configuration */}
+              {org?.slug && (
+                <div className="bg-muted/50 rounded-lg p-4 space-y-2">
+                  <h4 className="text-sm font-semibold text-foreground">Service Provider Details</h4>
+                  <p className="text-xs text-muted-foreground">Provide these to your Identity Provider (Okta, Azure AD, Google Workspace, etc.):</p>
+                  <div className="space-y-1.5">
+                    <div>
+                      <span className="text-xs font-medium text-muted-foreground">ACS URL (Assertion Consumer Service):</span>
+                      <code className="block text-xs bg-background rounded px-2 py-1 mt-0.5 font-mono">{`${window.location.origin}/api/auth/sso/callback`}</code>
+                    </div>
+                    <div>
+                      <span className="text-xs font-medium text-muted-foreground">SP Entity ID:</span>
+                      <code className="block text-xs bg-background rounded px-2 py-1 mt-0.5 font-mono">{`${window.location.origin}/api/auth/sso/metadata/${org.slug}`}</code>
+                    </div>
+                    <div>
+                      <span className="text-xs font-medium text-muted-foreground">SP Metadata URL:</span>
+                      <code className="block text-xs bg-background rounded px-2 py-1 mt-0.5 font-mono">{`${window.location.origin}/api/auth/sso/metadata/${org.slug}`}</code>
+                    </div>
+                    <div>
+                      <span className="text-xs font-medium text-muted-foreground">SSO Login URL (for users):</span>
+                      <code className="block text-xs bg-background rounded px-2 py-1 mt-0.5 font-mono">{`${window.location.origin}/api/auth/sso/${org.slug}`}</code>
+                    </div>
+                  </div>
+                </div>
+              )}
+
               <Button type="submit" disabled={mutation.isPending}>
                 <Save className="w-4 h-4 mr-2" />
                 {mutation.isPending ? "Saving..." : "Save SSO Settings"}
@@ -1641,6 +1668,26 @@ function OrganizationTab() {
             </form>
           </CardContent>
         )}
+      </Card>
+
+      {/* Replay Onboarding Tour */}
+      <Card>
+        <CardContent className="pt-6 flex items-center justify-between">
+          <div>
+            <h4 className="text-sm font-semibold text-foreground">Onboarding Tour</h4>
+            <p className="text-xs text-muted-foreground">Replay the guided tour to see key features and tips.</p>
+          </div>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => {
+              localStorage.removeItem("observatory-tour-completed");
+              window.location.href = "/dashboard";
+            }}
+          >
+            Replay Tour
+          </Button>
+        </CardContent>
       </Card>
 
       {/* Org Info (read-only) */}

@@ -336,7 +336,8 @@ export default function EmployeesPage() {
   );
 
   const renderTable = (emps: Employee[]) => (
-    <table className="w-full">
+    <div className="overflow-x-auto">
+    <table className="w-full min-w-[500px]">
       <thead>
         <tr className="border-b border-border">
           <th className="text-left px-4 py-2 text-xs font-medium text-muted-foreground">Name</th>
@@ -349,6 +350,7 @@ export default function EmployeesPage() {
         {emps.map(renderEmployeeRow)}
       </tbody>
     </table>
+    </div>
   );
 
   const renderDepartmentField = (value: string, onChange: (v: string) => void, id: string) => (

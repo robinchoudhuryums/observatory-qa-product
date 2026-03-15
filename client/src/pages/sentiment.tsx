@@ -1,6 +1,7 @@
 import { useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { Smile, Frown, Minus, TrendingUp } from "lucide-react";
+import { Smile, Frown, Minus, TrendingUp, FileDown } from "lucide-react";
+import { Button } from "@/components/ui/button";
 import { PieChart, Pie, Cell, ResponsiveContainer, AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, Legend } from "recharts";
 import { HelpTip } from "@/components/ui/help-tip";
 import type { CallWithDetails } from "@shared/schema";
@@ -94,12 +95,27 @@ export default function SentimentPage() {
   return (
     <div className="min-h-screen" data-testid="sentiment-page">
       <header className="bg-card border-b border-border px-6 py-4">
-        <div>
-          <h2 className="text-2xl font-bold text-foreground flex items-center gap-2">
-            Sentiment Analysis
-            <HelpTip text="AI-detected customer sentiment from call transcripts. Positive means the customer was satisfied, negative indicates frustration or complaints. Trends show how sentiment shifts over time." />
-          </h2>
-          <p className="text-muted-foreground">Overall sentiment distribution and trends across all analyzed calls.</p>
+        <div className="flex items-center justify-between">
+          <div>
+            <h2 className="text-2xl font-bold text-foreground flex items-center gap-2">
+              Sentiment Analysis
+              <HelpTip text="AI-detected customer sentiment from call transcripts. Positive means the customer was satisfied, negative indicates frustration or complaints. Trends show how sentiment shifts over time." />
+            </h2>
+            <p className="text-muted-foreground">Overall sentiment distribution and trends across all analyzed calls.</p>
+          </div>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => {
+              const link = document.createElement("a");
+              link.href = "/api/export/sentiment";
+              link.download = "";
+              link.click();
+            }}
+          >
+            <FileDown className="w-4 h-4 mr-1.5" />
+            Export CSV
+          </Button>
         </div>
       </header>
 

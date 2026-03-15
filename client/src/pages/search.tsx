@@ -9,6 +9,7 @@ import { Link } from "wouter";
 import type { CallWithDetails } from "@shared/schema";
 import { useToast } from "@/hooks/use-toast";
 import { AudioWaveform } from "lucide-react";
+import { HelpTip } from "@/components/ui/help-tip";
 import { ErrorBoundary } from "@/components/lib/error-boundary";
 import { CallCard } from "@/components/search/call-card";
 
@@ -59,7 +60,10 @@ export default function SearchPage() {
     <div className="min-h-screen" data-testid="search-page">
       <header className="bg-card border-b border-border px-6 py-4">
         <div>
-          <h2 className="text-2xl font-bold text-foreground">Search Calls</h2>
+          <h2 className="text-2xl font-bold text-foreground flex items-center gap-2">
+            Search Calls
+            <HelpTip text="Search across all call transcripts, topics, and summaries. Results update as you type (after 3 characters). Use filters to narrow by sentiment or processing status." />
+          </h2>
           <p className="text-muted-foreground">Find specific call recordings using keywords, filters, and criteria</p>
         </div>
       </header>
@@ -73,6 +77,9 @@ export default function SearchPage() {
             <div className="relative">
               <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-muted-foreground w-4 h-4" />
               <Input type="text" placeholder="Search by keywords, transcript content..." value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} className="pl-10"/>
+              {searchQuery.length > 0 && searchQuery.length <= 2 && (
+                <p className="text-xs text-amber-500 mt-1">Type at least 3 characters to search</p>
+              )}
             </div>
             <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
               {/* Employee Filter Removed */}

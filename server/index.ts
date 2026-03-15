@@ -261,6 +261,22 @@ app.post("/api/auth/register", distributedRateLimit(60 * 60 * 1000, 3) as any);
               });
               logger.info({ orgId: org.id, orgSlug: org.slug, previousTier: sub.planTier }, "Trial expired — downgraded to free");
               downgraded++;
+
+              // Notify org admins about the downgrade
+              try {
+                const { buildTrialDowngradeEmail, sendEmail } = await import("./services/email");
+                const users = await currentStorage.listUsersByOrg(org.id);
+                const admins = users.filter((u: any) => u.role === "admin");
+                const dashboardUrl = process.env.APP_URL || `https://${org.slug}.observatory-qa.com`;
+                for (const admin of admins) {
+                  if (!admin.username?.includes("@")) continue; // skip non-email usernames
+                  const emailOpts = buildTrialDowngradeEmail(org.name, dashboardUrl);
+                  emailOpts.to = admin.username;
+                  await sendEmail(emailOpts);
+                }
+              } catch (emailErr) {
+                logger.warn({ err: emailErr, orgId: org.id }, "Failed to send trial downgrade email");
+              }
             }
           }
         }

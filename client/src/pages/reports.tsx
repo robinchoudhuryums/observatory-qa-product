@@ -11,6 +11,7 @@ import { Badge } from "@/components/ui/badge";
 import type { Employee } from "@shared/schema";
 import { BarChart, Bar, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend } from "recharts";
 import { useAppName } from "@/hooks/use-organization";
+import { HelpTip } from "@/components/ui/help-tip";
 
 // ---- Types ----
 
@@ -301,7 +302,10 @@ export default function ReportsPage() {
     <div className="min-h-screen" data-testid="reports-page">
       <header className="bg-card border-b border-border px-6 py-4 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
         <div>
-          <h2 className="text-2xl font-bold text-foreground">Performance Reports</h2>
+          <h2 className="text-2xl font-bold text-foreground flex items-center gap-2">
+            Performance Reports
+            <HelpTip text="Generate performance reports by time period, employee, or department. Use date presets for quick filtering. Export to CSV for offline analysis. Click an agent name to see their full profile with call history." />
+          </h2>
           <p className="text-muted-foreground">Filter by time period, employee, or department.</p>
         </div>
         <div className="flex items-center gap-2">

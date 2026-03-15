@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { ClipboardCheck, Plus, User, Calendar, CheckCircle2, Clock, X, Eye, ChevronDown, ChevronUp } from "lucide-react";
+import { ClipboardCheck, Plus, User, Calendar, CheckCircle2, Clock, X, Eye, ChevronDown, ChevronUp, FileDown } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { HelpTip } from "@/components/ui/help-tip";
@@ -95,10 +95,25 @@ export default function CoachingPage() {
           </h2>
           <p className="text-muted-foreground">Assign coaching sessions from flagged calls and track agent improvement.</p>
         </div>
-        <Button onClick={() => setShowForm(!showForm)}>
-          <Plus className="w-4 h-4 mr-2" />
-          New Session
-        </Button>
+        <div className="flex items-center gap-2">
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => {
+              const link = document.createElement("a");
+              link.href = "/api/export/coaching";
+              link.download = "";
+              link.click();
+            }}
+          >
+            <FileDown className="w-4 h-4 mr-1.5" />
+            Export CSV
+          </Button>
+          <Button onClick={() => setShowForm(!showForm)}>
+            <Plus className="w-4 h-4 mr-2" />
+            New Session
+          </Button>
+        </div>
       </header>
 
       {showForm && (

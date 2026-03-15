@@ -328,6 +328,56 @@ export function buildQuotaAlertEmail(
   return { to: "", subject, text, html };
 }
 
+export function buildTrialDowngradeEmail(
+  orgName: string,
+  dashboardUrl: string,
+): EmailOptions {
+  const subject = `[${orgName}] Trial Expired — Downgraded to Free Plan`;
+  const settingsUrl = `${dashboardUrl}/admin/settings?tab=billing`;
+
+  const text = [
+    `${orgName} — Trial Expired`,
+    "",
+    `Your trial period has ended and your organization has been automatically downgraded to the Free plan.`,
+    "",
+    "Free plan limits:",
+    "- 50 calls per month",
+    "- 500 MB storage",
+    "- No RAG knowledge base",
+    "- No custom prompt templates",
+    "",
+    `To continue with full features, upgrade your plan: ${settingsUrl}`,
+    "",
+    `— Observatory QA`,
+  ].join("\n");
+
+  const html = wrapWithDarkMode(`
+      <div style="border-left: 4px solid #f59e0b; padding-left: 16px; margin-bottom: 16px;">
+        <h2 class="email-heading" style="color: #1a1a1a; margin: 0 0 4px;">Trial Expired</h2>
+        <p class="email-muted" style="color: #666; font-size: 14px; margin: 0;">${escapeHtml(orgName)}</p>
+      </div>
+      <p class="email-text" style="color: #333; font-size: 14px;">
+        Your trial period has ended and your organization has been automatically downgraded to the <strong>Free plan</strong>.
+      </p>
+      <table style="font-size: 14px; border-collapse: collapse; margin: 16px 0;">
+        <tr><td class="email-muted" style="padding: 4px 12px 4px 0; color: #666; font-weight: 600;">Calls/month</td><td class="email-text" style="color: #333;">50</td></tr>
+        <tr><td class="email-muted" style="padding: 4px 12px 4px 0; color: #666; font-weight: 600;">Storage</td><td class="email-text" style="color: #333;">500 MB</td></tr>
+        <tr><td class="email-muted" style="padding: 4px 12px 4px 0; color: #666; font-weight: 600;">RAG Knowledge Base</td><td class="email-text" style="color: #333;">Not available</td></tr>
+        <tr><td class="email-muted" style="padding: 4px 12px 4px 0; color: #666; font-weight: 600;">Custom Templates</td><td class="email-text" style="color: #333;">Not available</td></tr>
+      </table>
+      <p class="email-text" style="color: #333; font-size: 14px;">
+        Upgrade now to restore full access to all features.
+      </p>
+      <p style="margin: 20px 0;">
+        <a href="${escapeHtml(settingsUrl)}" style="background: #f59e0b; color: white; padding: 10px 20px; border-radius: 6px; text-decoration: none; display: inline-block;">
+          Upgrade Plan
+        </a>
+      </p>
+  `);
+
+  return { to: "", subject, text, html };
+}
+
 function escapeHtml(str: string): string {
   return str
     .replace(/&/g, "&amp;")

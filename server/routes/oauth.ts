@@ -2,6 +2,7 @@ import type { Express } from "express";
 import passport from "passport";
 import { storage } from "../storage";
 import { logger } from "../services/logger";
+import { isSamlConfigured } from "./sso";
 
 /**
  * Google OAuth 2.0 login flow.
@@ -115,11 +116,12 @@ export async function setupGoogleOAuth(): Promise<boolean> {
 }
 
 export function registerOAuthRoutes(app: Express): void {
-  // Check if Google OAuth is available
+  // Check which auth providers are available
   app.get("/api/auth/providers", (_req, res) => {
     res.json({
       google: googleOAuthConfigured,
       local: true,
+      saml: isSamlConfigured(),
     });
   });
 

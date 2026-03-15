@@ -252,6 +252,14 @@ export async function setupAuth(app: Express) {
             logPhiAccess({ event: "login_failed", username, resourceType: "auth" });
             return done(null, false, { message: "Invalid username or password" });
           }
+          // Check if org enforces SSO login
+          if (envUser.orgId) {
+            const envUserOrg = await storage.getOrganization(envUser.orgId);
+            if (envUserOrg?.settings?.ssoEnforced) {
+              return done(null, false, { message: "This organization requires SSO login." });
+            }
+          }
+
           clearFailedAttempts(username);
           logPhiAccess({
             event: "login_success",
@@ -290,6 +298,11 @@ export async function setupAuth(app: Express) {
         // Resolve org slug for DB user
         const org = await storage.getOrganization(dbUser.orgId);
         const orgSlug = org?.slug || "default";
+
+        // Check if org enforces SSO login
+        if (org?.settings?.ssoEnforced) {
+          return done(null, false, { message: "This organization requires SSO login." });
+        }
 
         clearFailedAttempts(username);
         logPhiAccess({
@@ -361,7 +374,7 @@ export const requireAuth: RequestHandler = (req, res, next) => {
   if (req.isAuthenticated()) {
     return next();
   }
-  res.status(401).json({ message: "Authentication required" });
+  res.status(401).json({ message: "Authentication required", errorCode: "OBS-AUTH-003" });
 };
 
 // HIPAA: Role-based access control middleware
@@ -383,7 +396,7 @@ export function requireRole(...allowedRoles: string[]): RequestHandler {
     if (userLevel >= requiredLevel) {
       return next();
     }
-    return res.status(403).json({ message: "Insufficient permissions" });
+    return res.status(403).json({ message: "Insufficient permissions", errorCode: "OBS-AUTH-004" });
   };
 }
 

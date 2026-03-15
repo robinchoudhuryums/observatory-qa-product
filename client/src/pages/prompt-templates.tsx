@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { Plus, Pencil, Trash2, FileText, Scale, ShieldCheck, MessageSquare, Save, X } from "lucide-react";
+import { Plus, Pencil, Trash2, FileText, Scale, ShieldCheck, MessageSquare, Save, X, Info } from "lucide-react";
+import { HelpTip } from "@/components/ui/help-tip";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
@@ -100,7 +101,10 @@ export default function PromptTemplatesPage() {
       <header className="bg-card border-b border-border px-6 py-4">
         <div className="flex items-center justify-between">
           <div>
-            <h2 className="text-2xl font-bold text-foreground">Prompt Templates & Scoring Rubrics</h2>
+            <h2 className="text-2xl font-bold text-foreground flex items-center gap-2">
+              Prompt Templates & Scoring Rubrics
+              <HelpTip text="Templates customize how the AI evaluates calls for each category. Set scoring weights (must total 100%), add required phrases agents must say, and provide evaluation criteria. Templates apply automatically to new calls matching the category." />
+            </h2>
             <p className="text-muted-foreground">Configure AI analysis criteria per call category for tailored evaluation</p>
           </div>
           <Button onClick={() => setShowNewForm(true)} disabled={showNewForm}>
@@ -380,25 +384,55 @@ function TemplateForm({
 
           {/* Scoring Weights */}
           <div>
-            <label className="text-sm font-medium">Scoring Weights</label>
+            <div className="flex items-center gap-2 mb-1">
+              <label className="text-sm font-medium">Scoring Weights</label>
+              <HelpTip text="Set how much each area contributes to the overall score. Values must total 100%. For example: 40% compliance, 25% customer experience, 20% communication, 15% resolution." />
+            </div>
             <p className="text-xs text-muted-foreground mb-2">
-              How much each area contributes to the overall score. Total: {totalWeight}%
-              {totalWeight !== 100 && <span className="text-red-500 ml-1">(should be 100%)</span>}
+              Total: <span className={totalWeight === 100 ? "text-green-600 font-medium" : "text-red-500 font-medium"}>{totalWeight}%</span>
+              {totalWeight !== 100 && <span className="text-red-500 ml-1">(must be 100%)</span>}
+              {totalWeight === 100 && <span className="text-green-600 ml-1">— balanced</span>}
             </p>
+
+            {/* Visual weight distribution bar */}
+            <div className="flex h-3 rounded-full overflow-hidden mb-3 bg-muted">
+              {(Object.keys(weights) as Array<keyof ScoringWeights>).map((key, i) => {
+                const colors = ["bg-blue-500", "bg-green-500", "bg-amber-500", "bg-purple-500"];
+                const pct = totalWeight > 0 ? (weights[key] / totalWeight) * 100 : 25;
+                return (
+                  <div key={key} className={`${colors[i]} transition-all duration-300`} style={{ width: `${pct}%` }} title={`${key.replace(/([A-Z])/g, ' $1').trim()}: ${weights[key]}%`} />
+                );
+              })}
+            </div>
+
             <div className="grid grid-cols-4 gap-3">
-              {(Object.keys(weights) as Array<keyof ScoringWeights>).map(key => (
-                <div key={key}>
-                  <label className="text-xs text-muted-foreground capitalize">{key.replace(/([A-Z])/g, ' $1').trim()}</label>
-                  <Input
-                    type="number"
-                    min={0}
-                    max={100}
-                    value={weights[key]}
-                    onChange={e => updateWeight(key, parseInt(e.target.value) || 0)}
-                    className="h-8 text-sm"
-                  />
-                </div>
-              ))}
+              {(Object.keys(weights) as Array<keyof ScoringWeights>).map((key, i) => {
+                const colors = ["text-blue-600", "text-green-600", "text-amber-600", "text-purple-600"];
+                const dotColors = ["bg-blue-500", "bg-green-500", "bg-amber-500", "bg-purple-500"];
+                return (
+                  <div key={key}>
+                    <label className={`text-xs font-medium capitalize flex items-center gap-1 ${colors[i]}`}>
+                      <span className={`w-2 h-2 rounded-full ${dotColors[i]}`} />
+                      {key.replace(/([A-Z])/g, ' $1').trim()}
+                    </label>
+                    <Input
+                      type="number"
+                      min={0}
+                      max={100}
+                      value={weights[key]}
+                      onChange={e => updateWeight(key, parseInt(e.target.value) || 0)}
+                      className="h-8 text-sm"
+                    />
+                  </div>
+                );
+              })}
+            </div>
+            {/* Quick presets */}
+            <div className="flex gap-2 mt-2">
+              <span className="text-xs text-muted-foreground">Presets:</span>
+              <button type="button" className="text-xs text-primary hover:underline" onClick={() => setWeights({ compliance: 25, customerExperience: 25, communication: 25, resolution: 25 })}>Equal</button>
+              <button type="button" className="text-xs text-primary hover:underline" onClick={() => setWeights({ compliance: 40, customerExperience: 25, communication: 20, resolution: 15 })}>Compliance-heavy</button>
+              <button type="button" className="text-xs text-primary hover:underline" onClick={() => setWeights({ compliance: 15, customerExperience: 40, communication: 25, resolution: 20 })}>CX-focused</button>
             </div>
           </div>
 
@@ -406,7 +440,10 @@ function TemplateForm({
           <div>
             <div className="flex items-center justify-between mb-2">
               <div>
-                <label className="text-sm font-medium">Required / Recommended Phrases</label>
+                <div className="flex items-center gap-2">
+                  <label className="text-sm font-medium">Required / Recommended Phrases</label>
+                  <HelpTip text="'Required' phrases trigger a flag if the agent doesn't say them. 'Recommended' phrases are noted but don't flag the call. Use these for compliance disclosures, greetings, or legal disclaimers." />
+                </div>
                 <p className="text-xs text-muted-foreground">Phrases agents must say. AI flags calls missing required phrases.</p>
               </div>
               <Button type="button" size="sm" variant="outline" onClick={addPhrase}>

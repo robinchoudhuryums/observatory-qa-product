@@ -919,6 +919,9 @@ export class PostgresStorage implements IStorage {
       passwordHash: row.passwordHash,
       name: row.name,
       role: row.role,
+      mfaEnabled: row.mfaEnabled ?? false,
+      mfaSecret: row.mfaSecret ?? undefined,
+      mfaBackupCodes: row.mfaBackupCodes ?? undefined,
       createdAt: toISOString(row.createdAt),
     };
   }
