@@ -30,6 +30,8 @@ export const orgSettingsSchema = z.object({
   ssoSignOnUrl: z.string().url().optional(),
   ssoCertificate: z.string().optional(),
   ssoEnforced: z.boolean().optional(), // When true, only SSO login allowed
+  // MFA enforcement (HIPAA recommended safeguard)
+  mfaRequired: z.boolean().optional(), // When true, all users in this org must enable MFA
 });
 
 export const insertOrganizationSchema = z.object({
@@ -51,6 +53,9 @@ export const insertUserSchema = z.object({
   passwordHash: z.string(),
   name: z.string(),
   role: z.string().default("viewer"),
+  mfaEnabled: z.boolean().optional(),
+  mfaSecret: z.string().optional(),
+  mfaBackupCodes: z.array(z.string()).optional(),
 });
 
 export const userSchema = insertUserSchema.extend({
@@ -604,4 +609,5 @@ export type AuthUser = {
   role: string;
   orgId: string;
   orgSlug: string;
+  mfaEnabled?: boolean;
 };

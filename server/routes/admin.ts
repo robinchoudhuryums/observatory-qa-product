@@ -6,7 +6,7 @@ import { assemblyAIService } from "../services/assemblyai";
 import { broadcastCallUpdate } from "../services/websocket";
 import { insertPromptTemplateSchema, orgSettingsSchema, type OrgSettings } from "@shared/schema";
 import { logger } from "../services/logger";
-import { queryAuditLogs } from "../services/audit-log";
+import { queryAuditLogs, verifyAuditChain } from "../services/audit-log";
 import { safeInt, withRetry } from "./helpers";
 import { enqueueReanalysis } from "../services/queue";
 
@@ -351,6 +351,22 @@ export function registerAdminRoutes(app: Express): void {
     } catch (error) {
       logger.error({ err: error }, "Failed to fetch audit logs");
       res.status(500).json({ message: "Failed to fetch audit logs" });
+    }
+  });
+
+  // Verify audit log integrity (tamper detection)
+  app.get("/api/admin/audit-logs/verify", requireAuth, requireRole("admin"), injectOrgContext, async (req, res) => {
+    try {
+      const result = await verifyAuditChain(req.orgId!);
+      res.json({
+        ...result,
+        message: result.valid
+          ? `Audit chain verified: ${result.checkedCount} entries, no tampering detected.`
+          : `Audit chain BROKEN at sequence ${result.brokenAt}. Possible tampering detected.`,
+      });
+    } catch (error) {
+      logger.error({ err: error }, "Failed to verify audit chain");
+      res.status(500).json({ message: "Failed to verify audit chain integrity" });
     }
   });
 }
