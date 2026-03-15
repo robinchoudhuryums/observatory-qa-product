@@ -39,21 +39,29 @@ export function createReanalysisWorker(
       let succeeded = 0;
       let failed = 0;
 
+      // Cache prompt templates by category to avoid repeated DB lookups
+      const templateCache = new Map<string, any>();
+
       for (const call of callsWithTranscripts) {
         try {
           const transcriptText = call.transcript!.text!;
 
-          // Load prompt template for the call category
+          // Load prompt template (cached per category within this job)
           let promptTemplate = undefined;
           if (call.callCategory) {
-            const tmpl = await storage.getPromptTemplateByCategory(orgId, call.callCategory);
-            if (tmpl) {
-              promptTemplate = {
-                evaluationCriteria: tmpl.evaluationCriteria,
-                requiredPhrases: tmpl.requiredPhrases,
-                scoringWeights: tmpl.scoringWeights,
-                additionalInstructions: tmpl.additionalInstructions,
-              };
+            if (templateCache.has(call.callCategory)) {
+              promptTemplate = templateCache.get(call.callCategory);
+            } else {
+              const tmpl = await storage.getPromptTemplateByCategory(orgId, call.callCategory);
+              if (tmpl) {
+                promptTemplate = {
+                  evaluationCriteria: tmpl.evaluationCriteria,
+                  requiredPhrases: tmpl.requiredPhrases,
+                  scoringWeights: tmpl.scoringWeights,
+                  additionalInstructions: tmpl.additionalInstructions,
+                };
+              }
+              templateCache.set(call.callCategory, promptTemplate);
             }
           }
 
@@ -99,7 +107,7 @@ export function createReanalysisWorker(
     },
     {
       connection,
-      concurrency: 1, // Serialize to avoid overwhelming AI provider
+      concurrency: parseInt(process.env.REANALYSIS_CONCURRENCY || "3", 10), // Parallel Bedrock calls (configurable)
     },
   );
 

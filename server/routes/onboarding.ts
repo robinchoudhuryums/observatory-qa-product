@@ -15,6 +15,7 @@ import { REFERENCE_DOC_CATEGORIES, PLAN_DEFINITIONS, type PlanTier } from "@shar
 import { enqueueDocumentIndexing } from "../services/queue";
 import { removeDocumentChunks, searchRelevantChunks, formatRetrievedContext, hasIndexedChunks } from "../services/rag";
 import { isEmbeddingAvailable } from "../services/embeddings";
+import { invalidateRefDocCache } from "./calls";
 
 // Configure multer for logo + document uploads
 const onboardingUploadsDir = "uploads/onboarding";
@@ -361,6 +362,7 @@ export function registerOnboardingRoutes(app: Express): void {
         });
 
         logger.info({ orgId, docId: doc.id, name: doc.name, category: doc.category }, "Reference document uploaded");
+        invalidateRefDocCache(orgId);
 
         // Enqueue RAG indexing (chunking + embedding) if text was extracted
         if (extractedText && extractedText.length > 0) {
@@ -449,6 +451,7 @@ export function registerOnboardingRoutes(app: Express): void {
       }
 
       await storage.deleteReferenceDocument(req.orgId!, req.params.id);
+      invalidateRefDocCache(req.orgId!);
       res.json({ message: "Document deleted" });
     } catch (error) {
       res.status(500).json({ message: "Failed to delete document" });

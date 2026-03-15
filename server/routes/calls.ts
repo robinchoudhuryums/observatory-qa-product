@@ -18,6 +18,37 @@ import { logger } from "../services/logger";
 import { searchRelevantChunks, formatRetrievedContext } from "../services/rag";
 import { PLAN_DEFINITIONS, type PlanTier } from "@shared/schema";
 
+// --- Reference document cache (per-org, avoids repeated DB queries) ---
+const REF_DOC_CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes
+interface RefDocCacheEntry {
+  docs: Array<{ name: string; category: string; extractedText: string | null; id: string }>;
+  expiresAt: number;
+}
+const refDocCache = new Map<string, RefDocCacheEntry>();
+
+/** Invalidate cached reference docs for an org (call on doc upload/delete) */
+export function invalidateRefDocCache(orgId: string): void {
+  refDocCache.delete(orgId);
+}
+
+async function getCachedRefDocs(orgId: string, callCategory: string) {
+  const cacheKey = `${orgId}:${callCategory}`;
+  const cached = refDocCache.get(cacheKey);
+  if (cached && Date.now() < cached.expiresAt) return cached.docs;
+
+  const docs = await storage.getReferenceDocumentsForCategory(orgId, callCategory);
+  refDocCache.set(cacheKey, { docs: docs as any, expiresAt: Date.now() + REF_DOC_CACHE_TTL_MS });
+  return docs;
+}
+
+// Prune expired ref doc cache entries every 5 minutes
+setInterval(() => {
+  const now = Date.now();
+  for (const [key, entry] of Array.from(refDocCache)) {
+    if (now > entry.expiresAt) refDocCache.delete(key);
+  }
+}, 5 * 60 * 1000).unref();
+
 // Delete uploaded file after processing
 async function cleanupFile(filePath: string) {
   try {
@@ -97,7 +128,7 @@ async function processAudioFile(orgId: string, callId: string, filePath: string,
 
     // Load reference documents for AI context — RAG-enhanced or fallback to full-text
     try {
-      const refDocs = await storage.getReferenceDocumentsForCategory(orgId, callCategory || "");
+      const refDocs = await getCachedRefDocs(orgId, callCategory || "");
       const docsWithText = refDocs.filter(d => d.extractedText && d.extractedText.length > 0);
 
       if (docsWithText.length > 0) {

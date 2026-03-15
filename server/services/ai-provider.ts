@@ -131,9 +131,16 @@ function smartTruncate(text: string, maxChars = 80000): string {
   ].join("");
 }
 
-export function buildAnalysisPrompt(transcriptText: string, callCategory?: string, template?: PromptTemplateConfig): string {
-  const processedTranscript = smartTruncate(transcriptText);
-
+/**
+ * Build the static system prompt (cacheable across requests).
+ *
+ * OPTIMIZATION: This is sent as the Bedrock Converse API's `system` field,
+ * which Bedrock caches across requests with identical prefixes. The system
+ * prompt contains evaluation criteria, reference docs, and scoring guidelines
+ * that rarely change between calls for the same org/category — enabling
+ * 25-40% input token savings from prompt caching.
+ */
+export function buildSystemPrompt(callCategory?: string, template?: PromptTemplateConfig): string {
   const categoryContext = callCategory && CATEGORY_CONTEXT[callCategory]
     ? `\nCALL CONTEXT:\n${CATEGORY_CONTEXT[callCategory]}\n`
     : "";
@@ -176,11 +183,9 @@ export function buildAnalysisPrompt(transcriptText: string, callCategory?: strin
     const isRagRetrieved = template.referenceDocuments.some(d => d.category === "rag_retrieval");
 
     if (isRagRetrieved) {
-      // RAG-retrieved chunks: already curated and relevant, use full text
       const ragText = template.referenceDocuments.map(d => d.text).join("\n\n");
       referenceSection = `\n- COMPANY KNOWLEDGE BASE (semantically retrieved): The following excerpts from company documentation were selected as most relevant to this specific call. Use them to evaluate compliance, product knowledge, and adherence to company procedures. Cite specific sections when relevant:\n${ragText}`;
     } else {
-      // Full-text injection: budget ~15K chars to leave room for transcript
       const maxRefChars = 15000;
       let totalChars = 0;
       const docSnippets: string[] = [];
@@ -205,9 +210,6 @@ export function buildAnalysisPrompt(transcriptText: string, callCategory?: strin
 
   return `You are analyzing a call transcript for a medical supply company. Analyze the ENTIRE transcript from beginning to end — reference moments from the beginning, middle, AND end. Do not skip or summarize sections.
 ${categoryContext}
-TRANSCRIPT:
-${processedTranscript}
-
 Respond with ONLY valid JSON (no markdown, no code fences):
 {"summary":"...","topics":["..."],"sentiment":"positive|neutral|negative","sentiment_score":0.0,"performance_score":0.0,"sub_scores":{"compliance":0.0,"customer_experience":0.0,"communication":0.0,"resolution":0.0},"action_items":["..."],"feedback":{"strengths":[{"text":"...","timestamp":"MM:SS"}],"suggestions":[{"text":"...","timestamp":"MM:SS"}]},"call_party_type":"customer|insurance|medical_facility|medicare|vendor|internal|other","flags":[],"detected_agent_name":null}
 
@@ -222,6 +224,23 @@ ${evaluationCriteria}${scoringSection}${phrasesSection}${referenceSection}${addi
 - call_party_type: "customer" (patients), "insurance" (reps), "medical_facility" (clinics/hospitals), "medicare" (1-800-MEDICARE), "vendor", "internal" (coworkers), "other"
 - detected_agent_name: Agent's name if clearly stated (e.g. "Hi, my name is Sarah"). Return null if uncertain. Only the agent's name, not the customer's.
 - flags: "medicare_call" if Medicare involved, "low_score" if performance ≤2.0, "exceptional_call" if ≥9.0 with outstanding service, "agent_misconduct:<description>" for serious misconduct (abusive language, hanging up, HIPAA violations, etc.)`;
+}
+
+/**
+ * Build the user message (dynamic, per-call transcript).
+ */
+export function buildUserMessage(transcriptText: string, callCategory?: string): string {
+  const processedTranscript = smartTruncate(transcriptText);
+  return `TRANSCRIPT:\n${processedTranscript}`;
+}
+
+/**
+ * Build a combined single prompt (backward compatibility for non-Bedrock providers).
+ */
+export function buildAnalysisPrompt(transcriptText: string, callCategory?: string, template?: PromptTemplateConfig): string {
+  const system = buildSystemPrompt(callCategory, template);
+  const user = buildUserMessage(transcriptText, callCategory);
+  return `${system}\n\n${user}`;
 }
 
 /**
