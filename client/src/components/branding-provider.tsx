@@ -32,33 +32,69 @@ function hexToHsl(hex: string): string | null {
   return `${Math.round(h * 360)}, ${Math.round(s * 100)}%, ${Math.round(l * 100)}%`;
 }
 
+/** Converts hex to "r, g, b" string for use in rgba(). */
+function hexToRgb(hex: string): string | null {
+  const result = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex);
+  if (!result) return null;
+  return `${parseInt(result[1], 16)}, ${parseInt(result[2], 16)}, ${parseInt(result[3], 16)}`;
+}
+
+/** All brand-related CSS custom properties we inject. */
+const BRAND_VARS = [
+  "--primary", "--accent", "--ring", "--chart-1",
+  "--brand-from", "--brand-to",
+  "--brand-from-rgb", "--brand-to-rgb",
+] as const;
+
 /**
- * Injects CSS custom properties for org-specific branding (primary color override).
- * Renders nothing visible — just applies CSS variables to :root.
+ * Injects CSS custom properties for org-specific branding.
+ *
+ * Sets:
+ *   --primary / --accent / --ring / --chart-1  → org primaryColor (shadcn theme)
+ *   --brand-from / --brand-to                  → gradient endpoints (HSL)
+ *   --brand-from-rgb / --brand-to-rgb          → gradient endpoints (RGB, for box-shadow alpha)
+ *
+ * Defaults (when no branding set):
+ *   --brand-from: teal-500 (#14b8a6)
+ *   --brand-to:   blue-500 (#3b82f6)
  */
 export function BrandingProvider() {
   const { data: org } = useOrganization();
   const primaryColor = org?.settings?.branding?.primaryColor;
+  const secondaryColor = org?.settings?.branding?.secondaryColor;
 
   useEffect(() => {
-    if (!primaryColor) return;
-
-    const hsl = hexToHsl(primaryColor);
-    if (!hsl) return;
-
     const root = document.documentElement;
-    root.style.setProperty("--primary", `hsl(${hsl})`);
-    root.style.setProperty("--accent", `hsl(${hsl})`);
-    root.style.setProperty("--ring", `hsl(${hsl})`);
-    root.style.setProperty("--chart-1", `hsl(${hsl})`);
+
+    // Always set brand gradient vars (use defaults if no branding configured)
+    const fromHex = primaryColor || "#14b8a6";   // teal-500 default
+    const toHex = secondaryColor || "#3b82f6";   // blue-500 default
+
+    const fromHsl = hexToHsl(fromHex);
+    const toHsl = hexToHsl(toHex);
+    const fromRgb = hexToRgb(fromHex);
+    const toRgb = hexToRgb(toHex);
+
+    if (fromHsl) root.style.setProperty("--brand-from", fromHsl);
+    if (toHsl) root.style.setProperty("--brand-to", toHsl);
+    if (fromRgb) root.style.setProperty("--brand-from-rgb", fromRgb);
+    if (toRgb) root.style.setProperty("--brand-to-rgb", toRgb);
+
+    // Override shadcn theme colors when an explicit primary is set
+    if (primaryColor) {
+      const hsl = hexToHsl(primaryColor);
+      if (hsl) {
+        root.style.setProperty("--primary", `hsl(${hsl})`);
+        root.style.setProperty("--accent", `hsl(${hsl})`);
+        root.style.setProperty("--ring", `hsl(${hsl})`);
+        root.style.setProperty("--chart-1", `hsl(${hsl})`);
+      }
+    }
 
     return () => {
-      root.style.removeProperty("--primary");
-      root.style.removeProperty("--accent");
-      root.style.removeProperty("--ring");
-      root.style.removeProperty("--chart-1");
+      for (const v of BRAND_VARS) root.style.removeProperty(v);
     };
-  }, [primaryColor]);
+  }, [primaryColor, secondaryColor]);
 
   return null;
 }

@@ -28,7 +28,7 @@ async function getDb() {
 }
 
 export function createIndexingWorker(connection: ConnectionOptions): Worker<DocumentIndexingJob> {
-  return new Worker<DocumentIndexingJob>(
+  const worker = new Worker<DocumentIndexingJob>(
     "document-indexing",
     async (job: Job<DocumentIndexingJob>) => {
       const { orgId, documentId, extractedText } = job.data;
@@ -45,4 +45,10 @@ export function createIndexingWorker(connection: ConnectionOptions): Worker<Docu
       concurrency: 2, // Process up to 2 documents concurrently
     },
   );
+
+  worker.on("failed", (job, err) => {
+    logger.error({ jobId: job?.id, err }, "Indexing worker: job failed");
+  });
+
+  return worker;
 }

@@ -4,7 +4,8 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { useToast } from "@/hooks/use-toast";
-import { AudioWaveform, LogIn, UserPlus, Shield, Eye, Settings } from "lucide-react";
+import { LogIn, UserPlus, Shield, Eye, Settings, Loader2 } from "lucide-react";
+import { ObservatoryLogo } from "@/components/observatory-logo";
 import { apiRequest } from "@/lib/queryClient";
 import { USER_ROLES } from "@shared/schema";
 import { useAppName } from "@/hooks/use-organization";
@@ -120,9 +121,7 @@ export default function AuthPage({ onLogin, initialView }: AuthPageProps) {
         <Card>
           <CardHeader className="text-center">
             <div className="flex justify-center mb-4">
-              <div className="w-12 h-12 bg-gradient-to-br from-primary/20 to-primary/5 rounded-lg flex items-center justify-center">
-                <AudioWaveform className="w-6 h-6 text-primary" />
-              </div>
+              <ObservatoryLogo variant="icon" height={48} className="text-primary" />
             </div>
             <CardTitle className="text-2xl">{appName}</CardTitle>
             <CardDescription>
@@ -191,7 +190,7 @@ export default function AuthPage({ onLogin, initialView }: AuthPageProps) {
                 </div>
                 <Button type="submit" className="w-full" disabled={isLoading}>
                   {isLoading ? (
-                    <AudioWaveform className="w-4 h-4 mr-2 animate-spin" />
+                    <Loader2 className="w-4 h-4 mr-2 animate-spin" />
                   ) : (
                     <LogIn className="w-4 h-4 mr-2" />
                   )}
@@ -250,7 +249,7 @@ export default function AuthPage({ onLogin, initialView }: AuthPageProps) {
                 </div>
                 <Button type="submit" className="w-full" disabled={isLoading}>
                   {isLoading ? (
-                    <AudioWaveform className="w-4 h-4 mr-2 animate-spin" />
+                    <Loader2 className="w-4 h-4 mr-2 animate-spin" />
                   ) : (
                     <UserPlus className="w-4 h-4 mr-2" />
                   )}
@@ -322,7 +321,7 @@ export default function AuthPage({ onLogin, initialView }: AuthPageProps) {
                 </div>
                 <Button type="submit" className="w-full" disabled={isLoading}>
                   {isLoading ? (
-                    <AudioWaveform className="w-4 h-4 mr-2 animate-spin" />
+                    <Loader2 className="w-4 h-4 mr-2 animate-spin" />
                   ) : (
                     <UserPlus className="w-4 h-4 mr-2" />
                   )}

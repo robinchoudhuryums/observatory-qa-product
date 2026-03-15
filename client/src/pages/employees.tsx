@@ -7,7 +7,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
-import { UserPlus, Users, Upload, ChevronDown, ChevronRight, Pencil, Eye, GitCompare } from "lucide-react";
+import { UserPlus, Users, Upload, Download, ChevronDown, ChevronRight, Pencil, Eye, GitCompare } from "lucide-react";
 import { Link } from "wouter";
 import { DEFAULT_SUBTEAMS } from "@shared/schema";
 import type { Employee } from "@shared/schema";
@@ -400,6 +400,19 @@ export default function EmployeesPage() {
           </p>
         </div>
         <div className="flex gap-2">
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => {
+              const link = document.createElement("a");
+              link.href = "/api/export/employees";
+              link.download = "";
+              link.click();
+            }}
+          >
+            <Download className="w-4 h-4 mr-2" />
+            Export CSV
+          </Button>
           <Button variant="outline" onClick={() => importMutation.mutate()} disabled={importMutation.isPending}>
             <Upload className="w-4 h-4 mr-2" />
             {importMutation.isPending ? "Importing..." : "Import from CSV"}

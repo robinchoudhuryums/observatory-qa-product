@@ -3,6 +3,7 @@ import { useDropzone } from "react-dropzone";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { CloudUpload, FileAudio, X, CheckCircle2, XCircle, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { HelpTip } from "@/components/ui/help-tip";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Progress } from "@/components/ui/progress";
 import { useToast } from "@/hooks/use-toast";
@@ -168,7 +169,10 @@ export default function FileUpload() {
 
   return (
     <div className="bg-card rounded-lg border border-border p-6">
-      <h3 className="text-lg font-semibold text-foreground mb-4">Upload Call Recordings</h3>
+      <h3 className="text-lg font-semibold text-foreground mb-4 flex items-center gap-1.5">
+        Upload Call Recordings
+        <HelpTip text="Upload audio files to automatically transcribe, analyze sentiment, score performance, and generate coaching insights. Processing takes 1-3 minutes per call." />
+      </h3>
       <div {...getRootProps()} className={`border-2 border-dashed rounded-lg p-8 text-center cursor-pointer transition-colors ${
         isDragActive ? "border-primary bg-primary/5" : "border-border hover:border-primary/50"
       }`}>

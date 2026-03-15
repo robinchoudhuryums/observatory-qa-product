@@ -1,18 +1,8 @@
 import type { Express } from "express";
 import passport from "passport";
 import { storage } from "../storage";
-import { requireAuth, requireRole, injectOrgContext } from "../auth";
+import { requireAuth, requireRole, injectOrgContext, hashPassword } from "../auth";
 import { logger } from "../services/logger";
-import { scrypt, randomBytes } from "crypto";
-import { promisify } from "util";
-
-const scryptAsync = promisify(scrypt);
-
-async function hashPassword(password: string): Promise<string> {
-  const salt = randomBytes(16).toString("hex");
-  const buf = (await scryptAsync(password, salt, 64)) as Buffer;
-  return `${buf.toString("hex")}.${salt}`;
-}
 
 export function registerRegistrationRoutes(app: Express): void {
   // ==================== SELF-SERVICE REGISTRATION ====================

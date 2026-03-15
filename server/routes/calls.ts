@@ -10,9 +10,11 @@ import { requireAuth, requireRole, injectOrgContext } from "../auth";
 import { broadcastCallUpdate } from "../services/websocket";
 import { logPhiAccess, auditContext } from "../services/audit-log";
 import { notifyFlaggedCall } from "../services/notifications";
+import { onCallAnalysisComplete } from "../services/proactive-alerts";
 import { trackUsage } from "../services/queue";
 import { upload, safeFloat, withRetry } from "./helpers";
 import { enforceQuota } from "./billing";
+import { logger } from "../services/logger";
 import { searchRelevantChunks, formatRetrievedContext } from "../services/rag";
 import { PLAN_DEFINITIONS, type PlanTier } from "@shared/schema";
 
@@ -23,40 +25,40 @@ async function cleanupFile(filePath: string) {
       fs.unlinkSync(filePath);
     }
   } catch (error) {
-    console.error('Failed to cleanup file:', (error as Error).message);
+    logger.error({ err: error }, "Failed to cleanup file");
   }
 }
 
 // Process audio file with AssemblyAI and archive to cloud storage
 async function processAudioFile(orgId: string, callId: string, filePath: string, audioBuffer: Buffer, originalName: string, mimeType: string, callCategory?: string) {
-  console.log(`[${callId}] Starting audio processing...`);
+  logger.info({ callId }, "Starting audio processing");
   broadcastCallUpdate(callId, "uploading", { step: 1, totalSteps: 6, label: "Uploading audio..." }, orgId);
   try {
     // Step 1a: Upload to AssemblyAI
-    console.log(`[${callId}] Step 1/7: Uploading audio file to AssemblyAI...`);
+    logger.info({ callId, step: "1/7" }, "Uploading audio file to AssemblyAI");
     const audioUrl = await assemblyAIService.uploadAudioFile(audioBuffer, path.basename(filePath));
-    console.log(`[${callId}] Step 1/7: Upload to AssemblyAI successful.`);
+    logger.info({ callId, step: "1/7" }, "Upload to AssemblyAI successful");
 
     // Step 1b: Archive audio to cloud storage
-    console.log(`[${callId}] Step 1b/7: Archiving audio file to cloud storage...`);
+    logger.info({ callId, step: "1b/7" }, "Archiving audio file to cloud storage");
     try {
       await storage.uploadAudio(orgId, callId, originalName, audioBuffer, mimeType);
-      console.log(`[${callId}] Step 1b/7: Audio archived.`);
+      logger.info({ callId, step: "1b/7" }, "Audio archived");
     } catch (archiveError) {
-      console.warn(`[${callId}] Warning: Failed to archive audio (continuing):`, archiveError);
+      logger.warn({ callId, err: archiveError }, "Failed to archive audio (continuing)");
     }
 
     // Step 2: Start transcription
     broadcastCallUpdate(callId, "transcribing", { step: 2, totalSteps: 6, label: "Transcribing audio..." }, orgId);
-    console.log(`[${callId}] Step 2/7: Submitting for transcription...`);
+    logger.info({ callId, step: "2/7" }, "Submitting for transcription");
     const transcriptId = await assemblyAIService.transcribeAudio(audioUrl);
-    console.log(`[${callId}] Step 2/7: Transcription submitted. Transcript ID: ${transcriptId}`);
+    logger.info({ callId, step: "2/7", transcriptId }, "Transcription submitted");
 
     await storage.updateCall(orgId, callId, { assemblyAiId: transcriptId });
 
     // Step 3: Poll for transcription completion (with progress updates)
     broadcastCallUpdate(callId, "transcribing", { step: 3, totalSteps: 6, label: "Waiting for transcript..." }, orgId);
-    console.log(`[${callId}] Step 3/7: Polling for transcript results...`);
+    logger.info({ callId, step: "3/7" }, "Polling for transcript results");
     const transcriptResponse = await assemblyAIService.pollTranscript(transcriptId, 60, (attempt, max, status) => {
       const pct = Math.round((attempt / max) * 100);
       broadcastCallUpdate(callId, "transcribing", {
@@ -68,7 +70,7 @@ async function processAudioFile(orgId: string, callId: string, filePath: string,
     if (!transcriptResponse || transcriptResponse.status !== 'completed') {
       throw new Error(`Transcription polling failed or did not complete. Final status: ${transcriptResponse?.status}`);
     }
-    console.log(`[${callId}] Step 3/7: Polling complete. Status: ${transcriptResponse.status}`);
+    logger.info({ callId, step: "3/7", status: transcriptResponse.status }, "Polling complete");
 
     // Step 4: AI analysis (Gemini or Bedrock/Claude — or fall back to defaults)
     broadcastCallUpdate(callId, "analyzing", { step: 4, totalSteps: 6, label: "Running AI analysis..." }, orgId);
@@ -86,10 +88,10 @@ async function processAudioFile(orgId: string, callId: string, filePath: string,
             scoringWeights: tmpl.scoringWeights,
             additionalInstructions: tmpl.additionalInstructions,
           };
-          console.log(`[${callId}] Using custom prompt template: ${tmpl.name}`);
+          logger.info({ callId, templateName: tmpl.name }, "Using custom prompt template");
         }
       } catch (tmplError) {
-        console.warn(`[${callId}] Failed to load prompt template (using defaults):`, (tmplError as Error).message);
+        logger.warn({ callId, err: tmplError }, "Failed to load prompt template (using defaults)");
       }
     }
 
@@ -128,7 +130,7 @@ async function processAudioFile(orgId: string, callId: string, filePath: string,
                   category: "rag_retrieval",
                   text: ragContext,
                 }];
-                console.log(`[${callId}] RAG: injecting ${chunks.length} relevant chunks from ${new Set(chunks.map(c => c.documentId)).size} document(s)`);
+                logger.info({ callId, chunkCount: chunks.length, documentCount: new Set(chunks.map(c => c.documentId)).size }, "RAG: injecting relevant chunks");
               } else {
                 // Fallback to full-text if no chunks indexed yet
                 promptTemplate.referenceDocuments = docsWithText.map(d => ({
@@ -136,12 +138,12 @@ async function processAudioFile(orgId: string, callId: string, filePath: string,
                   category: d.category,
                   text: d.extractedText!,
                 }));
-                console.log(`[${callId}] No RAG chunks found — falling back to full-text injection (${docsWithText.length} docs)`);
+                logger.info({ callId, docCount: docsWithText.length }, "No RAG chunks found — falling back to full-text injection");
               }
             }
           } catch (ragError) {
             // Fallback to full-text on RAG failure
-            console.warn(`[${callId}] RAG retrieval failed, falling back to full-text:`, (ragError as Error).message);
+            logger.warn({ callId, err: ragError }, "RAG retrieval failed, falling back to full-text");
             promptTemplate.referenceDocuments = docsWithText.map(d => ({
               name: d.name,
               category: d.category,
@@ -155,11 +157,11 @@ async function processAudioFile(orgId: string, callId: string, filePath: string,
             category: d.category,
             text: d.extractedText!,
           }));
-          console.log(`[${callId}] Injecting ${docsWithText.length} reference document(s) into AI analysis (full-text)`);
+          logger.info({ callId, docCount: docsWithText.length }, "Injecting reference documents into AI analysis (full-text)");
         }
       }
     } catch (refDocError) {
-      console.warn(`[${callId}] Failed to load reference documents (continuing without):`, (refDocError as Error).message);
+      logger.warn({ callId, err: refDocError }, "Failed to load reference documents (continuing without)");
     }
 
     if (aiProvider.isAvailable && transcriptResponse.text) {
@@ -167,27 +169,27 @@ async function processAudioFile(orgId: string, callId: string, filePath: string,
         const transcriptText = transcriptResponse.text;
         const transcriptCharCount = transcriptText.length;
         const estimatedTokens = Math.ceil(transcriptCharCount / 4);
-        console.log(`[${callId}] Step 4/6: Running AI analysis (${aiProvider.name}). Transcript: ${transcriptCharCount} chars (~${estimatedTokens} tokens)`);
+        logger.info({ callId, step: "4/6", provider: aiProvider.name, transcriptChars: transcriptCharCount, estimatedTokens }, "Running AI analysis");
 
         if (estimatedTokens > 100000) {
-          console.warn(`[${callId}] Very long transcript (${estimatedTokens} estimated tokens). Analysis quality may be reduced for the longest calls.`);
+          logger.warn({ callId, estimatedTokens }, "Very long transcript. Analysis quality may be reduced for the longest calls");
         }
 
         aiAnalysis = await withRetry(
           () => aiProvider.analyzeCallTranscript(transcriptText, callId, callCategory, promptTemplate),
           { retries: 2, baseDelay: 2000, label: `AI analysis for ${callId}` }
         );
-        console.log(`[${callId}] Step 4/6: AI analysis complete.`);
+        logger.info({ callId, step: "4/6" }, "AI analysis complete");
       } catch (aiError) {
-        console.warn(`[${callId}] AI analysis failed after retries (continuing with defaults):`, (aiError as Error).message);
+        logger.warn({ callId, err: aiError }, "AI analysis failed after retries (continuing with defaults)");
       }
     } else if (!aiProvider.isAvailable) {
-      console.log(`[${callId}] Step 4/6: AI provider not configured, using transcript-based defaults.`);
+      logger.info({ callId, step: "4/6" }, "AI provider not configured, using transcript-based defaults");
     }
 
     // Step 5: Process combined results
     broadcastCallUpdate(callId, "processing", { step: 5, totalSteps: 6, label: "Processing results..." }, orgId);
-    console.log(`[${callId}] Step 5/6: Processing combined transcript and analysis data...`);
+    logger.info({ callId, step: "5/6" }, "Processing combined transcript and analysis data");
     const { transcript, sentiment, analysis } = assemblyAIService.processTranscriptData(transcriptResponse, aiAnalysis, callId);
 
     // Compute confidence score based on transcript quality and analysis completeness
@@ -239,11 +241,11 @@ async function processAudioFile(orgId: string, callId: string, filePath: string,
       analysis.flags = existingFlags;
     }
 
-    console.log(`[${callId}] Step 5/6: Data processing complete. Confidence: ${(confidenceScore * 100).toFixed(0)}%`);
+    logger.info({ callId, step: "5/6", confidencePct: (confidenceScore * 100).toFixed(0) }, "Data processing complete");
 
     // Step 6: Store results
     broadcastCallUpdate(callId, "saving", { step: 6, totalSteps: 6, label: "Saving results..." }, orgId);
-    console.log(`[${callId}] Step 6/6: Saving analysis results...`);
+    logger.info({ callId, step: "6/6" }, "Saving analysis results");
     await Promise.all([
       storage.createTranscript(orgId, transcript),
       storage.createSentimentAnalysis(orgId, sentiment),
@@ -264,9 +266,9 @@ async function processAudioFile(orgId: string, callId: string, filePath: string,
       });
       if (matchedEmployee) {
         assignedEmployeeId = matchedEmployee.id;
-        console.log(`[${callId}] Auto-assigned to employee: ${matchedEmployee.id}`);
+        logger.info({ callId, employeeId: matchedEmployee.id }, "Auto-assigned to employee");
       } else {
-        console.log(`[${callId}] Detected agent name but no matching employee found.`);
+        logger.info({ callId }, "Detected agent name but no matching employee found");
       }
     }
 
@@ -275,7 +277,7 @@ async function processAudioFile(orgId: string, callId: string, filePath: string,
       duration: Math.floor((transcriptResponse.words?.[transcriptResponse.words.length - 1]?.end || 0) / 1000),
       ...(assignedEmployeeId ? { employeeId: assignedEmployeeId } : {}),
     });
-    console.log(`[${callId}] Step 6/6: Done. Status is now 'completed'.${assignedEmployeeId ? " (auto-assigned)" : ""}`);
+    logger.info({ callId, step: "6/6", autoAssigned: !!assignedEmployeeId }, "Done. Status is now 'completed'");
 
     await cleanupFile(filePath);
     broadcastCallUpdate(callId, "completed", { step: 6, totalSteps: 6, label: "Complete" }, orgId);
@@ -296,7 +298,10 @@ async function processAudioFile(orgId: string, callId: string, filePath: string,
       }).catch(() => {});
     }
 
-    console.log(`[${callId}] Processing finished successfully.`);
+    logger.info({ callId }, "Processing finished successfully");
+
+    // Auto-generate coaching recommendations (non-blocking)
+    onCallAnalysisComplete(orgId, callId, assignedEmployeeId || undefined).catch(() => {});
 
     trackUsage({ orgId, eventType: "transcription", quantity: 1, metadata: { callId } });
     if (aiAnalysis) {
@@ -304,7 +309,7 @@ async function processAudioFile(orgId: string, callId: string, filePath: string,
     }
 
   } catch (error) {
-    console.error(`[${callId}] A critical error occurred during audio processing:`, (error as Error).message);
+    logger.error({ callId, err: error }, "A critical error occurred during audio processing");
     await storage.updateCall(orgId, callId, { status: "failed" });
     broadcastCallUpdate(callId, "failed", { label: "Processing failed" }, orgId);
     await cleanupFile(filePath);
@@ -315,13 +320,24 @@ export function registerCallRoutes(app: Express): void {
 
   app.get("/api/calls", requireAuth, injectOrgContext, async (req, res) => {
     try {
-      const { status, sentiment, employee } = req.query;
+      const { status, sentiment, employee, limit, offset } = req.query;
       const calls = await storage.getCallsWithDetails(req.orgId!, {
         status: status as string,
         sentiment: sentiment as string,
         employee: employee as string
       });
-      res.json(calls);
+
+      // Support server-side pagination via limit/offset
+      const parsedLimit = limit ? parseInt(limit as string, 10) : undefined;
+      const parsedOffset = offset ? parseInt(offset as string, 10) : 0;
+
+      if (parsedLimit && parsedLimit > 0) {
+        const paged = calls.slice(parsedOffset, parsedOffset + parsedLimit);
+        res.json({ data: paged, total: calls.length });
+      } else {
+        // Backwards compatible — return raw array when no limit specified
+        res.json(calls);
+      }
     } catch (error) {
       res.status(500).json({ message: "Failed to get calls" });
     }
@@ -383,8 +399,7 @@ export function registerCallRoutes(app: Express): void {
 
       const audioBuffer = fs.readFileSync(req.file.path);
       const fileHash = createHash("sha256").update(audioBuffer).digest("hex");
-      const existingCalls = await storage.getCallsWithDetails(req.orgId!, {});
-      const duplicate = existingCalls.find(c => c.fileHash === fileHash && c.status !== "failed");
+      const duplicate = await storage.getCallByFileHash(req.orgId!, fileHash);
       if (duplicate) {
         await cleanupFile(req.file.path);
         res.status(200).json(duplicate);
@@ -404,17 +419,17 @@ export function registerCallRoutes(app: Express): void {
       const orgId = req.orgId!;
       processAudioFile(orgId, call.id, req.file.path, audioBuffer, originalName, mimeType, callCategory)
         .catch(async (error) => {
-          console.error(`Failed to process call ${call.id}:`, (error as Error).message);
+          logger.error({ callId: call.id, err: error }, "Failed to process call");
           try {
             await storage.updateCall(orgId, call.id, { status: "failed" });
           } catch (updateErr) {
-            console.error(`Failed to mark call ${call.id} as failed:`, (updateErr as Error).message);
+            logger.error({ callId: call.id, err: updateErr }, "Failed to mark call as failed");
           }
         });
 
       res.status(201).json(call);
     } catch (error) {
-      console.error("Error during file upload:", (error as Error).message);
+      logger.error({ err: error }, "Error during file upload");
       if (req.file?.path) await cleanupFile(req.file.path);
       res.status(500).json({ message: "Failed to upload call" });
     }
@@ -471,7 +486,7 @@ export function registerCallRoutes(app: Express): void {
       res.setHeader('Pragma', 'no-cache');
       res.send(audioBuffer);
     } catch (error) {
-      console.error("Failed to stream audio:", (error as Error).message);
+      logger.error({ err: error }, "Failed to stream audio");
       res.status(500).json({ message: "Failed to stream audio" });
     }
   });
@@ -585,10 +600,10 @@ export function registerCallRoutes(app: Express): void {
 
       await storage.createCallAnalysis(req.orgId!, updatedAnalysis);
 
-      console.log(`[${callId}] Manual edit by ${editedBy}: ${reason} (fields: ${editRecord.fieldsChanged.join(", ")})`);
+      logger.info({ callId, editedBy, reason, fields: editRecord.fieldsChanged }, "Manual edit applied to call analysis");
       res.json(updatedAnalysis);
     } catch (error) {
-      console.error("Failed to update call analysis:", (error as Error).message);
+      logger.error({ err: error }, "Failed to update call analysis");
       res.status(500).json({ message: "Failed to update call analysis" });
     }
   });
@@ -652,10 +667,10 @@ export function registerCallRoutes(app: Express): void {
 
       await storage.deleteCall(req.orgId!, callId);
 
-      console.log(`Successfully deleted call ID: ${callId}`);
+      logger.info({ callId }, "Successfully deleted call");
       res.status(204).send();
     } catch (error) {
-      console.error("Failed to delete call:", (error as Error).message);
+      logger.error({ err: error }, "Failed to delete call");
       res.status(500).json({ message: "Failed to delete call" });
     }
   });

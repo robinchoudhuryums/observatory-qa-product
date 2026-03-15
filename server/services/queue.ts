@@ -227,6 +227,26 @@ export function getQueueConnection(): ConnectionOptions | null {
 }
 
 /**
+ * Enqueue a bulk re-analysis job.
+ * Falls back to returning null when queues are unavailable (caller handles in-process).
+ */
+export async function enqueueReanalysis(job: BulkReanalysisJob): Promise<boolean> {
+  if (reanalysisQueue) {
+    try {
+      await reanalysisQueue.add("reanalyze", job, {
+        jobId: `reanalyze-${job.orgId}-${Date.now()}`,
+      });
+      logger.info({ orgId: job.orgId, requestedBy: job.requestedBy }, "Bulk reanalysis job enqueued");
+      return true;
+    } catch (error) {
+      logger.error({ err: error, orgId: job.orgId }, "Failed to enqueue reanalysis job");
+      return false;
+    }
+  }
+  return false;
+}
+
+/**
  * Close all queues on shutdown.
  */
 export async function closeQueues(): Promise<void> {

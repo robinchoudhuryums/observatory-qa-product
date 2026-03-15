@@ -4,6 +4,12 @@ import { aiProvider } from "../services/ai-factory";
 import { buildAgentSummaryPrompt } from "../services/ai-provider";
 import { requireAuth, injectOrgContext } from "../auth";
 import { safeFloat } from "./helpers";
+import { logger } from "../services/logger";
+
+function safeJsonParse<T>(val: unknown, fallback: T): T {
+  if (typeof val !== 'string') return (val as T) ?? fallback;
+  try { return JSON.parse(val); } catch { return fallback; }
+}
 
 export function registerReportRoutes(app: Express): void {
 
@@ -30,7 +36,7 @@ export function registerReportRoutes(app: Express): void {
       const performers = await storage.getTopPerformers(req.orgId!, 10); // Get top 10
       res.json(performers);
     } catch (error) {
-      console.error("Failed to get performance data:", (error as Error).message);
+      logger.error({ err: error }, "Failed to get performance data");
       res.status(500).json({ message: "Failed to get performance data" });
     }
   });
@@ -51,7 +57,7 @@ export function registerReportRoutes(app: Express): void {
 
       res.json(reportData);
     } catch (error) {
-      console.error("Failed to generate report data:", (error as Error).message);
+      logger.error({ err: error }, "Failed to generate report data");
       res.status(500).json({ message: "Failed to generate report data" });
     }
   });
@@ -61,7 +67,7 @@ export function registerReportRoutes(app: Express): void {
     try {
       const { from, to, employeeId, department, callPartyType } = req.query;
 
-      const allCalls = await storage.getCallsWithDetails(req.orgId!, { status: "completed" });
+      const allCalls = await storage.getCallSummaries(req.orgId!, { status: "completed" });
       const employees = await storage.getAllEmployees(req.orgId!);
 
       // Build employee lookup maps
@@ -212,7 +218,7 @@ export function registerReportRoutes(app: Express): void {
         autoAssignedCount,
       });
     } catch (error) {
-      console.error("Failed to generate filtered report:", (error as Error).message);
+      logger.error({ err: error }, "Failed to generate filtered report");
       res.status(500).json({ message: "Failed to generate filtered report" });
     }
   });
@@ -226,7 +232,7 @@ export function registerReportRoutes(app: Express): void {
         return;
       }
 
-      const allCalls = await storage.getCallsWithDetails(req.orgId!, { status: "completed" });
+      const allCalls = await storage.getCallSummaries(req.orgId!, { status: "completed" });
 
       const computePeriodMetrics = (calls: typeof allCalls, from: string, to: string) => {
         const fromDate = new Date(from);
@@ -275,7 +281,7 @@ export function registerReportRoutes(app: Express): void {
 
       res.json({ current, previous, delta });
     } catch (error) {
-      console.error("Failed to generate comparative report:", (error as Error).message);
+      logger.error({ err: error }, "Failed to generate comparative report");
       res.status(500).json({ message: "Failed to generate comparative report" });
     }
   });
@@ -292,7 +298,7 @@ export function registerReportRoutes(app: Express): void {
         return;
       }
 
-      const allCalls = await storage.getCallsWithDetails(req.orgId!, { status: "completed", employee: employeeId });
+      const allCalls = await storage.getCallSummaries(req.orgId!, { status: "completed", employee: employeeId });
 
       // Apply optional date filters
       let filtered = allCalls;
@@ -334,9 +340,7 @@ export function registerReportRoutes(app: Express): void {
             scores.push(safeFloat(call.analysis.performanceScore));
           }
           if (call.analysis.feedback) {
-            const fb = typeof call.analysis.feedback === "string"
-              ? JSON.parse(call.analysis.feedback)
-              : call.analysis.feedback;
+            const fb = safeJsonParse(call.analysis.feedback, {} as Record<string, any>);
             if (fb.strengths) {
               for (const s of fb.strengths) {
                 allStrengths.push(typeof s === "string" ? s : s.text);
@@ -349,9 +353,7 @@ export function registerReportRoutes(app: Express): void {
             }
           }
           if (call.analysis.topics) {
-            const topics = typeof call.analysis.topics === "string"
-              ? JSON.parse(call.analysis.topics)
-              : call.analysis.topics;
+            const topics = safeJsonParse(call.analysis.topics, [] as string[]);
             if (Array.isArray(topics)) allTopics.push(...topics);
           }
 
@@ -429,7 +431,7 @@ export function registerReportRoutes(app: Express): void {
         flaggedCalls: flaggedCalls.sort((a, b) => new Date(b.uploadedAt || 0).getTime() - new Date(a.uploadedAt || 0).getTime()),
       });
     } catch (error) {
-      console.error("Failed to generate agent profile:", (error as Error).message);
+      logger.error({ err: error }, "Failed to generate agent profile");
       res.status(500).json({ message: "Failed to generate agent profile" });
     }
   });
@@ -451,7 +453,7 @@ export function registerReportRoutes(app: Express): void {
         return;
       }
 
-      const allCalls = await storage.getCallsWithDetails(req.orgId!, { status: "completed", employee: employeeId });
+      const allCalls = await storage.getCallSummaries(req.orgId!, { status: "completed", employee: employeeId });
 
       let filtered = allCalls;
       if (from) {
@@ -481,8 +483,7 @@ export function registerReportRoutes(app: Express): void {
           scores.push(safeFloat(call.analysis.performanceScore));
         }
         if (call.analysis?.feedback) {
-          const fb = typeof call.analysis.feedback === "string"
-            ? JSON.parse(call.analysis.feedback) : call.analysis.feedback;
+          const fb = safeJsonParse(call.analysis.feedback, {} as Record<string, any>);
           if (fb.strengths) {
             for (const s of fb.strengths) {
               allStrengths.push(typeof s === "string" ? s : s.text);
@@ -495,8 +496,7 @@ export function registerReportRoutes(app: Express): void {
           }
         }
         if (call.analysis?.topics) {
-          const topics = typeof call.analysis.topics === "string"
-            ? JSON.parse(call.analysis.topics) : call.analysis.topics;
+          const topics = safeJsonParse(call.analysis.topics, [] as string[]);
           if (Array.isArray(topics)) allTopics.push(...topics);
         }
         if (call.sentiment?.overallSentiment) {
@@ -541,13 +541,13 @@ export function registerReportRoutes(app: Express): void {
         dateRange,
       });
 
-      console.log(`[${req.params.employeeId}] Generating AI summary (${filtered.length} calls)...`);
+      logger.info({ employeeId: req.params.employeeId, callCount: filtered.length }, "Generating AI summary");
       const summary = await aiProvider.generateText(prompt);
-      console.log(`[${req.params.employeeId}] AI summary generated.`);
+      logger.info({ employeeId: req.params.employeeId }, "AI summary generated");
 
       res.json({ summary });
     } catch (error) {
-      console.error("Failed to generate agent summary:", (error as Error).message);
+      logger.error({ err: error }, "Failed to generate agent summary");
       res.status(500).json({ message: "Failed to generate AI summary" });
     }
   });
@@ -562,7 +562,7 @@ export function registerReportRoutes(app: Express): void {
         return;
       }
 
-      const allCalls = await storage.getCallsWithDetails(req.orgId!, { status: "completed", employee: employeeId });
+      const allCalls = await storage.getCallSummaries(req.orgId!, { status: "completed", employee: employeeId });
       const scores = allCalls
         .map(c => c.analysis?.performanceScore ? safeFloat(c.analysis.performanceScore) : null)
         .filter((s): s is number => s !== null);
@@ -625,7 +625,7 @@ export function registerReportRoutes(app: Express): void {
       res.setHeader("Content-Type", "text/html; charset=utf-8");
       res.send(html);
     } catch (error) {
-      console.error("Failed to export agent report:", (error as Error).message);
+      logger.error({ err: error }, "Failed to export agent report");
       res.status(500).json({ message: "Failed to export agent report" });
     }
   });

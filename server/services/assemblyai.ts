@@ -1,6 +1,7 @@
 import { InsertTranscript, InsertSentimentAnalysis, InsertCallAnalysis } from "@shared/schema";
 import type { CallAnalysis } from "./ai-provider";
 import { normalizeStringArray } from "../utils";
+import { logger } from "./logger";
 
 export interface AssemblyAIConfig {
   apiKey: string;
@@ -58,7 +59,7 @@ export class AssemblyAIService {
       baseUrl: 'https://api.assemblyai.com/v2'
     };
     if (!this.config.apiKey) {
-      console.warn('ASSEMBLYAI_API_KEY is not set. Audio processing will fail.');
+      logger.warn("ASSEMBLYAI_API_KEY is not set. Audio processing will fail.");
     }
   }
 
@@ -123,7 +124,7 @@ export class AssemblyAIService {
 
   // LeMUR task endpoint is synchronous - it returns the result directly
   async submitLeMURTask(transcriptId: string): Promise<LeMURResponse> {
-    console.log(`[${transcriptId}] Submitting task to LeMUR...`);
+    logger.info({ transcriptId }, "Submitting task to LeMUR");
     const response = await fetch(`https://api.assemblyai.com/lemur/v3/generate/task`, {
       method: 'POST',
       headers: { 'Authorization': this.config.apiKey, 'Content-Type': 'application/json' },
@@ -150,7 +151,7 @@ Evaluate the agent on: professionalism, product knowledge, empathy, problem reso
     });
     if (!response.ok) throw new Error(`Failed to submit LeMUR task: ${await response.text()}`);
     const result = await response.json();
-    console.log(`[${transcriptId}] LeMUR task complete. Request ID: ${result.request_id}`);
+    logger.info({ transcriptId, requestId: result.request_id }, "LeMUR task complete");
     return result;
   }
 

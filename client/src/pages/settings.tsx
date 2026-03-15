@@ -5,9 +5,11 @@ import {
   Palette, Users, Settings, Save, Plus, Trash2, Edit2,
   Eye, Shield, CheckCircle2, XCircle, Mail, Copy, Clock, Key, Ban,
   CreditCard, TrendingUp, Zap, ArrowUpRight, Check, ExternalLink,
+  Bell, Lock,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -1341,7 +1343,21 @@ function OrganizationTab() {
   const [callCategories, setCallCategories] = useState("");
   const [maxCallsPerDay, setMaxCallsPerDay] = useState("");
   const [maxStorageMb, setMaxStorageMb] = useState("");
+  // Webhook config
+  const [webhookUrl, setWebhookUrl] = useState("");
+  const [webhookPlatform, setWebhookPlatform] = useState<"slack" | "teams">("slack");
+  const [webhookEvents, setWebhookEvents] = useState("");
+  // SSO config
+  const [ssoProvider, setSsoProvider] = useState<"saml" | "oidc" | "">();
+  const [ssoEntityId, setSsoEntityId] = useState("");
+  const [ssoSignOnUrl, setSsoSignOnUrl] = useState("");
+  const [ssoCertificate, setSsoCertificate] = useState("");
+  const [ssoEnforced, setSsoEnforced] = useState(false);
   const [initialized, setInitialized] = useState(false);
+
+  // Check plan for SSO eligibility
+  const { data: subscription } = useQuery<{ planTier?: string }>({ queryKey: ["/api/billing/subscription"] });
+  const isEnterprise = subscription?.planTier === "enterprise";
 
   if (org && !initialized) {
     setEmailDomain(org.settings?.emailDomain || "");
@@ -1350,6 +1366,14 @@ function OrganizationTab() {
     setCallCategories((org.settings?.callCategories || []).join(", "));
     setMaxCallsPerDay(org.settings?.maxCallsPerDay ? String(org.settings.maxCallsPerDay) : "");
     setMaxStorageMb(org.settings?.maxStorageMb ? String(org.settings.maxStorageMb) : "");
+    setWebhookUrl(org.settings?.webhookUrl || "");
+    setWebhookPlatform(org.settings?.webhookPlatform || "slack");
+    setWebhookEvents((org.settings?.webhookEvents || []).join(", "));
+    setSsoProvider(org.settings?.ssoProvider || "");
+    setSsoEntityId(org.settings?.ssoEntityId || "");
+    setSsoSignOnUrl(org.settings?.ssoSignOnUrl || "");
+    setSsoCertificate(org.settings?.ssoCertificate || "");
+    setSsoEnforced(org.settings?.ssoEnforced || false);
     setInitialized(true);
   }
 
@@ -1372,6 +1396,8 @@ function OrganizationTab() {
     const parsedDepartments = departments.split(",").map(s => s.trim()).filter(Boolean);
     const parsedCategories = callCategories.split(",").map(s => s.trim()).filter(Boolean);
 
+    const parsedEvents = webhookEvents.split(",").map(s => s.trim()).filter(Boolean);
+
     mutation.mutate({
       emailDomain: emailDomain.trim() || undefined,
       retentionDays: parseInt(retentionDays) || 90,
@@ -1379,6 +1405,16 @@ function OrganizationTab() {
       callCategories: parsedCategories.length > 0 ? parsedCategories : undefined,
       maxCallsPerDay: maxCallsPerDay ? parseInt(maxCallsPerDay) : undefined,
       maxStorageMb: maxStorageMb ? parseInt(maxStorageMb) : undefined,
+      webhookUrl: webhookUrl.trim() || undefined,
+      webhookPlatform: webhookPlatform,
+      webhookEvents: parsedEvents.length > 0 ? parsedEvents : undefined,
+      ...(isEnterprise ? {
+        ssoProvider: ssoProvider || undefined,
+        ssoEntityId: ssoEntityId.trim() || undefined,
+        ssoSignOnUrl: ssoSignOnUrl.trim() || undefined,
+        ssoCertificate: ssoCertificate.trim() || undefined,
+        ssoEnforced,
+      } : {}),
     });
   };
 
@@ -1470,6 +1506,141 @@ function OrganizationTab() {
             </Button>
           </form>
         </CardContent>
+      </Card>
+
+      {/* Webhook Configuration */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-lg flex items-center gap-2">
+            <Bell className="w-5 h-5 text-primary" />
+            Webhook Notifications
+          </CardTitle>
+          <CardDescription>
+            Receive Slack or Teams notifications when calls are flagged. Overrides server-level defaults.
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <form onSubmit={handleSave} className="space-y-4">
+            <div>
+              <label className="text-sm font-medium text-foreground">Webhook URL</label>
+              <Input
+                value={webhookUrl}
+                onChange={(e) => setWebhookUrl(e.target.value)}
+                placeholder="https://hooks.slack.com/services/..."
+                type="url"
+              />
+              <p className="text-xs text-muted-foreground mt-1">Slack or Teams incoming webhook URL.</p>
+            </div>
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <label className="text-sm font-medium text-foreground">Platform</label>
+                <Select value={webhookPlatform} onValueChange={(v) => setWebhookPlatform(v as "slack" | "teams")}>
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="slack">Slack</SelectItem>
+                    <SelectItem value="teams">Microsoft Teams</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div>
+                <label className="text-sm font-medium text-foreground">Event Types</label>
+                <Input
+                  value={webhookEvents}
+                  onChange={(e) => setWebhookEvents(e.target.value)}
+                  placeholder="low_score, agent_misconduct, exceptional_call"
+                />
+                <p className="text-xs text-muted-foreground mt-1">Comma-separated event types to notify on.</p>
+              </div>
+            </div>
+            <Button type="submit" disabled={mutation.isPending}>
+              <Save className="w-4 h-4 mr-2" />
+              {mutation.isPending ? "Saving..." : "Save Webhook Settings"}
+            </Button>
+          </form>
+        </CardContent>
+      </Card>
+
+      {/* SSO Configuration (Enterprise only) */}
+      <Card className={!isEnterprise ? "opacity-60" : ""}>
+        <CardHeader>
+          <CardTitle className="text-lg flex items-center gap-2">
+            <Lock className="w-5 h-5 text-primary" />
+            Single Sign-On (SSO)
+            {!isEnterprise && <Badge variant="secondary" className="ml-2">Enterprise</Badge>}
+          </CardTitle>
+          <CardDescription>
+            {isEnterprise
+              ? "Configure SAML or OIDC single sign-on for your organization."
+              : "SSO is available on the Enterprise plan. Upgrade to enable."}
+          </CardDescription>
+        </CardHeader>
+        {isEnterprise && (
+          <CardContent>
+            <form onSubmit={handleSave} className="space-y-4">
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="text-sm font-medium text-foreground">SSO Provider</label>
+                  <Select value={ssoProvider || ""} onValueChange={(v) => setSsoProvider(v as "saml" | "oidc" | "")}>
+                    <SelectTrigger>
+                      <SelectValue placeholder="Select provider..." />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="saml">SAML 2.0</SelectItem>
+                      <SelectItem value="oidc">OpenID Connect (OIDC)</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div>
+                  <label className="text-sm font-medium text-foreground">Entity ID / Client ID</label>
+                  <Input
+                    value={ssoEntityId}
+                    onChange={(e) => setSsoEntityId(e.target.value)}
+                    placeholder="https://idp.example.com/entity"
+                  />
+                </div>
+              </div>
+              <div>
+                <label className="text-sm font-medium text-foreground">Sign-On URL</label>
+                <Input
+                  value={ssoSignOnUrl}
+                  onChange={(e) => setSsoSignOnUrl(e.target.value)}
+                  placeholder="https://idp.example.com/sso/saml"
+                  type="url"
+                />
+                <p className="text-xs text-muted-foreground mt-1">IdP login URL for redirect-based authentication.</p>
+              </div>
+              <div>
+                <label className="text-sm font-medium text-foreground">Certificate (PEM)</label>
+                <Textarea
+                  value={ssoCertificate}
+                  onChange={(e) => setSsoCertificate(e.target.value)}
+                  placeholder="-----BEGIN CERTIFICATE-----&#10;..."
+                  rows={4}
+                  className="font-mono text-xs"
+                />
+                <p className="text-xs text-muted-foreground mt-1">X.509 certificate for signature verification.</p>
+              </div>
+              <div className="flex items-center gap-3">
+                <label className="flex items-center gap-2 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={ssoEnforced}
+                    onChange={(e) => setSsoEnforced(e.target.checked)}
+                    className="rounded border-border"
+                  />
+                  <span className="text-sm font-medium text-foreground">Enforce SSO</span>
+                </label>
+                <p className="text-xs text-muted-foreground">When enabled, password login is disabled for all users.</p>
+              </div>
+              <Button type="submit" disabled={mutation.isPending}>
+                <Save className="w-4 h-4 mr-2" />
+                {mutation.isPending ? "Saving..." : "Save SSO Settings"}
+              </Button>
+            </form>
+          </CardContent>
+        )}
       </Card>
 
       {/* Org Info (read-only) */}

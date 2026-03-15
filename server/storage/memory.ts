@@ -12,6 +12,7 @@ import {
   type CallAnalysis,
   type InsertCallAnalysis,
   type CallWithDetails,
+  type CallSummary,
   type DashboardMetrics,
   type SentimentDistribution,
   type TopPerformer,
@@ -159,6 +160,9 @@ export class MemStorage implements IStorage {
       if (key.startsWith(`${orgId}/audio/${id}/`)) this.audioFiles.delete(key);
     }
   }
+  async getCallByFileHash(orgId: string, fileHash: string): Promise<Call | undefined> {
+    return Array.from(this.calls.values()).find(c => c.orgId === orgId && c.fileHash === fileHash && c.status !== "failed");
+  }
   async getAllCalls(orgId: string): Promise<Call[]> {
     return Array.from(this.calls.values())
       .filter(c => c.orgId === orgId)
@@ -178,6 +182,24 @@ export class MemStorage implements IStorage {
           this.getCallAnalysis(orgId, call.id),
         ]);
         return { ...call, employee, transcript, sentiment, analysis } as CallWithDetails;
+      })
+    );
+    return applyCallFilters(results, filters);
+  }
+
+  async getCallSummaries(
+    orgId: string,
+    filters: { status?: string; sentiment?: string; employee?: string } = {}
+  ): Promise<CallSummary[]> {
+    const calls = await this.getAllCalls(orgId);
+    let results: CallSummary[] = await Promise.all(
+      calls.map(async (call) => {
+        const [employee, sentiment, analysis] = await Promise.all([
+          call.employeeId ? this.getEmployee(orgId, call.employeeId) : Promise.resolve(undefined),
+          this.getSentimentAnalysis(orgId, call.id),
+          this.getCallAnalysis(orgId, call.id),
+        ]);
+        return { ...call, employee, sentiment, analysis } as CallSummary;
       })
     );
     return applyCallFilters(results, filters);

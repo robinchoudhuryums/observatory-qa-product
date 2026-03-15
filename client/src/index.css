@@ -39,6 +39,11 @@
   --font-sans: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
   --font-serif: Georgia, serif;
   --font-mono: Menlo, monospace;
+  /* Brand gradient defaults (overridden by BrandingProvider per-org) */
+  --brand-from: 174, 58%, 39%;
+  --brand-to: 217, 91%, 60%;
+  --brand-from-rgb: 20, 184, 166;
+  --brand-to-rgb: 59, 130, 246;
   --radius: 0.5rem;
   --shadow-2xs: 0px 2px 0px 0px hsl(202.8169, 89.1213%, 53.1373%, 0.00);
   --shadow-xs: 0px 2px 0px 0px hsl(202.8169, 89.1213%, 53.1373%, 0.00);
@@ -164,15 +169,147 @@
     background-color: hsl(45, 93%, 15%);
   }
 
+  /* ── Modern Cards ──────────────────────────────────── */
+  .modern-card {
+    background: hsl(0, 0%, 100%);
+    border: 1px solid hsl(220, 15%, 90%);
+    transition: border-color 0.3s, box-shadow 0.3s;
+  }
+
+  .dark .modern-card {
+    background: hsl(220, 30%, 9%);
+    border: 1px solid hsl(220, 30%, 16%);
+  }
+
+  .modern-card:hover {
+    border-color: hsl(220, 15%, 82%);
+    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.04);
+  }
+
+  .dark .modern-card:hover {
+    border-color: hsl(220, 30%, 22%);
+    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
+  }
+
+  /* ── Metric Cards ────────────────────────────────────  */
   .metric-card {
-    background: linear-gradient(135deg, rgba(255, 255, 255, 0.9), rgba(255, 255, 255, 0.6));
-    backdrop-filter: blur(10px);
-    border: 1px solid rgba(255, 255, 255, 0.2);
+    background: hsl(0, 0%, 100%);
+    border: 1px solid hsl(220, 15%, 90%);
+    transition: border-color 0.3s, box-shadow 0.3s, transform 0.2s;
   }
 
   .dark .metric-card {
-    background: linear-gradient(135deg, rgba(34, 34, 34, 0.9), rgba(34, 34, 34, 0.6));
-    border: 1px solid rgba(255, 255, 255, 0.1);
+    background: hsl(220, 30%, 9%);
+    border: 1px solid hsl(220, 30%, 16%);
+  }
+
+  .metric-card:hover {
+    transform: translateY(-2px);
+  }
+
+  /* Metric glow — brand-driven primary glow for the hero metric */
+  .metric-glow-brand:hover {
+    border-color: hsl(var(--brand-from));
+    box-shadow: 0 4px 20px rgba(var(--brand-from-rgb), 0.12);
+  }
+  .dark .metric-glow-brand:hover {
+    box-shadow: 0 4px 25px rgba(var(--brand-from-rgb), 0.18);
+  }
+
+  /* Secondary brand glow */
+  .metric-glow-brand-alt:hover {
+    border-color: hsl(var(--brand-to));
+    box-shadow: 0 4px 20px rgba(var(--brand-to-rgb), 0.12);
+  }
+  .dark .metric-glow-brand-alt:hover {
+    box-shadow: 0 4px 25px rgba(var(--brand-to-rgb), 0.18);
+  }
+
+  /* Semantic metric glows — these stay fixed-color (green for sentiment, purple for score) */
+  .metric-glow-green:hover {
+    border-color: hsl(158, 50%, 70%);
+    box-shadow: 0 4px 20px rgba(16, 185, 129, 0.1);
+  }
+  .dark .metric-glow-green:hover {
+    border-color: hsl(158, 50%, 30%);
+    box-shadow: 0 4px 25px rgba(16, 185, 129, 0.15);
+  }
+
+  .metric-glow-purple:hover {
+    border-color: hsl(270, 50%, 70%);
+    box-shadow: 0 4px 20px rgba(168, 85, 247, 0.1);
+  }
+  .dark .metric-glow-purple:hover {
+    border-color: hsl(270, 50%, 30%);
+    box-shadow: 0 4px 25px rgba(168, 85, 247, 0.15);
+  }
+
+  /* ── Sidebar ─────────────────────────────────────────  */
+  .sidebar-container {
+    background: hsl(0, 0%, 100%);
+    border-right: 1px solid hsl(220, 15%, 90%);
+  }
+
+  .dark .sidebar-container {
+    background: hsl(220, 30%, 7%);
+    border-right: 1px solid hsl(220, 30%, 14%);
+  }
+
+  .sidebar-header {
+    border-bottom: 1px solid hsl(220, 15%, 92%);
+  }
+
+  .dark .sidebar-header {
+    border-bottom: 1px solid hsl(220, 30%, 14%);
+  }
+
+  .sidebar-footer {
+    border-top: 1px solid hsl(220, 15%, 92%);
+  }
+
+  .dark .sidebar-footer {
+    border-top: 1px solid hsl(220, 30%, 14%);
+  }
+
+  .sidebar-active-link {
+    background: linear-gradient(135deg, hsl(var(--brand-from)), hsl(var(--brand-to)));
+    box-shadow: 0 2px 10px rgba(var(--brand-from-rgb), 0.25);
+  }
+
+  /* Sidebar nav hover micro-interaction */
+  .sidebar-container nav a:not(.sidebar-active-link):hover {
+    transform: translateX(3px);
+  }
+
+  /* ── Table Row Stagger Animation ──────────────────────  */
+  @keyframes row-fade-in {
+    from { opacity: 0; transform: translateY(6px); }
+    to   { opacity: 1; transform: translateY(0); }
+  }
+
+  .animate-row {
+    animation: row-fade-in 0.3s ease-out both;
+  }
+
+  /* ── Brand Gradient Button ─────────────────────────────  */
+  .brand-gradient-btn {
+    background: linear-gradient(135deg, hsl(var(--brand-from)), hsl(var(--brand-to)));
+    box-shadow: 0 4px 12px rgba(var(--brand-from-rgb), 0.15);
+  }
+  .brand-gradient-btn:hover {
+    filter: brightness(0.9);
+    box-shadow: 0 4px 16px rgba(var(--brand-from-rgb), 0.25);
+  }
+
+  /* ── Dashboard Header ────────────────────────────────  */
+  .dashboard-header {
+    background: hsl(0, 0%, 100%);
+    border-bottom: 1px solid hsl(220, 15%, 90%);
+  }
+
+  .dark .dashboard-header {
+    background: hsl(220, 30%, 7%);
+    border-bottom: 1px solid hsl(220, 30%, 14%);
   }
 
   /* Recharts dark mode text fix — ensure all chart labels/text are visible */
@@ -193,4 +330,160 @@
   .dark .recharts-tooltip-item {
     color: hsl(220, 15%, 85%) !important;
   }
+}
+
+/* ── Landing Page ──────────────────────────────────────────── */
+
+/* Wave line animation */
+@keyframes wave-drift {
+  0%, 100% { transform: translateX(0) translateY(0); }
+  25% { transform: translateX(-15px) translateY(-8px); }
+  50% { transform: translateX(-5px) translateY(5px); }
+  75% { transform: translateX(-20px) translateY(-3px); }
+}
+
+.wave-line {
+  animation: wave-drift 10s ease-in-out infinite;
+}
+
+/* Landing hero: dark by default, light override */
+.landing-hero {
+  background: linear-gradient(135deg, hsl(220, 35%, 6%) 0%, hsl(220, 30%, 10%) 40%, hsl(240, 20%, 12%) 100%);
+}
+
+.dark .landing-hero,
+.landing-hero {
+  background: linear-gradient(135deg, hsl(220, 35%, 6%) 0%, hsl(220, 30%, 10%) 40%, hsl(240, 20%, 12%) 100%);
+}
+
+:root .landing-hero {
+  background: linear-gradient(135deg, hsl(220, 15%, 97%) 0%, hsl(220, 20%, 94%) 40%, hsl(230, 20%, 95%) 100%);
+}
+
+/* Landing text colors */
+.landing-text {
+  color: hsl(220, 15%, 95%);
+}
+
+:root .landing-text {
+  color: hsl(220, 25%, 15%);
+}
+
+.dark .landing-text {
+  color: hsl(220, 15%, 95%);
+}
+
+.landing-text-muted {
+  color: hsl(220, 15%, 60%);
+}
+
+:root .landing-text-muted {
+  color: hsl(220, 10%, 45%);
+}
+
+.dark .landing-text-muted {
+  color: hsl(220, 15%, 60%);
+}
+
+/* Landing sections */
+.landing-section {
+  background: hsl(220, 35%, 6%);
+}
+
+:root .landing-section {
+  background: hsl(0, 0%, 100%);
+}
+
+.dark .landing-section {
+  background: hsl(220, 35%, 6%);
+}
+
+.landing-section-alt {
+  background: hsl(220, 30%, 8%);
+}
+
+:root .landing-section-alt {
+  background: hsl(220, 15%, 97%);
+}
+
+.dark .landing-section-alt {
+  background: hsl(220, 30%, 8%);
+}
+
+/* Landing cards */
+.landing-card {
+  background: hsl(220, 30%, 10%);
+  border: 1px solid hsl(220, 30%, 16%);
+}
+
+:root .landing-card {
+  background: hsl(0, 0%, 100%);
+  border: 1px solid hsl(220, 15%, 90%);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.06);
+}
+
+.dark .landing-card {
+  background: hsl(220, 30%, 10%);
+  border: 1px solid hsl(220, 30%, 16%);
+}
+
+.landing-card:hover {
+  border-color: hsl(220, 30%, 22%);
+  box-shadow: 0 8px 30px rgba(0, 0, 0, 0.2);
+}
+
+:root .landing-card:hover {
+  border-color: hsl(220, 15%, 82%);
+  box-shadow: 0 8px 30px rgba(0, 0, 0, 0.08);
+}
+
+/* Landing outline button */
+.landing-outline-btn {
+  border-color: hsl(220, 30%, 25%);
+  color: hsl(220, 15%, 80%);
+}
+
+:root .landing-outline-btn {
+  border-color: hsl(220, 15%, 85%);
+  color: hsl(220, 25%, 25%);
+}
+
+.dark .landing-outline-btn {
+  border-color: hsl(220, 30%, 25%);
+  color: hsl(220, 15%, 80%);
+}
+
+.landing-outline-btn:hover {
+  background: hsl(220, 30%, 12%);
+  border-color: hsl(220, 30%, 35%);
+}
+
+:root .landing-outline-btn:hover {
+  background: hsl(220, 15%, 95%);
+  border-color: hsl(220, 15%, 75%);
+}
+
+/* Landing footer */
+.landing-footer {
+  background: hsl(220, 35%, 5%);
+  border-top: 1px solid hsl(220, 30%, 12%);
+}
+
+:root .landing-footer {
+  background: hsl(220, 15%, 97%);
+  border-top: 1px solid hsl(220, 15%, 90%);
+}
+
+.dark .landing-footer {
+  background: hsl(220, 35%, 5%);
+  border-top: 1px solid hsl(220, 30%, 12%);
+}
+
+/* Landing page — force wave visibility in light mode */
+:root .landing-page .wave-line {
+  opacity: 0.06 !important;
+}
+
+.dark .landing-page .wave-line {
+  opacity: inherit;
 }

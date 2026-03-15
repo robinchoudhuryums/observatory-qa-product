@@ -1,6 +1,7 @@
 import multer from "multer";
 import path from "path";
 import fs from "fs";
+import { logger } from "../services/logger";
 
 /** Parse a numeric value safely, returning fallback if NaN or non-finite. */
 export function safeFloat(val: unknown, fallback = 0): number {
@@ -30,7 +31,7 @@ export async function withRetry<T>(
       lastError = error as Error;
       if (attempt < retries) {
         const delay = baseDelay * Math.pow(2, attempt);
-        console.warn(`[RETRY] ${label} failed (attempt ${attempt + 1}/${retries + 1}), retrying in ${delay}ms: ${lastError.message}`);
+        logger.warn({ label, attempt: attempt + 1, maxAttempts: retries + 1, delayMs: delay, err: lastError }, "Retrying failed operation");
         await new Promise(resolve => setTimeout(resolve, delay));
       }
     }

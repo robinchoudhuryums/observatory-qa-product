@@ -44,7 +44,7 @@ function recordFailedAttempt(username: string): void {
   record.lastAttempt = Date.now();
   if (record.count >= MAX_FAILED_ATTEMPTS) {
     record.lockedUntil = Date.now() + LOCKOUT_DURATION_MS;
-    console.warn(`[SECURITY] Account "${username}" locked after ${record.count} failed attempts.`);
+    logger.warn({ username, failedAttempts: record.count }, "Account locked after excessive failed attempts");
   }
   loginAttempts.set(username, record);
 }
@@ -73,13 +73,13 @@ interface EnvUser {
 // In-memory store of hashed user credentials parsed from env vars
 const envUsers: EnvUser[] = [];
 
-async function hashPassword(password: string): Promise<string> {
+export async function hashPassword(password: string): Promise<string> {
   const salt = randomBytes(16).toString("hex");
   const buf = (await scryptAsync(password, salt, 64)) as Buffer;
   return `${buf.toString("hex")}.${salt}`;
 }
 
-async function comparePasswords(supplied: string, stored: string): Promise<boolean> {
+export async function comparePasswords(supplied: string, stored: string): Promise<boolean> {
   const [hashedPassword, salt] = stored.split(".");
   const hashedPasswordBuf = Buffer.from(hashedPassword, "hex");
   const suppliedPasswordBuf = (await scryptAsync(supplied, salt, 64)) as Buffer;
@@ -89,7 +89,7 @@ async function comparePasswords(supplied: string, stored: string): Promise<boole
 async function loadUsersFromEnv(): Promise<void> {
   const authUsersRaw = process.env.AUTH_USERS;
   if (!authUsersRaw) {
-    console.warn("AUTH_USERS not set. No users will be able to log in.");
+    logger.warn("AUTH_USERS not set. No users will be able to log in.");
     return;
   }
 
@@ -99,7 +99,7 @@ async function loadUsersFromEnv(): Promise<void> {
   for (const entry of userEntries) {
     const parts = entry.split(":");
     if (parts.length < 2) {
-      console.warn(`Skipping malformed AUTH_USERS entry: ${entry}`);
+      logger.warn({ entry }, "Skipping malformed AUTH_USERS entry");
       continue;
     }
 
@@ -118,7 +118,7 @@ async function loadUsersFromEnv(): Promise<void> {
       orgSlug: userOrgSlug,
     });
 
-    console.log(`Loaded user from AUTH_USERS: ${username} (${role}, org: ${userOrgSlug})`);
+    logger.info({ username, role, orgSlug: userOrgSlug }, "Loaded user from AUTH_USERS");
   }
 }
 
@@ -139,7 +139,7 @@ async function resolveUserOrgIds(): Promise<void> {
     let org = await storage.getOrganizationBySlug(user.orgSlug);
     if (!org) {
       // Auto-create org for backward compatibility (single-tenant migration)
-      console.log(`[AUTH] Auto-creating organization for slug "${user.orgSlug}"`);
+      logger.info({ orgSlug: user.orgSlug }, "Auto-creating organization for slug");
       org = await storage.createOrganization({
         name: user.orgSlug === "default" ? "Default Organization" : user.orgSlug,
         slug: user.orgSlug,
@@ -149,7 +149,7 @@ async function resolveUserOrgIds(): Promise<void> {
 
     user.orgId = org.id;
     resolvedSlugs.set(user.orgSlug, org.id);
-    console.log(`[AUTH] Resolved org slug "${user.orgSlug}" → orgId "${org.id}"`);
+    logger.info({ orgSlug: user.orgSlug, orgId: org.id }, "Resolved org slug to orgId");
   }
 }
 
@@ -396,9 +396,16 @@ export function requireRole(...allowedRoles: string[]): RequestHandler {
  * Look up a loaded env user by their session ID and return their orgId.
  * Used by WebSocket upgrade handler to resolve org context from session.
  */
-export function resolveUserOrgId(userId: string): string | undefined {
-  const user = envUsers.find((u) => u.id === userId);
-  return user?.orgId;
+export async function resolveUserOrgId(userId: string): Promise<string | undefined> {
+  const envUser = envUsers.find((u) => u.id === userId);
+  if (envUser?.orgId) return envUser.orgId;
+  // Fall back to database users (created via registration/invitation/admin)
+  try {
+    const dbUser = await storage.getUser(userId);
+    return dbUser?.orgId;
+  } catch {
+    return undefined;
+  }
 }
 
 export const injectOrgContext: RequestHandler = (req: Request, res: Response, next: NextFunction) => {

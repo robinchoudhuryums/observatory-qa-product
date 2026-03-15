@@ -2,6 +2,7 @@ import { useQuery } from "@tanstack/react-query";
 import { Building2, TrendingDown, AlertTriangle, BarChart3, MessageCircle, ShieldAlert } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { HelpTip } from "@/components/ui/help-tip";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Link } from "wouter";
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, BarChart, Bar, Cell, Legend } from "recharts";
@@ -67,7 +68,10 @@ export default function InsightsPage() {
     <div className="min-h-screen" data-testid="insights-page">
       <header className="bg-card border-b border-border px-6 py-4">
         <div>
-          <h2 className="text-2xl font-bold text-foreground">Company Insights</h2>
+          <h2 className="text-2xl font-bold text-foreground flex items-center gap-2">
+            Company Insights
+            <HelpTip text="AI-aggregated patterns across all your calls: recurring complaints, top topics, sentiment trends, and process improvement opportunities. Insights update automatically as new calls are analyzed." />
+          </h2>
           <p className="text-muted-foreground">
             Customer experience trends, complaint patterns, and process improvement opportunities across {insights.totalAnalyzed} analyzed calls
           </p>

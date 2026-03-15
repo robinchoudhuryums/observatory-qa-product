@@ -7,6 +7,8 @@ import { setupWebSocket } from "./services/websocket";
 import { logger } from "./services/logger";
 import { initRedis, checkRateLimit, closeRedis } from "./services/redis";
 import { initQueues, enqueueRetention, closeQueues } from "./services/queue";
+import { initEmail, sendEmail, buildQuotaAlertEmail } from "./services/email";
+import { PLAN_DEFINITIONS, type PlanTier } from "@shared/schema";
 
 const app = express();
 
@@ -55,7 +57,7 @@ function distributedRateLimit(windowMs: number, maxRequests: number) {
 }
 
 // Clean up expired in-memory rate limit entries every 5 minutes
-setInterval(() => {
+const rateLimitCleanupTimer = setInterval(() => {
   const now = Date.now();
   rateLimitMap.forEach((entry, key) => {
     if (now > entry.resetTime) rateLimitMap.delete(key);
@@ -134,6 +136,8 @@ app.use((req, res, next) => {
 
 // HIPAA: Rate limiting on login endpoint (5 attempts per 15 minutes per IP)
 app.post("/api/auth/login", distributedRateLimit(15 * 60 * 1000, 5) as any);
+// Rate limit registration: 3 per hour per IP
+app.post("/api/auth/register", distributedRateLimit(60 * 60 * 1000, 3) as any);
 
 (async () => {
   // --- Infrastructure initialization ---
@@ -157,6 +161,9 @@ app.post("/api/auth/login", distributedRateLimit(15 * 60 * 1000, 5) as any);
     logger.info("BullMQ job queues active");
   }
 
+  // 4. Initialize email transport
+  initEmail();
+
   // Authentication (must come before routes) - async to hash env var passwords on startup
   await setupAuth(app);
 
@@ -166,9 +173,11 @@ app.post("/api/auth/login", distributedRateLimit(15 * 60 * 1000, 5) as any);
     const status = err.status || err.statusCode || 500;
     const message = err.message || "Internal Server Error";
 
-    res.status(status).json({ message });
     if (status >= 500) {
-      logger.error({ status }, message);
+      logger.error({ status, err: message }, "Internal server error");
+      res.status(status).json({ message: "Internal Server Error" });
+    } else {
+      res.status(status).json({ message });
     }
   });
 
@@ -227,26 +236,141 @@ app.post("/api/auth/login", distributedRateLimit(15 * 60 * 1000, 5) as any);
       }
     };
 
-    // Run once on startup (after 30s delay to let auth settle)
-    setTimeout(runRetention, 30_000);
-    // Then run daily (every 24 hours)
-    setInterval(runRetention, 24 * 60 * 60 * 1000);
-  });
+    // Trial auto-downgrade: check for expired trial subscriptions daily
+    const runTrialDowngrade = async () => {
+      try {
+        const currentStorage = (await import("./storage")).storage;
+        const orgs = await currentStorage.listOrganizations();
+        const now = new Date();
+        let downgraded = 0;
 
-  // Graceful shutdown
-  const shutdown = async () => {
-    logger.info("Shutting down...");
-    await Promise.all([
-      closeQueues(),
-      closeRedis(),
-    ]);
-    // Close DB if PostgreSQL was initialized
-    if (pgInitialized) {
-      const { closeDatabase } = await import("./db/index");
-      await closeDatabase();
-    }
-    process.exit(0);
-  };
-  process.on("SIGTERM", shutdown);
-  process.on("SIGINT", shutdown);
+        for (const org of orgs) {
+          const sub = await currentStorage.getSubscription(org.id);
+          if (!sub) continue;
+
+          // Downgrade expired trials
+          if (sub.status === "trialing" && sub.currentPeriodEnd) {
+            const trialEnd = new Date(sub.currentPeriodEnd);
+            if (now > trialEnd) {
+              await currentStorage.upsertSubscription(org.id, {
+                orgId: org.id,
+                planTier: "free",
+                status: "active",
+                billingInterval: "monthly",
+                cancelAtPeriodEnd: false,
+              });
+              logger.info({ orgId: org.id, orgSlug: org.slug, previousTier: sub.planTier }, "Trial expired — downgraded to free");
+              downgraded++;
+            }
+          }
+        }
+
+        if (downgraded > 0) {
+          logger.info({ downgraded }, "Trial auto-downgrade complete");
+        }
+      } catch (error) {
+        logger.error({ err: error }, "Error during trial auto-downgrade");
+      }
+    };
+
+    // Proactive quota alerts: email org admins when usage hits 80% or 100%
+    const runQuotaAlerts = async () => {
+      try {
+        const currentStorage = (await import("./storage")).storage;
+        const orgs = await currentStorage.listOrganizations();
+        const now = new Date();
+        const periodStart = new Date(now.getFullYear(), now.getMonth(), 1);
+        const dashboardUrl = process.env.APP_URL || "https://app.observatory-qa.com";
+
+        for (const org of orgs) {
+          const sub = await currentStorage.getSubscription(org.id);
+          const tier = (sub?.planTier as PlanTier) || "free";
+          const plan = PLAN_DEFINITIONS[tier];
+          if (!plan) continue;
+
+          const usage = await currentStorage.getUsageSummary(org.id, periodStart);
+          const usageMap: Record<string, number> = {};
+          for (const u of usage) usageMap[u.eventType] = u.totalQuantity;
+
+          const warnings: Array<{ label: string; used: number; limit: number; pct: number }> = [];
+          const check = (label: string, eventType: string, limitKey: keyof typeof plan.limits) => {
+            const limit = plan.limits[limitKey] as number;
+            if (limit <= 0 || limit === -1) return;
+            const used = usageMap[eventType] || 0;
+            const pct = Math.round((used / limit) * 100);
+            if (pct >= 80) warnings.push({ label, used, limit, pct });
+          };
+
+          check("Calls", "transcription", "callsPerMonth");
+          check("AI Analyses", "ai_analysis", "aiAnalysesPerMonth");
+
+          if (warnings.length === 0) continue;
+
+          // Get admin/manager users with email addresses
+          const users = await currentStorage.listUsersByOrg(org.id);
+          const recipients = users.filter(u =>
+            (u.role === "admin" || u.role === "manager") && u.username?.includes("@")
+          );
+          if (recipients.length === 0) continue;
+
+          const isExhausted = warnings.some(w => w.pct >= 100);
+          const orgName = org.name || org.slug || "Observatory QA";
+          const emailTemplate = buildQuotaAlertEmail(orgName, warnings, isExhausted, dashboardUrl);
+
+          await Promise.allSettled(
+            recipients.map(user => sendEmail({ ...emailTemplate, to: user.username }))
+          );
+
+          logger.info(
+            { orgId: org.id, warnings: warnings.length, isExhausted, recipients: recipients.length },
+            "Quota alert emails sent",
+          );
+        }
+      } catch (error) {
+        logger.error({ err: error }, "Error during quota alert check");
+      }
+    };
+
+    // Run once on startup (after 30s delay to let auth settle)
+    const retentionStartupTimer = setTimeout(() => {
+      runRetention();
+      runTrialDowngrade();
+    }, 30_000);
+    // Run quota alerts daily at a slight offset (60s after startup, then every 24h)
+    const quotaAlertStartupTimer = setTimeout(runQuotaAlerts, 60_000);
+    // Then run daily (every 24 hours)
+    const retentionDailyTimer = setInterval(runRetention, 24 * 60 * 60 * 1000);
+    const trialDowngradeTimer = setInterval(runTrialDowngrade, 24 * 60 * 60 * 1000);
+    const quotaAlertDailyTimer = setInterval(runQuotaAlerts, 24 * 60 * 60 * 1000);
+
+    // Graceful shutdown
+    const shutdown = async () => {
+      logger.info("Shutting down...");
+      clearInterval(rateLimitCleanupTimer);
+      clearTimeout(retentionStartupTimer);
+      clearTimeout(quotaAlertStartupTimer);
+      clearInterval(retentionDailyTimer);
+      clearInterval(trialDowngradeTimer);
+      clearInterval(quotaAlertDailyTimer);
+      const { closeWebSocket } = await import("./services/websocket");
+      await Promise.all([
+        closeQueues(),
+        closeRedis(),
+        closeWebSocket(),
+      ]);
+      // Close DB if PostgreSQL was initialized
+      if (pgInitialized) {
+        const { closeDatabase } = await import("./db/index");
+        await closeDatabase();
+      }
+      // Close RAG worker pool if active
+      try {
+        const { closeRagWorkerPool } = await import("./services/rag-worker");
+        await closeRagWorkerPool();
+      } catch { /* not initialized */ }
+      process.exit(0);
+    };
+    process.on("SIGTERM", shutdown);
+    process.on("SIGINT", shutdown);
+  });
 })();

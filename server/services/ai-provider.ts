@@ -7,6 +7,7 @@
  *
  * All providers implement the same interface and return identical output shapes.
  */
+import { logger } from "./logger";
 
 export interface CallAnalysis {
   summary: string;
@@ -229,14 +230,14 @@ ${evaluationCriteria}${scoringSection}${phrasesSection}${referenceSection}${addi
 export function parseJsonResponse(text: string, callId: string): CallAnalysis {
   const jsonMatch = text.match(/\{[\s\S]*\}/);
   if (!jsonMatch) {
-    console.warn(`[${callId}] AI response was not parseable JSON:`, text.slice(0, 200));
+    logger.warn({ callId, responsePreview: text.slice(0, 200) }, "AI response was not parseable JSON");
     throw new Error("AI response did not contain valid JSON");
   }
 
   try {
     return JSON.parse(jsonMatch[0]) as CallAnalysis;
   } catch (parseError) {
-    console.warn(`[${callId}] JSON parse failed:`, (parseError as Error).message, text.slice(0, 300));
+    logger.warn({ callId, err: parseError, responsePreview: text.slice(0, 300) }, "AI response JSON parse failed");
     throw new Error("AI response contained malformed JSON");
   }
 }

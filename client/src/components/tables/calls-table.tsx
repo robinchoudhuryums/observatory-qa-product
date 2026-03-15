@@ -1,16 +1,17 @@
 import { useState, useMemo } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Eye, Play, Download, Star, Trash2, UserCheck, AlertTriangle, Award, ChevronLeft, ChevronRight, ArrowUpDown, ArrowUp, ArrowDown, CheckSquare, Square, FileAudio, ShieldQuestion } from "lucide-react";
+import { Eye, Play, Download, Star, Trash2, UserCheck, AlertTriangle, Award, ChevronLeft, ChevronRight, ArrowUpDown, ArrowUp, ArrowDown, CheckSquare, Square, FileAudio, ShieldQuestion, FileDown } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { HelpTip } from "@/components/ui/help-tip";
 import { Badge } from "@/components/ui/badge";
 import { getSentimentBadge as getSentimentBadgeHelper, getStatusBadge as getStatusBadgeHelper } from "@/lib/badge-helpers";
 import { Link } from "wouter";
-import type { CallWithDetails, Employee } from "@shared/schema";
+import type { CallWithDetails, Employee, AuthUser } from "@shared/schema";
 import { AudioWaveform } from "lucide-react";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useToast } from "@/hooks/use-toast";
-import { apiRequest } from "@/lib/queryClient";
+import { apiRequest, getQueryFn } from "@/lib/queryClient";
 import { ConfirmDialog } from "@/components/lib/confirm-dialog";
 
 type SortField = "date" | "duration" | "score" | "sentiment";
@@ -39,6 +40,13 @@ export default function CallsTable() {
 
   const { toast } = useToast();
   const queryClient = useQueryClient();
+
+  const { data: user } = useQuery<AuthUser>({
+    queryKey: ["/api/auth/me"],
+    queryFn: getQueryFn({ on401: "returnNull" }),
+    staleTime: Infinity,
+  });
+  const canExport = user?.role === "manager" || user?.role === "admin";
 
   const { data: calls, isLoading: isLoadingCalls } = useQuery<CallWithDetails[]>({
     queryKey: ["/api/calls", {
@@ -238,14 +246,32 @@ export default function CallsTable() {
 
   return (
     <div className="bg-card rounded-lg border border-border p-6" data-testid="calls-table">
-      <div className="flex items-center justify-between mb-4">
+      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 mb-4">
         <div className="flex items-center gap-3">
-          <h3 className="text-lg font-semibold text-foreground">Recent Calls</h3>
+          <h3 className="text-lg font-semibold text-foreground flex items-center gap-1">
+            Recent Calls
+            <HelpTip text="All uploaded call recordings sorted by date. Use filters to narrow by employee, sentiment, or status. Click a row to view the full transcript and AI analysis." />
+          </h3>
           <span className="text-xs text-muted-foreground">
             {sortedCalls.length} total
           </span>
         </div>
-        <div className="flex items-center space-x-2">
+        <div className="flex flex-wrap items-center gap-2">
+          {canExport && (
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => {
+                const link = document.createElement("a");
+                link.href = "/api/export/calls";
+                link.download = "";
+                link.click();
+              }}
+            >
+              <FileDown className="w-4 h-4 mr-1.5" />
+              CSV
+            </Button>
+          )}
           <Select value={employeeFilter} onValueChange={handleFilterChange(setEmployeeFilter)}>
             <SelectTrigger className="w-40" data-testid="employee-filter">
               <SelectValue placeholder="All Employees" />
@@ -332,8 +358,8 @@ export default function CallsTable() {
             </tr>
           </thead>
           <tbody>
-            {pagedCalls.map((call) => (
-              <tr key={call.id} className={`border-b border-border hover:bg-muted transition-colors ${selectedIds.has(call.id) ? "bg-primary/5" : ""}`}>
+            {pagedCalls.map((call, rowIdx) => (
+              <tr key={call.id} className={`border-b border-border hover:bg-muted transition-colors animate-row ${selectedIds.has(call.id) ? "bg-primary/5" : ""}`} style={{ animationDelay: `${rowIdx * 30}ms` }}>
                 <td className="py-3 px-2">
                   <button onClick={() => toggleOne(call.id)} className="text-muted-foreground hover:text-foreground" aria-label={selectedIds.has(call.id) ? "Deselect call" : "Select call"}>
                     {selectedIds.has(call.id) ? <CheckSquare className="w-4 h-4 text-primary" /> : <Square className="w-4 h-4" />}
@@ -449,8 +475,20 @@ export default function CallsTable() {
                         <Eye className="w-4 h-4" />
                       </Button>
                     </Link>
-                    <Button size="sm" variant="ghost"><Play className="w-4 h-4" /></Button>
-                    <Button size="sm" variant="ghost" disabled={call.status !== 'completed'}><Download className="w-4 h-4" /></Button>
+                    <Link href={`/transcripts/${call.id}`}>
+                      <Button size="sm" variant="ghost" disabled={call.status !== 'completed'} title="Play audio">
+                        <Play className="w-4 h-4" />
+                      </Button>
+                    </Link>
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      disabled={call.status !== 'completed'}
+                      title="Download audio"
+                      onClick={() => window.open(`/api/calls/${call.id}/audio?download=true`, '_blank')}
+                    >
+                      <Download className="w-4 h-4" />
+                    </Button>
                     <Button
                       size="sm" variant="ghost" className="text-red-500 hover:text-red-600"
                       onClick={() => handleDelete(call.id)} disabled={deleteMutation.isPending}

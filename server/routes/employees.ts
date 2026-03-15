@@ -6,6 +6,7 @@ import { storage } from "../storage";
 import { requireAuth, requireRole, injectOrgContext } from "../auth";
 import { insertEmployeeSchema } from "@shared/schema";
 import { z } from "zod";
+import { logger } from "../services/logger";
 
 export function registerEmployeeRoutes(app: Express): void {
   // Get all employees
@@ -141,7 +142,7 @@ export function registerEmployeeRoutes(app: Express): void {
       const skipped = results.filter(r => r.action.startsWith("skipped")).length;
       res.json({ message: `Import complete: ${created} created, ${skipped} skipped`, details: results });
     } catch (error) {
-      console.error("CSV import failed:", (error as Error).message);
+      logger.error({ err: error }, "CSV import failed");
       res.status(500).json({ message: "Failed to import employees from CSV" });
     }
   });

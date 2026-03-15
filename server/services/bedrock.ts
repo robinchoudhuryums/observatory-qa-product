@@ -13,6 +13,7 @@
 import { createHmac, createHash } from "crypto";
 import type { AIAnalysisProvider, CallAnalysis } from "./ai-provider";
 import { buildAnalysisPrompt, parseJsonResponse } from "./ai-provider";
+import { logger } from "./logger";
 
 const DEFAULT_MODEL = "us.anthropic.claude-sonnet-4-6";
 const DEFAULT_REGION = "us-east-1";
@@ -42,9 +43,9 @@ export class BedrockProvider implements AIAnalysisProvider {
         sessionToken: process.env.AWS_SESSION_TOKEN,
         region: process.env.AWS_REGION || DEFAULT_REGION,
       };
-      console.log(`Bedrock provider initialized (region: ${this.credentials.region}, model: ${this.model})`);
+      logger.info({ region: this.credentials.region, model: this.model }, "Bedrock provider initialized");
     } else {
-      console.warn("Bedrock provider: AWS credentials not found. Set AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY.");
+      logger.warn("Bedrock provider: AWS credentials not found. Set AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY.");
     }
   }
 
@@ -108,7 +109,7 @@ export class BedrockProvider implements AIAnalysisProvider {
       },
     });
 
-    console.log(`[${callId}] Calling Bedrock (${this.model}) for analysis...`);
+    logger.info({ callId, model: this.model }, "Calling Bedrock for analysis");
 
     const headers = this.signRequest("POST", host, rawPath, body, region);
     const controller = new AbortController();
@@ -138,7 +139,7 @@ export class BedrockProvider implements AIAnalysisProvider {
     const responseText = result.output?.message?.content?.[0]?.text || "";
 
     const analysis = parseJsonResponse(responseText, callId);
-    console.log(`[${callId}] Bedrock analysis complete (score: ${analysis.performance_score}/10, sentiment: ${analysis.sentiment})`);
+    logger.info({ callId, performanceScore: analysis.performance_score, sentiment: analysis.sentiment }, "Bedrock analysis complete");
     return analysis;
   }
 

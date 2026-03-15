@@ -11,6 +11,7 @@ import { indexDocument } from "./rag";
 import { logger } from "./logger";
 
 let dbInstance: ReturnType<typeof drizzle> | null = null;
+let dbPool: pg.Pool | null = null;
 
 async function getDb() {
   if (dbInstance) return dbInstance;
@@ -20,9 +21,18 @@ async function getDb() {
     throw new Error("DATABASE_URL required for RAG indexing");
   }
 
-  const pool = new pg.Pool({ connectionString: databaseUrl, max: 2 });
-  dbInstance = drizzle(pool);
+  dbPool = new pg.Pool({ connectionString: databaseUrl, max: 2 });
+  dbInstance = drizzle(dbPool);
   return dbInstance;
+}
+
+/** Close the RAG worker's database pool on shutdown */
+export async function closeRagWorkerPool(): Promise<void> {
+  if (dbPool) {
+    await dbPool.end();
+    dbPool = null;
+    dbInstance = null;
+  }
 }
 
 /**

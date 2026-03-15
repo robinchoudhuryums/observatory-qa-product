@@ -144,47 +144,70 @@ function darkenHex(hex: string): string {
 
 /**
  * Extract text from uploaded document files.
- * For TXT/MD/CSV: direct read. For PDF/DOCX: basic extraction.
+ * For TXT/MD/CSV: direct read. For PDF: pdf-parse library. For DOCX: XML extraction.
+ * All extraction is wrapped in error boundaries — failures return empty string (graceful degradation).
  */
-function extractTextFromFile(buffer: Buffer, mimeType: string): string {
-  if (mimeType === "text/plain" || mimeType === "text/markdown" || mimeType === "text/csv") {
-    return buffer.toString("utf-8").slice(0, 50000); // Cap at 50K chars
-  }
+async function extractTextFromFile(buffer: Buffer, mimeType: string): Promise<string> {
+  try {
+    if (mimeType === "text/plain" || mimeType === "text/markdown" || mimeType === "text/csv") {
+      return buffer.toString("utf-8").slice(0, 50000); // Cap at 50K chars
+    }
 
-  // For PDF: extract visible ASCII text (basic — no full PDF parser)
-  if (mimeType === "application/pdf") {
-    const text = buffer.toString("latin1");
-    // Extract text between BT and ET markers, and parenthesized strings
-    const textParts: string[] = [];
-    const regex = /\(([^)]{1,500})\)/g;
-    let match;
-    while ((match = regex.exec(text)) !== null) {
-      const content = match[1]
-        .replace(/\\n/g, "\n")
-        .replace(/\\r/g, "")
-        .replace(/\\\\/g, "\\")
-        .replace(/\\([()])/g, "$1");
-      if (content.trim().length > 1 && /[a-zA-Z]/.test(content)) {
-        textParts.push(content.trim());
+    // PDF: use pdf-parse for proper text extraction
+    if (mimeType === "application/pdf") {
+      try {
+        const { PDFParse } = await import("pdf-parse");
+        const parser = new PDFParse({ data: buffer });
+        const result = await parser.getText();
+        const text = result.text || "";
+        if (text.trim().length > 0) {
+          return text.slice(0, 50000);
+        }
+        // Empty result from parser — try regex fallback
+        return extractPdfFallback(buffer);
+      } catch (pdfErr) {
+        // Fallback to regex extraction for malformed PDFs
+        logger.warn({ err: pdfErr }, "pdf-parse failed, falling back to regex extraction");
+        return extractPdfFallback(buffer);
       }
     }
-    return textParts.join(" ").slice(0, 50000);
-  }
 
-  // For DOCX: extract from XML within the zip
-  if (mimeType === "application/vnd.openxmlformats-officedocument.wordprocessingml.document") {
-    const text = buffer.toString("utf-8");
-    // Find XML text content between <w:t> tags
-    const textParts: string[] = [];
-    const regex = /<w:t[^>]*>([^<]+)<\/w:t>/g;
-    let match;
-    while ((match = regex.exec(text)) !== null) {
-      textParts.push(match[1]);
+    // DOCX: extract from XML within the zip
+    if (mimeType === "application/vnd.openxmlformats-officedocument.wordprocessingml.document") {
+      const text = buffer.toString("utf-8");
+      const textParts: string[] = [];
+      const regex = /<w:t[^>]*>([^<]+)<\/w:t>/g;
+      let match;
+      while ((match = regex.exec(text)) !== null) {
+        textParts.push(match[1]);
+      }
+      return textParts.join(" ").slice(0, 50000);
     }
-    return textParts.join(" ").slice(0, 50000);
-  }
 
-  return "";
+    return "";
+  } catch (error) {
+    logger.error({ err: error, mimeType }, "Text extraction failed");
+    return "";
+  }
+}
+
+/** Fallback PDF extraction when pdf-parse fails (e.g., encrypted or corrupted PDFs) */
+function extractPdfFallback(buffer: Buffer): string {
+  const text = buffer.toString("latin1");
+  const textParts: string[] = [];
+  const regex = /\(([^)]{1,500})\)/g;
+  let match;
+  while ((match = regex.exec(text)) !== null) {
+    const content = match[1]
+      .replace(/\\n/g, "\n")
+      .replace(/\\r/g, "")
+      .replace(/\\\\/g, "\\")
+      .replace(/\\([()])/g, "$1");
+    if (content.trim().length > 1 && /[a-zA-Z]/.test(content)) {
+      textParts.push(content.trim());
+    }
+  }
+  return textParts.join(" ").slice(0, 50000);
 }
 
 export function registerOnboardingRoutes(app: Express): void {
@@ -309,9 +332,18 @@ export function registerOnboardingRoutes(app: Express): void {
         }
 
         // Extract text content for AI injection
-        const extractedText = extractTextFromFile(buffer, req.file.mimetype);
+        const extractedText = await extractTextFromFile(buffer, req.file.mimetype);
 
         const { name, category, description, appliesTo } = req.body;
+
+        let parsedAppliesTo: string[] | undefined;
+        if (appliesTo) {
+          try {
+            parsedAppliesTo = JSON.parse(appliesTo);
+          } catch {
+            return res.status(400).json({ message: "Invalid appliesTo format" });
+          }
+        }
 
         const doc = await storage.createReferenceDocument(orgId, {
           orgId,
@@ -323,7 +355,7 @@ export function registerOnboardingRoutes(app: Express): void {
           mimeType: req.file.mimetype,
           storagePath,
           extractedText: extractedText || undefined,
-          appliesTo: appliesTo ? JSON.parse(appliesTo) : undefined,
+          appliesTo: parsedAppliesTo,
           isActive: true,
           uploadedBy: req.user?.username,
         });

@@ -6,6 +6,7 @@
 import { WebSocketServer, WebSocket } from "ws";
 import type { Server, ServerResponse, IncomingMessage } from "http";
 import { sessionMiddleware, resolveUserOrgId } from "../auth";
+import { logger } from "../services/logger";
 
 let wss: WebSocketServer | null = null;
 
@@ -15,6 +16,10 @@ const clientOrgMap = new WeakMap<WebSocket, string>();
 export function setupWebSocket(server: Server) {
   wss = new WebSocketServer({ noServer: true });
 
+  wss.on("error", (error) => {
+    logger.error({ err: error }, "WebSocket server error");
+  });
+
   wss.on("connection", (ws, req) => {
     // orgId was attached during upgrade handler
     const orgId = (req as any).__orgId;
@@ -22,6 +27,10 @@ export function setupWebSocket(server: Server) {
       clientOrgMap.set(ws, orgId);
     }
     ws.send(JSON.stringify({ type: "connected" }));
+
+    ws.on("close", () => {
+      /* cleanup is handled by WeakMap */
+    });
   });
 
   // HIPAA: Authenticate WebSocket connections using the session cookie
@@ -32,7 +41,7 @@ export function setupWebSocket(server: Server) {
     // Create a minimal response object for the session middleware
     const res = { writeHead() {}, end() {} } as unknown as ServerResponse;
 
-    sessionMiddleware(req as any, res as any, () => {
+    sessionMiddleware(req as any, res as any, async () => {
       const session = (req as any).session;
       const passport = session?.passport;
 
@@ -43,7 +52,7 @@ export function setupWebSocket(server: Server) {
       }
 
       // Resolve orgId from the user's session ID
-      const orgId = resolveUserOrgId(passport.user);
+      const orgId = await resolveUserOrgId(passport.user);
       if (!orgId) {
         socket.write("HTTP/1.1 403 Forbidden\r\nContent-Length: 0\r\n\r\n");
         socket.destroy();
@@ -57,7 +66,7 @@ export function setupWebSocket(server: Server) {
     });
   });
 
-  console.log("WebSocket server initialized on /ws");
+  logger.info("WebSocket server initialized on /ws");
 }
 
 /**
@@ -75,7 +84,27 @@ export function broadcastCallUpdate(callId: string, status: string, extra?: Reco
         const clientOrg = clientOrgMap.get(client);
         if (clientOrg && clientOrg !== orgId) return;
       }
-      client.send(message);
+      try {
+        client.send(message);
+      } catch (err) {
+        logger.error({ err }, "Failed to send WebSocket message to client");
+      }
     }
+  });
+}
+
+/**
+ * Gracefully close the WebSocket server.
+ */
+export function closeWebSocket(): Promise<void> {
+  return new Promise((resolve) => {
+    if (!wss) {
+      resolve();
+      return;
+    }
+    wss.close(() => {
+      wss = null;
+      resolve();
+    });
   });
 }

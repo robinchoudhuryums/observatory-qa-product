@@ -1,14 +1,23 @@
 import { useParams } from "wouter";
 import { useQuery } from "@tanstack/react-query";
 import { Link } from "wouter";
-import { ChevronRight, Home } from "lucide-react";
+import { ChevronRight, Home, Download } from "lucide-react";
+import { Button } from "@/components/ui/button";
 import TranscriptViewer from "@/components/transcripts/transcript-viewer";
 import CallsTable from "@/components/tables/calls-table";
-import type { CallWithDetails } from "@shared/schema";
+import type { CallWithDetails, AuthUser } from "@shared/schema";
+import { getQueryFn } from "@/lib/queryClient";
 
 export default function Transcripts() {
   const params = useParams();
   const callId = params?.id;
+
+  const { data: user } = useQuery<AuthUser>({
+    queryKey: ["/api/auth/me"],
+    queryFn: getQueryFn({ on401: "returnNull" }),
+    staleTime: Infinity,
+  });
+  const canExport = user?.role === "manager" || user?.role === "admin";
 
   // If we have a specific call ID, show the transcript viewer
   if (callId) {
@@ -45,9 +54,26 @@ export default function Transcripts() {
     <div className="min-h-screen" data-testid="transcripts-page">
       {/* Header */}
       <header className="bg-card border-b border-border px-6 py-4">
-        <div>
-          <h2 className="text-2xl font-bold text-foreground">Call Transcripts</h2>
-          <p className="text-muted-foreground">Browse and analyze all call recordings and their transcripts</p>
+        <div className="flex items-center justify-between">
+          <div>
+            <h2 className="text-2xl font-bold text-foreground">Call Transcripts</h2>
+            <p className="text-muted-foreground">Browse and analyze all call recordings and their transcripts</p>
+          </div>
+          {canExport && (
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => {
+                const link = document.createElement("a");
+                link.href = "/api/export/calls";
+                link.download = "";
+                link.click();
+              }}
+            >
+              <Download className="w-4 h-4 mr-2" />
+              Export CSV
+            </Button>
+          )}
         </div>
       </header>
 

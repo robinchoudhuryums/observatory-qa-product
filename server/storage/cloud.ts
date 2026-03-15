@@ -12,6 +12,7 @@ import {
   type CallAnalysis,
   type InsertCallAnalysis,
   type CallWithDetails,
+  type CallSummary,
   type DashboardMetrics,
   type SentimentDistribution,
   type TopPerformer,
@@ -26,6 +27,7 @@ import {
 } from "@shared/schema";
 import { randomUUID } from "crypto";
 import { type IStorage, type ObjectStorageClient, mapConcurrent, normalizeAnalysis, applyCallFilters } from "./types";
+import { logger } from "../services/logger";
 
 export class CloudStorage implements IStorage {
   private client: ObjectStorageClient;
@@ -123,13 +125,13 @@ export class CloudStorage implements IStorage {
   }
 
   async getAllEmployees(orgId: string): Promise<Employee[]> {
-    console.log(`Fetching employees for org ${orgId}...`);
+    logger.info({ orgId }, "Fetching employees");
     try {
       const employees = await this.client.listAndDownloadJson<Employee>(`${this.orgPrefix(orgId)}/employees/`);
-      console.log(`Found ${employees.length} employees.`);
+      logger.info({ orgId, count: employees.length }, "Fetched employees");
       return employees;
     } catch (error) {
-      console.error("Error fetching employees:", error);
+      logger.error({ err: error, orgId }, "Failed to fetch employees");
       return [];
     }
   }
@@ -170,6 +172,11 @@ export class CloudStorage implements IStorage {
     ]);
   }
 
+  async getCallByFileHash(orgId: string, fileHash: string): Promise<Call | undefined> {
+    const calls = await this.client.listAndDownloadJson<Call>(`${this.orgPrefix(orgId)}/calls/`);
+    return calls.find(c => c.fileHash === fileHash && c.status !== "failed");
+  }
+
   async getAllCalls(orgId: string): Promise<Call[]> {
     const calls = await this.client.listAndDownloadJson<Call>(`${this.orgPrefix(orgId)}/calls/`);
     return calls.sort(
@@ -181,7 +188,7 @@ export class CloudStorage implements IStorage {
     orgId: string,
     filters: { status?: string; sentiment?: string; employee?: string } = {}
   ): Promise<CallWithDetails[]> {
-    console.log(`Fetching calls with details for org ${orgId}, filters:`, filters);
+    logger.info({ orgId, filters }, "Fetching calls with details");
 
     const calls = await this.getAllCalls(orgId);
 
@@ -209,8 +216,37 @@ export class CloudStorage implements IStorage {
 
     const filtered = applyCallFilters(results, filters);
 
-    console.log(`Returning ${filtered.length} filtered calls.`);
+    logger.info({ orgId, count: filtered.length }, "Returning filtered calls");
     return filtered;
+  }
+
+  async getCallSummaries(
+    orgId: string,
+    filters: { status?: string; sentiment?: string; employee?: string } = {}
+  ): Promise<CallSummary[]> {
+    const calls = await this.getAllCalls(orgId);
+
+    // Skip transcript loading — only fetch employee, sentiment, analysis
+    const results = await mapConcurrent(calls, 10, async (call) => {
+      const [employee, sentiment, analysis] = await Promise.all([
+        call.employeeId ? this.getEmployee(orgId, call.employeeId) : Promise.resolve(undefined),
+        this.getSentimentAnalysis(orgId, call.id),
+        this.getCallAnalysis(orgId, call.id),
+      ]);
+
+      return {
+        ...call,
+        employee,
+        sentiment: sentiment || undefined,
+        analysis: normalizeAnalysis(analysis),
+      } as CallSummary;
+    });
+
+    results.sort(
+      (a, b) => new Date(b.uploadedAt || 0).getTime() - new Date(a.uploadedAt || 0).getTime()
+    );
+
+    return applyCallFilters(results, filters);
   }
 
   // --- Transcript Methods (org-scoped) ---
@@ -284,7 +320,7 @@ export class CloudStorage implements IStorage {
     const prefixed = objectName.startsWith("orgs/") ? objectName : `${this.orgPrefix(orgId)}/${objectName}`;
     // SECURITY: Prevent cross-org data access via path manipulation
     if (!prefixed.startsWith(`${this.orgPrefix(orgId)}/`)) {
-      console.warn(`[SECURITY] Cross-org audio access blocked: org=${orgId}, path=${objectName}`);
+      logger.warn({ orgId, path: objectName }, "Cross-org audio access blocked");
       return undefined;
     }
     return this.client.downloadFile(prefixed);
@@ -459,7 +495,7 @@ export class CloudStorage implements IStorage {
     for (const call of calls) {
       const uploadDate = new Date(call.uploadedAt || 0);
       if (uploadDate < cutoff) {
-        console.log(`[RETENTION] Purging call ${call.id} in org ${orgId} (uploaded ${uploadDate.toISOString()}, older than ${retentionDays} days)`);
+        logger.info({ callId: call.id, orgId, uploadedAt: uploadDate.toISOString(), retentionDays }, "Purging expired call");
         await this.deleteCall(orgId, call.id);
         purged++;
       }

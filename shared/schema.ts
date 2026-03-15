@@ -17,10 +17,19 @@ export const orgSettingsSchema = z.object({
   callPartyTypes: z.array(z.string()).optional(),
   retentionDays: z.number().default(90),
   branding: orgBrandingSchema.optional(),
-  aiProvider: z.enum(["bedrock", "gemini"]).optional(),
   bedrockModel: z.string().optional(), // Per-org model override (e.g., "us.anthropic.claude-haiku-4-5-20251001")
   maxCallsPerDay: z.number().optional(), // Per-org usage quota
   maxStorageMb: z.number().optional(), // Per-org storage limit
+  // Webhook notification settings (override env vars per-org)
+  webhookUrl: z.string().url().optional(),
+  webhookPlatform: z.enum(["slack", "teams"]).optional(),
+  webhookEvents: z.array(z.string()).optional(), // e.g., ["low_score", "agent_misconduct", "exceptional_call"]
+  // SSO configuration (Enterprise plan only)
+  ssoProvider: z.enum(["saml", "oidc"]).optional(),
+  ssoEntityId: z.string().optional(),
+  ssoSignOnUrl: z.string().url().optional(),
+  ssoCertificate: z.string().optional(),
+  ssoEnforced: z.boolean().optional(), // When true, only SSO login allowed
 });
 
 export const insertOrganizationSchema = z.object({
@@ -37,7 +46,7 @@ export const organizationSchema = insertOrganizationSchema.extend({
 
 // --- USER SCHEMAS ---
 export const insertUserSchema = z.object({
-  orgId: z.string().optional(),
+  orgId: z.string(),
   username: z.string(),
   passwordHash: z.string(),
   name: z.string(),
@@ -519,10 +528,34 @@ export const coachingSessionSchema = insertCoachingSessionSchema.extend({
 export type InsertCoachingSession = z.infer<typeof insertCoachingSessionSchema>;
 export type CoachingSession = z.infer<typeof coachingSessionSchema>;
 
+// --- COACHING RECOMMENDATIONS ---
+export type CoachingRecommendationRecord = {
+  id: string;
+  orgId: string;
+  employeeId: string;
+  trigger: string;
+  category: string;
+  title: string;
+  description?: string | null;
+  severity: string;
+  callIds?: string[] | null;
+  metrics?: Record<string, unknown> | null;
+  status: string;
+  coachingSessionId?: string | null;
+  createdAt?: string | null;
+};
+
 // --- COMBINED TYPES ---
 export type CallWithDetails = Call & {
   employee?: Employee;
   transcript?: Transcript;
+  sentiment?: SentimentAnalysis;
+  analysis?: CallAnalysis;
+};
+
+/** Lightweight call summary for reporting — excludes transcript text/words to reduce memory */
+export type CallSummary = Call & {
+  employee?: Employee;
   sentiment?: SentimentAnalysis;
   analysis?: CallAnalysis;
 };
@@ -546,6 +579,21 @@ export type TopPerformer = {
   role?: string;
   avgPerformanceScore: number | null;
   totalCalls: number;
+};
+
+/** Audit log entry shape for the audit log viewer */
+export type AuditEntry = {
+  timestamp?: string;
+  event: string;
+  orgId?: string;
+  userId?: string;
+  username?: string;
+  role?: string;
+  resourceType: string;
+  resourceId?: string;
+  ip?: string;
+  userAgent?: string;
+  detail?: string;
 };
 
 /** Authenticated user shape returned by /api/auth/me and stored in session */

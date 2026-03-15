@@ -9,6 +9,7 @@
  * HIPAA: S3 is HIPAA-eligible under the AWS BAA.
  */
 import { createHmac, createHash } from "crypto";
+import { logger } from "./logger";
 
 interface AwsCredentials {
   accessKeyId: string;
@@ -200,7 +201,7 @@ export class S3Client {
     const response = await this.request("GET", `/${objectName}`);
     if (response.status === 404) return undefined;
     if (response.status === 403) {
-      console.error(`[S3] Access denied (403) for ${objectName} — check IAM permissions`);
+      logger.error({ objectName }, "S3 access denied (403) — check IAM permissions");
       return undefined;
     }
     if (!response.ok) {

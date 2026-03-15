@@ -3,6 +3,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Shield, UserPlus, CheckCircle2, XCircle, Clock, Eye, Settings, ChevronRight, Users } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { HelpTip } from "@/components/ui/help-tip";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useToast } from "@/hooks/use-toast";
@@ -74,10 +75,18 @@ export default function AdminPage() {
 
   return (
     <div className="min-h-screen" data-testid="admin-page">
+      {requestsError && (
+        <div className="mx-6 mt-4 p-4 bg-destructive/10 border border-destructive/20 rounded-md text-destructive text-sm">
+          Failed to load admin data. Please try refreshing the page.
+        </div>
+      )}
       <header className="bg-card border-b border-border px-6 py-4">
         <div className="flex items-center justify-between">
           <div>
-            <h2 className="text-2xl font-bold text-foreground">Administration</h2>
+            <h2 className="text-2xl font-bold text-foreground flex items-center gap-2">
+              Administration
+              <HelpTip text="Manage your team: invite users, approve access requests, and control role-based permissions. Admins have full control, managers can assign calls and edit analyses, viewers have read-only access." />
+            </h2>
             <p className="text-muted-foreground">Manage access requests and user permissions</p>
           </div>
           {pendingRequests.length > 0 && (

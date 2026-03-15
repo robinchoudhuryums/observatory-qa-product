@@ -12,6 +12,27 @@ import { AudioWaveform } from "lucide-react";
 import { useWebSocket } from "@/hooks/use-websocket";
 import { AnimatePresence, motion } from "framer-motion";
 import type { AuthUser } from "@shared/schema";
+import { useToast } from "@/hooks/use-toast";
+
+// Role hierarchy for route protection
+const ROLE_LEVEL: Record<string, number> = { admin: 3, manager: 2, viewer: 1 };
+
+function ProtectedRoute({ minRole, children }: { minRole: string; children: React.ReactNode }) {
+  const { data: user } = useQuery<AuthUser>({
+    queryKey: ["/api/auth/me"],
+    staleTime: Infinity,
+  });
+  const userLevel = ROLE_LEVEL[user?.role || "viewer"] ?? 0;
+  const requiredLevel = ROLE_LEVEL[minRole] ?? 0;
+  if (userLevel < requiredLevel) {
+    return (
+      <div className="flex items-center justify-center h-64">
+        <p className="text-muted-foreground">You don't have permission to access this page.</p>
+      </div>
+    );
+  }
+  return <>{children}</>;
+}
 
 // Route-level code splitting — each page loads on demand
 const Dashboard = lazy(() => import("@/pages/dashboard"));
@@ -27,6 +48,7 @@ const PromptTemplatesPage = lazy(() => import("@/pages/prompt-templates"));
 const InsightsPage = lazy(() => import("@/pages/insights"));
 const CoachingPage = lazy(() => import("@/pages/coaching"));
 const SettingsPage = lazy(() => import("@/pages/settings"));
+const AuditLogsPage = lazy(() => import("@/pages/audit-logs"));
 const OnboardingWizard = lazy(() => import("@/pages/onboarding"));
 const AuthPage = lazy(() => import("@/pages/auth"));
 const LandingPage = lazy(() => import("@/pages/landing"));
@@ -150,7 +172,7 @@ function Router() {
       <BrandingProvider />
       <ShortcutsDialog open={showShortcuts} onOpenChange={setShowShortcuts} />
       <Sidebar />
-      <main className="flex-1 overflow-auto">
+      <main className="flex-1 overflow-auto pt-14 md:pt-0">
         <Suspense fallback={<PageLoader />}>
           <AnimatePresence mode="wait">
             <Switch key={location}>
@@ -164,10 +186,11 @@ function Router() {
               <Route path="/reports">{() => <ErrorBoundary><AnimatedPage><ReportsPage /></AnimatedPage></ErrorBoundary>}</Route>
               <Route path="/employees">{() => <ErrorBoundary><AnimatedPage><EmployeesPage /></AnimatedPage></ErrorBoundary>}</Route>
               <Route path="/insights">{() => <ErrorBoundary><AnimatedPage><InsightsPage /></AnimatedPage></ErrorBoundary>}</Route>
-              <Route path="/coaching">{() => <ErrorBoundary><AnimatedPage><CoachingPage /></AnimatedPage></ErrorBoundary>}</Route>
-              <Route path="/admin">{() => <ErrorBoundary><AnimatedPage><AdminPage /></AnimatedPage></ErrorBoundary>}</Route>
-              <Route path="/admin/templates">{() => <ErrorBoundary><AnimatedPage><PromptTemplatesPage /></AnimatedPage></ErrorBoundary>}</Route>
-              <Route path="/admin/settings">{() => <ErrorBoundary><AnimatedPage><SettingsPage /></AnimatedPage></ErrorBoundary>}</Route>
+              <Route path="/coaching">{() => <ErrorBoundary><AnimatedPage><ProtectedRoute minRole="manager"><CoachingPage /></ProtectedRoute></AnimatedPage></ErrorBoundary>}</Route>
+              <Route path="/admin">{() => <ErrorBoundary><AnimatedPage><ProtectedRoute minRole="admin"><AdminPage /></ProtectedRoute></AnimatedPage></ErrorBoundary>}</Route>
+              <Route path="/admin/templates">{() => <ErrorBoundary><AnimatedPage><ProtectedRoute minRole="admin"><PromptTemplatesPage /></ProtectedRoute></AnimatedPage></ErrorBoundary>}</Route>
+              <Route path="/admin/settings">{() => <ErrorBoundary><AnimatedPage><ProtectedRoute minRole="admin"><SettingsPage /></ProtectedRoute></AnimatedPage></ErrorBoundary>}</Route>
+              <Route path="/admin/audit-logs">{() => <ErrorBoundary><AnimatedPage><ProtectedRoute minRole="admin"><AuditLogsPage /></ProtectedRoute></AnimatedPage></ErrorBoundary>}</Route>
               <Route path="/onboarding">{() => <ErrorBoundary><OnboardingWizard /></ErrorBoundary>}</Route>
               <Route>{() => <AnimatedPage><NotFound /></AnimatedPage>}</Route>
             </Switch>

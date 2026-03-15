@@ -1,7 +1,26 @@
 import { useQuery } from "@tanstack/react-query";
-import { Phone, Heart, Clock, Star, AlertTriangle } from "lucide-react";
+import { Phone, Heart, Clock, Star, AlertTriangle, Upload } from "lucide-react";
 import { Skeleton } from "@/components/ui/skeleton";
+import { Button } from "@/components/ui/button";
+import { Link } from "wouter";
+import { motion } from "framer-motion";
+import { useCountUp } from "@/hooks/use-count-up";
+import { HelpTip } from "@/components/ui/help-tip";
 import type { DashboardMetrics } from "@shared/schema";
+
+const cardVariants = {
+  hidden: { opacity: 0, y: 16 },
+  visible: (i: number) => ({
+    opacity: 1,
+    y: 0,
+    transition: { delay: i * 0.08, duration: 0.35, ease: "easeOut" },
+  }),
+};
+
+function CountUpValue({ value, decimals = 1, suffix = "" }: { value: number; decimals?: number; suffix?: string }) {
+  const animated = useCountUp(value, 900);
+  return <>{animated.toFixed(decimals)}{suffix}</>;
+}
 
 export default function MetricsOverview() {
   const { data: metrics, isLoading, error } = useQuery<DashboardMetrics>({
@@ -38,66 +57,104 @@ export default function MetricsOverview() {
   }
 
   const totalCalls = metrics?.totalCalls ?? 0;
+  const avgSentiment = metrics?.avgSentiment ?? 0;
+  const avgTranscription = metrics?.avgTranscriptionTime ?? 0;
+  const avgPerformance = metrics?.avgPerformanceScore ?? 0;
+
+  if (totalCalls === 0) {
+    return (
+      <div className="modern-card rounded-xl p-8 text-center">
+        <div className="mx-auto w-16 h-16 bg-gradient-to-br from-primary/20 to-primary/5 rounded-full flex items-center justify-center mb-4">
+          <Phone className="w-7 h-7 text-primary/60" />
+        </div>
+        <h3 className="text-lg font-semibold text-foreground mb-1">No calls analyzed yet</h3>
+        <p className="text-sm text-muted-foreground mb-4 max-w-md mx-auto">
+          Upload your first call recording to see performance metrics, sentiment analysis, and AI-powered coaching insights.
+        </p>
+        <Link href="/upload">
+          <Button>
+            <Upload className="w-4 h-4 mr-2" />
+            Upload Your First Call
+          </Button>
+        </Link>
+      </div>
+    );
+  }
+
   const metricCards = [
     {
       title: "Total Calls",
-      value: totalCalls,
+      help: "Total number of call recordings that have been uploaded and analyzed.",
+      renderValue: () => <CountUpValue value={totalCalls} decimals={0} />,
       change: `${totalCalls} analyzed`,
       icon: Phone,
-      iconBg: "bg-gradient-to-br from-primary/20 to-primary/5",
-      iconColor: "text-primary",
-      accentBorder: "border-l-4 border-l-primary",
+      iconStyle: { background: "linear-gradient(135deg, hsla(var(--brand-from), 0.2), hsla(var(--brand-to), 0.1))" },
+      iconColorStyle: { color: "hsl(var(--brand-from))" },
+      glowClass: "metric-glow-brand",
     },
     {
       title: "Avg Sentiment",
-      value: `${(metrics?.avgSentiment ?? 0).toFixed(1)}/10`,
+      help: "Average customer sentiment score (0-10) across all analyzed calls. Higher is more positive.",
+      renderValue: () => <><CountUpValue value={avgSentiment} />/10</>,
       change: "Avg across calls",
       icon: Heart,
-      iconBg: "bg-gradient-to-br from-green-200 to-green-50 dark:from-green-900/40 dark:to-green-900/10",
-      iconColor: "text-green-600",
-      accentBorder: "border-l-4 border-l-green-500",
+      iconStyle: { background: "linear-gradient(135deg, rgba(16, 185, 129, 0.2), rgba(34, 197, 94, 0.1))" },
+      iconColorStyle: { color: "rgb(16, 185, 129)" },
+      glowClass: "metric-glow-green",
     },
     {
       title: "Transcription Time",
-      value: `${metrics?.avgTranscriptionTime ?? 0}min`,
+      help: "Average time to transcribe and analyze each call recording.",
+      renderValue: () => <><CountUpValue value={avgTranscription} decimals={0} />min</>,
       change: "Avg per call",
       icon: Clock,
-      iconBg: "bg-gradient-to-br from-blue-200 to-blue-50 dark:from-blue-900/40 dark:to-blue-900/10",
-      iconColor: "text-blue-600",
-      accentBorder: "border-l-4 border-l-blue-500",
+      iconStyle: { background: "linear-gradient(135deg, hsla(var(--brand-to), 0.2), hsla(var(--brand-to), 0.1))" },
+      iconColorStyle: { color: "hsl(var(--brand-to))" },
+      glowClass: "metric-glow-brand-alt",
     },
     {
       title: "Team Score",
-      value: `${(metrics?.avgPerformanceScore ?? 0).toFixed(1)}/10`,
+      help: "Average AI-generated performance score (0-10) across all agents. Based on compliance, communication, and resolution.",
+      renderValue: () => <><CountUpValue value={avgPerformance} />/10</>,
       change: "Avg performance",
       icon: Star,
-      iconBg: "bg-gradient-to-br from-purple-200 to-purple-50 dark:from-purple-900/40 dark:to-purple-900/10",
-      iconColor: "text-purple-600",
-      accentBorder: "border-l-4 border-l-purple-500",
+      iconStyle: { background: "linear-gradient(135deg, rgba(168, 85, 247, 0.2), rgba(236, 72, 153, 0.1))" },
+      iconColorStyle: { color: "rgb(168, 85, 247)" },
+      glowClass: "metric-glow-purple",
     },
   ];
 
   return (
     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6" data-testid="metrics-overview">
-      {metricCards.map((metric) => {
+      {metricCards.map((metric, i) => {
         const Icon = metric.icon;
         return (
-          <div key={metric.title} className={`metric-card rounded-lg p-6 ${metric.accentBorder}`}>
+          <motion.div
+            key={metric.title}
+            custom={i}
+            initial="hidden"
+            animate="visible"
+            variants={cardVariants}
+            className={`metric-card rounded-xl p-6 ${metric.glowClass}`}
+          >
             <div className="flex items-center justify-between">
               <div>
-                <p className="text-muted-foreground text-sm">{metric.title}</p>
-                <p className="text-2xl font-bold text-foreground" data-testid={`metric-${metric.title.toLowerCase().replace(/\s+/g, '-')}`}>
-                  {metric.value}
+                <p className="text-muted-foreground text-sm font-medium flex items-center gap-1">
+                  {metric.title}
+                  <HelpTip text={metric.help} />
                 </p>
-                <p className="text-xs mt-1 text-muted-foreground">
+                <p className="text-3xl font-bold text-foreground mt-1" data-testid={`metric-${metric.title.toLowerCase().replace(/\s+/g, '-')}`}>
+                  {metric.renderValue()}
+                </p>
+                <p className="text-xs mt-1.5 text-muted-foreground">
                   {metric.change}
                 </p>
               </div>
-              <div className={`w-12 h-12 ${metric.iconBg} rounded-lg flex items-center justify-center`}>
-                <Icon className={`${metric.iconColor} w-5 h-5`} />
+              <div className="w-12 h-12 rounded-xl flex items-center justify-center" style={metric.iconStyle}>
+                <Icon className="w-5 h-5" style={metric.iconColorStyle} />
               </div>
             </div>
-          </div>
+          </motion.div>
         );
       })}
     </div>

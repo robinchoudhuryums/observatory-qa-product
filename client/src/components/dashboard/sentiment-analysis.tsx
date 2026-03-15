@@ -1,6 +1,7 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { PieChart, Pie, Cell, ResponsiveContainer } from "recharts";
 import { AlertTriangle, RefreshCw } from "lucide-react";
+import { motion } from "framer-motion";
 import type { SentimentDistribution } from "@shared/schema";
 
 export default function SentimentAnalysis() {
@@ -26,7 +27,7 @@ export default function SentimentAnalysis() {
 
   if (isLoading) {
     return (
-      <div className="bg-card rounded-lg border border-border p-6">
+      <div className="modern-card rounded-xl p-6">
         <div className="animate-pulse">
           <div className="h-6 bg-muted rounded w-1/3 mb-4"></div>
           <div className="h-72 bg-muted rounded mb-4"></div>
@@ -54,7 +55,13 @@ export default function SentimentAnalysis() {
   const pct = (val: number) => total > 0 ? Math.round((val / total) * 100) : 0;
 
   return (
-    <div className="bg-card rounded-lg border border-border p-6" data-testid="sentiment-analysis">
+    <motion.div
+      initial={{ opacity: 0, y: 12 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.4, ease: "easeOut" }}
+      className="modern-card rounded-xl p-6"
+      data-testid="sentiment-analysis"
+    >
       <div className="flex items-center justify-between mb-4">
         <h3 className="text-lg font-semibold text-foreground">Sentiment Analysis</h3>
       </div>
@@ -70,6 +77,8 @@ export default function SentimentAnalysis() {
               outerRadius={100}
               paddingAngle={5}
               dataKey="value"
+              animationDuration={1000}
+              animationEasing="ease-out"
             >
               {chartData.map((entry, index) => (
                 <Cell key={`cell-${index}`} fill={entry.color} />
@@ -99,6 +108,6 @@ export default function SentimentAnalysis() {
           <p className="text-sm font-medium">Negative ({negative})</p>
         </div>
       </div>
-    </div>
+    </motion.div>
   );
 }

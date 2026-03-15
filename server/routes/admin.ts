@@ -1,12 +1,14 @@
 import type { Express } from "express";
 import { storage } from "../storage";
-import { requireAuth, requireRole, injectOrgContext } from "../auth";
+import { requireAuth, requireRole, injectOrgContext, hashPassword } from "../auth";
 import { aiProvider } from "../services/ai-factory";
 import { assemblyAIService } from "../services/assemblyai";
 import { broadcastCallUpdate } from "../services/websocket";
-import { insertPromptTemplateSchema } from "@shared/schema";
+import { insertPromptTemplateSchema, orgSettingsSchema, type OrgSettings } from "@shared/schema";
 import { logger } from "../services/logger";
+import { queryAuditLogs } from "../services/audit-log";
 import { safeInt, withRetry } from "./helpers";
+import { enqueueReanalysis } from "../services/queue";
 
 export function registerAdminRoutes(app: Express): void {
   // ==================== PROMPT TEMPLATE ROUTES (admin only) ====================
@@ -108,12 +110,25 @@ export function registerAdminRoutes(app: Express): void {
         };
       }
 
-      // Queue re-analysis in background (respond immediately)
       const orgId = req.orgId!;
       const queued = targetCalls.length;
-      res.json({ message: `Re-analysis queued for ${queued} calls`, queued });
+      const callIds = targetCalls.map(c => c.id);
 
-      // Process in background with bounded concurrency
+      // Try BullMQ queue first; fall back to in-process execution
+      const enqueued = await enqueueReanalysis({
+        orgId,
+        callIds,
+        requestedBy: req.user?.username || "unknown",
+      });
+
+      if (enqueued) {
+        res.json({ message: `Re-analysis queued for ${queued} calls`, queued });
+        return;
+      }
+
+      // Fallback: in-process execution (no Redis)
+      res.json({ message: `Re-analysis started for ${queued} calls (in-process)`, queued });
+
       (async () => {
         let succeeded = 0;
         let failed = 0;
@@ -146,15 +161,15 @@ export function registerAdminRoutes(app: Express): void {
             await storage.createCallAnalysis(orgId, { ...analysis, callId: call.id });
             succeeded++;
           } catch (error) {
-            console.error(`[REANALYZE] Failed for call ${call.id}:`, (error as Error).message);
+            logger.error({ err: error, callId: call.id }, "Reanalysis failed for call");
             failed++;
           }
         }
-        console.log(`[REANALYZE] Complete: ${succeeded} succeeded, ${failed} failed out of ${queued}`);
+        logger.info({ succeeded, failed, total: queued }, "Reanalysis complete");
         broadcastCallUpdate("bulk", "reanalysis_complete", { succeeded, failed, total: queued }, orgId);
-      })().catch(err => console.error("[REANALYZE] Bulk re-analysis failed:", err));
+      })().catch(err => logger.error({ err }, "Bulk re-analysis failed"));
     } catch (error) {
-      console.error("Failed to start re-analysis:", (error as Error).message);
+      logger.error({ err: error }, "Failed to start re-analysis");
       res.status(500).json({ message: "Failed to start re-analysis" });
     }
   });
@@ -199,13 +214,7 @@ export function registerAdminRoutes(app: Express): void {
         return res.status(409).json({ message: "Username already exists" });
       }
 
-      // Hash password
-      const { scrypt, randomBytes } = await import("crypto");
-      const { promisify } = await import("util");
-      const scryptAsync = promisify(scrypt);
-      const salt = randomBytes(16).toString("hex");
-      const buf = (await scryptAsync(password, salt, 64)) as Buffer;
-      const passwordHash = `${buf.toString("hex")}.${salt}`;
+      const passwordHash = await hashPassword(password);
 
       const user = await storage.createUser({
         orgId: req.orgId!,
@@ -238,12 +247,7 @@ export function registerAdminRoutes(app: Express): void {
 
       // Hash new password if provided
       if (password) {
-        const { scrypt, randomBytes } = await import("crypto");
-        const { promisify } = await import("util");
-        const scryptAsync = promisify(scrypt);
-        const salt = randomBytes(16).toString("hex");
-        const buf = (await scryptAsync(password, salt, 64)) as Buffer;
-        updates.passwordHash = `${buf.toString("hex")}.${salt}`;
+        updates.passwordHash = await hashPassword(password);
       }
 
       const updated = await storage.updateUser(req.orgId!, req.params.id, updates as any);
@@ -302,13 +306,51 @@ export function registerAdminRoutes(app: Express): void {
       const org = await storage.getOrganization(req.orgId!);
       if (!org) return res.status(404).json({ message: "Organization not found" });
 
-      const updatedSettings = { ...org.settings, ...req.body };
+      const parsed = orgSettingsSchema.partial().safeParse(req.body);
+      if (!parsed.success) {
+        return res.status(400).json({ message: "Invalid settings", errors: parsed.error.flatten() });
+      }
+      const updatedSettings = { ...(org.settings || {}), ...parsed.data } as OrgSettings;
       const updated = await storage.updateOrganization(req.orgId!, { settings: updatedSettings });
       logger.info({ org: req.orgId }, "Organization settings updated");
       res.json(updated);
     } catch (error) {
       logger.error({ err: error }, "Failed to update organization settings");
       res.status(500).json({ message: "Failed to update settings" });
+    }
+  });
+
+  // ============================================================
+  // AUDIT LOG VIEWER (admin only)
+  // ============================================================
+
+  app.get("/api/admin/audit-logs", requireAuth, requireRole("admin"), injectOrgContext, async (req, res) => {
+    try {
+      const { event, userId, resourceType, from, to, page, limit } = req.query;
+      const pageNum = Math.max(1, safeInt(page, 1));
+      const pageLimit = Math.min(safeInt(limit, 50), 200);
+
+      const result = await queryAuditLogs({
+        orgId: req.orgId!,
+        event: event as string | undefined,
+        userId: userId as string | undefined,
+        resourceType: resourceType as string | undefined,
+        from: from ? new Date(from as string) : undefined,
+        to: to ? new Date(to as string) : undefined,
+        limit: pageLimit,
+        offset: (pageNum - 1) * pageLimit,
+      });
+
+      res.json({
+        entries: result.entries,
+        total: result.total,
+        page: pageNum,
+        pageSize: pageLimit,
+        totalPages: Math.ceil(result.total / pageLimit),
+      });
+    } catch (error) {
+      logger.error({ err: error }, "Failed to fetch audit logs");
+      res.status(500).json({ message: "Failed to fetch audit logs" });
     }
   });
 }

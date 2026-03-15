@@ -1,39 +1,20 @@
 /**
  * Factory that selects the AI analysis provider based on configuration.
  *
- * Priority:
- *   1. Per-org AI provider (from OrgSettings.aiProvider / bedrockModel)
- *   2. AI_PROVIDER env var (explicit choice: "gemini" or "bedrock")
- *   3. Auto-detect based on available credentials
+ * Uses AWS Bedrock (Claude) as the sole AI provider.
+ * Per-org model overrides are supported via OrgSettings.bedrockModel.
  */
 import type { AIAnalysisProvider } from "./ai-provider";
-import { GeminiProvider } from "./gemini";
 import { BedrockProvider } from "./bedrock";
 import type { OrgSettings } from "@shared/schema";
+import { logger } from "./logger";
 
 function createProvider(modelOverride?: string): AIAnalysisProvider {
-  const explicit = process.env.AI_PROVIDER?.toLowerCase();
+  const provider = new BedrockProvider(modelOverride);
+  if (provider.isAvailable) return provider;
 
-  if (explicit === "bedrock") {
-    const provider = new BedrockProvider(modelOverride);
-    if (provider.isAvailable) return provider;
-    console.warn("AI_PROVIDER=bedrock but AWS credentials missing. Falling back to Gemini.");
-  }
-
-  if (explicit === "gemini" || !explicit) {
-    const gemini = new GeminiProvider();
-    if (gemini.isAvailable) return gemini;
-  }
-
-  // Auto-detect: try Bedrock if Gemini wasn't available
-  if (!explicit) {
-    const bedrock = new BedrockProvider(modelOverride);
-    if (bedrock.isAvailable) return bedrock;
-  }
-
-  // No provider available — return a Gemini stub (isAvailable = false)
-  console.warn("No AI analysis provider configured. Analysis will use transcript-based defaults.");
-  return new GeminiProvider();
+  logger.warn("AWS credentials not configured — AI analysis will use transcript-based defaults");
+  return provider;
 }
 
 // Default global provider (used when no org-specific config exists)
@@ -44,28 +25,19 @@ const orgProviderCache = new Map<string, AIAnalysisProvider>();
 
 /**
  * Get the AI provider for a specific organization.
- * Uses org settings to select provider/model, falling back to global default.
+ * Uses org settings for model override, falling back to global default.
  */
 export function getOrgAIProvider(orgId: string, orgSettings?: OrgSettings | null): AIAnalysisProvider {
-  if (!orgSettings?.aiProvider) {
+  if (!orgSettings?.bedrockModel) {
     return aiProvider; // Use global default
   }
 
-  const cacheKey = `${orgId}:${orgSettings.aiProvider}`;
+  const cacheKey = `${orgId}:${orgSettings.bedrockModel}`;
   const cached = orgProviderCache.get(cacheKey);
   if (cached) return cached;
 
-  let provider: AIAnalysisProvider;
-  if (orgSettings.aiProvider === "bedrock") {
-    provider = new BedrockProvider();
-    if (!provider.isAvailable) provider = aiProvider; // Fallback to global
-  } else if (orgSettings.aiProvider === "gemini") {
-    provider = new GeminiProvider();
-    if (!provider.isAvailable) provider = aiProvider;
-  } else {
-    provider = aiProvider;
-  }
-
-  orgProviderCache.set(cacheKey, provider);
-  return provider;
+  const provider = new BedrockProvider(orgSettings.bedrockModel);
+  const resolved = provider.isAvailable ? provider : aiProvider;
+  orgProviderCache.set(cacheKey, resolved);
+  return resolved;
 }

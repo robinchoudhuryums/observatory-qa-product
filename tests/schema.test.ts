@@ -163,6 +163,7 @@ describe("insertAccessRequestSchema", () => {
 describe("insertUserSchema", () => {
   it("accepts valid user", () => {
     const result = insertUserSchema.safeParse({
+      orgId: "org-1",
       username: "admin",
       passwordHash: "hashed_password_here",
       name: "Admin User",
@@ -173,12 +174,22 @@ describe("insertUserSchema", () => {
 
   it("defaults role to viewer", () => {
     const result = insertUserSchema.safeParse({
+      orgId: "org-1",
       username: "viewer1",
       passwordHash: "hashed_password_here",
       name: "View Only",
     });
     assert.ok(result.success, `Parse failed: ${JSON.stringify(result.error?.issues)}`);
     assert.equal(result.data.role, "viewer");
+  });
+
+  it("requires orgId", () => {
+    const result = insertUserSchema.safeParse({
+      username: "user1",
+      passwordHash: "hashed_password_here",
+      name: "No Org",
+    });
+    assert.ok(!result.success, "Should reject user without orgId");
   });
 });
 
@@ -245,7 +256,7 @@ describe("insertOrganizationSchema", () => {
         callPartyTypes: ["customer", "vendor"],
         retentionDays: 180,
         branding: { appName: "AcmeQA", logoUrl: "https://acme.com/logo.png" },
-        aiProvider: "bedrock",
+        bedrockModel: "us.anthropic.claude-sonnet-4-6",
       },
       status: "active",
     });
@@ -340,12 +351,10 @@ describe("orgSettingsSchema", () => {
     assert.equal(result.data.retentionDays, 90);
   });
 
-  it("validates aiProvider enum", () => {
-    const valid = orgSettingsSchema.safeParse({ aiProvider: "bedrock" });
+  it("accepts bedrockModel override", () => {
+    const valid = orgSettingsSchema.safeParse({ bedrockModel: "us.anthropic.claude-haiku-4-5-20251001" });
     assert.ok(valid.success);
-
-    const invalid = orgSettingsSchema.safeParse({ aiProvider: "openai" });
-    assert.ok(!invalid.success);
+    assert.equal(valid.data.bedrockModel, "us.anthropic.claude-haiku-4-5-20251001");
   });
 
   it("accepts branding with default appName", () => {
@@ -433,7 +442,7 @@ describe("orgId field across insert schemas", () => {
   });
 
   it("all insert schemas work without orgId (backward compat)", () => {
-    // Verify none of the insert schemas require orgId
+    // Verify most insert schemas don't require orgId (insertUserSchema now requires it)
     const results = [
       insertCallSchema.safeParse({ status: "pending" }),
       insertCallAnalysisSchema.safeParse({ callId: "c1" }),
@@ -441,7 +450,7 @@ describe("orgId field across insert schemas", () => {
       insertSentimentAnalysisSchema.safeParse({ callId: "c1" }),
       insertCoachingSessionSchema.safeParse({ employeeId: "e1", assignedBy: "m1", title: "T" }),
       insertAccessRequestSchema.safeParse({ name: "J", email: "j@x.com" }),
-      insertUserSchema.safeParse({ username: "u", passwordHash: "h", name: "N" }),
+      insertUserSchema.safeParse({ orgId: "org-1", username: "u", passwordHash: "h", name: "N" }),
       insertEmployeeSchema.safeParse({ name: "E", email: "e@x.com" }),
     ];
     results.forEach((r, i) => {
