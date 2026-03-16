@@ -1,4 +1,4 @@
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Poppins:wght@300;400;500;600;700&display=swap');
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
@@ -36,7 +36,7 @@
   --sidebar-accent-foreground: hsl(203.8863, 88.2845%, 53.1373%);
   --sidebar-border: hsl(205.0000, 25.0000%, 90.5882%);
   --sidebar-ring: hsl(202.8169, 89.1213%, 53.1373%);
-  --font-sans: 'Plus Jakarta Sans', 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+  --font-sans: 'Poppins', 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
   --font-serif: Georgia, serif;
   --font-mono: Menlo, monospace;
   /* Brand gradient defaults (overridden by BrandingProvider per-org) */
@@ -334,7 +334,7 @@
 
 /* ── Landing Page ──────────────────────────────────────────── */
 
-/* Wave line animation — drift + brightness pulse + glow sweep */
+/* Wave line animation — gentle drift; spark effect handled by SVG SMIL <animate> */
 @keyframes wave-drift {
   0%, 100% { transform: translateX(0) translateY(0); }
   25% { transform: translateX(-15px) translateY(-8px); }
@@ -342,40 +342,12 @@
   75% { transform: translateX(-20px) translateY(-3px); }
 }
 
-/* Glow sweep: opacity + stroke-width pulse that sweeps across lines via staggered delays */
-@keyframes wave-glow-sweep {
-  0%, 100% {
-    stroke-opacity: var(--wave-base-opacity, 0.25);
-    stroke-width: 1.5;
-  }
-  40%, 60% {
-    stroke-opacity: calc(var(--wave-base-opacity, 0.25) + 0.4);
-    stroke-width: 3;
-  }
-}
-
-/* Hue rotation via SVG filter — much more visible than CSS hsl calc */
-@keyframes wave-hue-rotate {
-  0%   { filter: hue-rotate(0deg) brightness(1); }
-  25%  { filter: hue-rotate(25deg) brightness(1.3); }
-  50%  { filter: hue-rotate(50deg) brightness(1); }
-  75%  { filter: hue-rotate(25deg) brightness(1.3); }
-  100% { filter: hue-rotate(0deg) brightness(1); }
-}
-
 .wave-line {
-  animation:
-    wave-drift 10s ease-in-out infinite,
-    wave-hue-rotate 15s ease-in-out infinite var(--hue-shift-delay, 0s),
-    wave-glow-sweep 5s ease-in-out infinite var(--glow-delay, 0s);
+  animation: wave-drift 10s ease-in-out infinite;
 }
 
-/* Glow layer: blurred duplicate paths rendered behind the sharp ones */
 .wave-line-glow {
-  animation:
-    wave-drift 10s ease-in-out infinite,
-    wave-hue-rotate 15s ease-in-out infinite var(--hue-shift-delay, 0s),
-    wave-glow-sweep 5s ease-in-out infinite var(--glow-delay, 0s);
+  animation: wave-drift 10s ease-in-out infinite;
 }
 
 /* Landing page headings — tighter tracking for large display text */

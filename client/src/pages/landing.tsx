@@ -9,48 +9,65 @@ interface LandingPageProps {
   onNavigate: (view: "login" | "register") => void;
 }
 
-/** Animated flowing wave lines — SVG-based with color shift, glow sweep, and blur layers */
+/** Animated flowing wave lines with traveling spark/pulse effect */
 function WaveBackground() {
   const waves = Array.from({ length: 18 }, (_, i) => {
     const yBase = 150 + i * 22;
     const amplitude = 60 + Math.sin(i * 0.7) * 30;
     const phase = i * 25;
-    const opacity = 0.15 + (i / 18) * 0.35;
+    const opacity = 0.18 + (i / 18) * 0.32;
     const hue = 170 + (i / 18) * 160; // teal → rose
     const saturation = 80 + Math.sin(i * 0.5) * 15;
+    const color = `hsl(${hue}, ${saturation}%, 55%)`;
+    const brightColor = `hsl(${hue}, ${Math.min(saturation + 15, 100)}%, 75%)`;
 
     const d = `M-100,${yBase} C200,${yBase - amplitude + phase * 0.1} 400,${yBase + amplitude - phase * 0.05} 600,${yBase} C800,${yBase - amplitude * 0.7} 1000,${yBase + amplitude * 0.5} 1200,${yBase} C1400,${yBase - amplitude * 0.3} 1600,${yBase + amplitude * 0.8} 2000,${yBase}`;
 
-    const animStyle = {
-      animationDelay: `${i * 0.3}s`,
-      animationDuration: `${8 + i * 0.5}s`,
-      ["--hue-shift-delay" as string]: `${i * -0.8}s`,
-      ["--glow-delay" as string]: `${i * 0.25}s`,
-      ["--wave-base-opacity" as string]: `${opacity}`,
-    };
+    // Stagger the spark timing: each line's spark is offset slightly
+    const sparkDelay = i * 0.15;
+    const sparkDuration = 3.5 + (i % 3) * 0.5; // vary slightly per line
+    const gradId = `spark-${i}`;
 
     return (
       <g key={i}>
-        {/* Glow layer — blurred, wider stroke behind the main line */}
+        {/* Animated gradient definition for this line's traveling spark */}
+        <linearGradient id={gradId} x1="0" y1="0" x2="1" y2="0">
+          <stop offset="0%" stopColor={color} stopOpacity={opacity * 0.6} />
+          <stop offset="0%" stopColor={brightColor} stopOpacity={Math.min(opacity + 0.5, 1)}>
+            <animate attributeName="offset" values="-0.15;1.15" dur={`${sparkDuration}s`} begin={`${sparkDelay}s`} repeatCount="indefinite" />
+          </stop>
+          <stop offset="0%" stopColor={color} stopOpacity={opacity * 0.6}>
+            <animate attributeName="offset" values="-0.05;1.25" dur={`${sparkDuration}s`} begin={`${sparkDelay}s`} repeatCount="indefinite" />
+          </stop>
+          <stop offset="100%" stopColor={color} stopOpacity={opacity * 0.6} />
+        </linearGradient>
+
+        {/* Blurred glow layer — follows the spark */}
         <path
           d={d}
           fill="none"
-          stroke={`hsl(${hue}, ${saturation}%, 60%)`}
-          strokeWidth="6"
-          opacity={opacity * 0.5}
+          stroke={`url(#${gradId})`}
+          strokeWidth="8"
+          opacity={opacity * 0.4}
           className="wave-line-glow"
-          style={animStyle}
+          style={{
+            animationDelay: `${i * 0.3}s`,
+            animationDuration: `${8 + i * 0.5}s`,
+          }}
           filter="url(#wave-blur)"
         />
-        {/* Sharp foreground line */}
+        {/* Sharp foreground line with the spark gradient */}
         <path
           d={d}
           fill="none"
-          stroke={`hsl(${hue}, ${saturation}%, 50%)`}
+          stroke={`url(#${gradId})`}
           strokeWidth="1.5"
-          opacity={opacity}
+          opacity={1}
           className="wave-line"
-          style={animStyle}
+          style={{
+            animationDelay: `${i * 0.3}s`,
+            animationDuration: `${8 + i * 0.5}s`,
+          }}
         />
       </g>
     );
@@ -65,7 +82,7 @@ function WaveBackground() {
       >
         <defs>
           <filter id="wave-blur">
-            <feGaussianBlur stdDeviation="4" />
+            <feGaussianBlur stdDeviation="5" />
           </filter>
         </defs>
         {waves}
