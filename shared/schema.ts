@@ -108,6 +108,14 @@ export const CALL_CATEGORIES = [
   { value: "vendor", label: "Vendor/Partner", description: "Call with an external vendor or partner" },
   { value: "clinical_encounter", label: "Clinical Encounter", description: "Doctor-patient clinical visit recording" },
   { value: "telemedicine", label: "Telemedicine Visit", description: "Remote telehealth consultation" },
+  // Dental practice categories
+  { value: "dental_scheduling", label: "Dental Scheduling", description: "Appointment scheduling, rescheduling, or cancellation call" },
+  { value: "dental_insurance", label: "Dental Insurance", description: "Insurance verification, benefits explanation, or pre-authorization" },
+  { value: "dental_treatment", label: "Dental Treatment Discussion", description: "Treatment plan discussion, acceptance, or financial arrangements" },
+  { value: "dental_recall", label: "Dental Recall/Recare", description: "Recall or recare reminder call, hygiene appointment booking" },
+  { value: "dental_emergency", label: "Dental Emergency Triage", description: "Emergency triage call — toothache, trauma, swelling" },
+  { value: "dental_encounter", label: "Dental Clinical Encounter", description: "In-office dental visit or procedure recording" },
+  { value: "dental_consultation", label: "Dental Consultation", description: "New patient consultation or second opinion" },
 ] as const;
 
 // --- CLINICAL NOTE SCHEMAS ---
@@ -123,6 +131,14 @@ export const CLINICAL_SPECIALTIES = [
   { value: "emergency", label: "Emergency Medicine" },
   { value: "urgent_care", label: "Urgent Care" },
   { value: "general", label: "General / Other" },
+  // Dental specialties
+  { value: "general_dentistry", label: "General Dentistry" },
+  { value: "periodontics", label: "Periodontics" },
+  { value: "endodontics", label: "Endodontics" },
+  { value: "oral_surgery", label: "Oral & Maxillofacial Surgery" },
+  { value: "orthodontics", label: "Orthodontics" },
+  { value: "prosthodontics", label: "Prosthodontics" },
+  { value: "pediatric_dentistry", label: "Pediatric Dentistry" },
 ] as const;
 
 export const CLINICAL_NOTE_FORMATS = [
@@ -130,6 +146,14 @@ export const CLINICAL_NOTE_FORMATS = [
   { value: "hpi_focused", label: "HPI-Focused", description: "Detailed History of Present Illness narrative" },
   { value: "procedure_note", label: "Procedure Note", description: "Procedural documentation" },
   { value: "progress_note", label: "Progress Note", description: "Follow-up visit documentation" },
+  // Dental note formats
+  { value: "dental_exam", label: "Dental Examination", description: "Comprehensive or periodic oral examination" },
+  { value: "dental_operative", label: "Operative Note", description: "Restorative/operative procedure documentation" },
+  { value: "dental_perio", label: "Periodontal Note", description: "Periodontal examination and treatment" },
+  { value: "dental_endo", label: "Endodontic Note", description: "Root canal or endodontic procedure" },
+  { value: "dental_ortho_progress", label: "Ortho Progress Note", description: "Orthodontic adjustment/progress visit" },
+  { value: "dental_surgery", label: "Oral Surgery Note", description: "Extraction or oral surgery documentation" },
+  { value: "dental_treatment_plan", label: "Treatment Plan", description: "Comprehensive treatment plan documentation" },
 ] as const;
 
 export const clinicalNoteSchema = z.object({
@@ -156,6 +180,17 @@ export const clinicalNoteSchema = z.object({
   missingSections: z.array(z.string()).optional(),
   patientConsentObtained: z.boolean().optional(),
   providerAttested: z.boolean().default(false),
+  // Dental-specific fields
+  cdtCodes: z.array(z.object({ code: z.string(), description: z.string() })).optional(),
+  toothNumbers: z.array(z.string()).optional(),
+  quadrants: z.array(z.string()).optional(),
+  periodontalFindings: z.record(z.string()).optional(),
+  treatmentPhases: z.array(z.object({
+    phase: z.number(),
+    description: z.string(),
+    procedures: z.array(z.string()),
+    estimatedCost: z.string().optional(),
+  })).optional(),
 });
 
 export type ClinicalNote = z.infer<typeof clinicalNoteSchema>;

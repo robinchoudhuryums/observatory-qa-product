@@ -120,6 +120,15 @@ const CATEGORY_CONTEXT: Record<string, string> = {
   vendor: "This is a VENDOR/PARTNER call — the employee is speaking with an external vendor or business partner. Evaluate negotiation, clarity, and professionalism.",
   clinical_encounter: "This is a CLINICAL ENCOUNTER recording — a healthcare provider seeing a patient in person. One speaker is the provider (doctor/NP/PA) and the other is the patient. Focus on clinical documentation accuracy rather than customer service metrics.",
   telemedicine: "This is a TELEMEDICINE VISIT — a remote healthcare consultation via phone or video. One speaker is the healthcare provider and the other is the patient. Focus on clinical documentation accuracy rather than customer service metrics.",
+  // Dental front desk call categories
+  dental_scheduling: "This is a DENTAL SCHEDULING call — a patient or prospective patient is calling to schedule, reschedule, or cancel a dental appointment. One speaker is the front desk staff and the other is the patient. Evaluate scheduling efficiency, patient experience, and whether the staff properly verified insurance and patient identity.",
+  dental_insurance: "This is a DENTAL INSURANCE call — the front desk or billing staff is handling insurance verification, benefits explanation, or pre-authorization. Evaluate accuracy of insurance information communicated, clarity of patient financial responsibility explanation, and compliance with billing protocols.",
+  dental_treatment: "This is a DENTAL TREATMENT DISCUSSION call — staff is discussing a treatment plan with a patient, including procedures, costs, payment options, and scheduling. Evaluate treatment acceptance techniques, clarity of financial presentation, and whether all patient questions were addressed. Track whether the patient accepted, deferred, or declined the proposed treatment.",
+  dental_recall: "This is a DENTAL RECALL/RECARE call — staff is contacting a patient for a recall or recare appointment (routine cleaning, periodic exam). Evaluate persuasiveness, professionalism, and whether the staff communicated the importance of preventive care.",
+  dental_emergency: "This is a DENTAL EMERGENCY TRIAGE call — a patient is calling about an urgent dental issue (toothache, trauma, swelling, broken tooth). One speaker is the front desk or clinical staff and the other is the patient. Evaluate whether proper triage questions were asked (onset, severity, symptoms, allergies, medications), appropriate urgency assessment was made, and clear next-step instructions were given.",
+  // Dental clinical documentation categories
+  dental_encounter: "This is a DENTAL CLINICAL ENCOUNTER — a dentist, hygienist, or dental specialist treating a patient in the office. Focus on clinical documentation accuracy, procedure details, and dental-specific terminology. Use CDT (Current Dental Terminology) codes instead of CPT codes.",
+  dental_consultation: "This is a DENTAL CONSULTATION — a new patient evaluation or second-opinion visit. Focus on comprehensive examination findings, treatment planning, and patient education. Use CDT codes for any procedures discussed or performed.",
 };
 
 export interface PromptTemplateConfig {
@@ -164,7 +173,11 @@ function smartTruncate(text: string, maxChars = 80000): string {
  */
 export function buildSystemPrompt(callCategory?: string, template?: PromptTemplateConfig): string {
   // Clinical documentation mode — entirely different output schema
-  if (callCategory === "clinical_encounter" || callCategory === "telemedicine") {
+  const clinicalCategories = ["clinical_encounter", "telemedicine", "dental_encounter", "dental_consultation"];
+  if (callCategory && clinicalCategories.includes(callCategory)) {
+    if (callCategory === "dental_encounter" || callCategory === "dental_consultation") {
+      return buildDentalClinicalSystemPrompt(callCategory, template);
+    }
     return buildClinicalSystemPrompt(callCategory, template);
   }
 
@@ -318,6 +331,76 @@ IMPORTANT:
 - If information for a section was not discussed, note it in missing_sections
 - Use standard medical terminology and abbreviations where appropriate
 - ICD-10 and CPT codes are suggestions only — provider must verify`;
+}
+
+/**
+ * Build dental-specific clinical documentation system prompt.
+ * Outputs dental SOAP notes with CDT codes, tooth numbers, and periodontal findings.
+ */
+function buildDentalClinicalSystemPrompt(callCategory: string, template?: PromptTemplateConfig): string {
+  const categoryContext = CATEGORY_CONTEXT[callCategory] || "";
+
+  let referenceSection = "";
+  if (template?.referenceDocuments && template.referenceDocuments.length > 0) {
+    const isRagRetrieved = template.referenceDocuments.some(d => d.category === "rag_retrieval");
+    if (isRagRetrieved) {
+      const ragText = template.referenceDocuments.map(d => d.text).join("\n\n");
+      referenceSection = `\n- DENTAL KNOWLEDGE BASE: ${ragText}`;
+    } else {
+      const docSnippets = template.referenceDocuments.slice(0, 5).map(d => `--- ${d.name} ---\n${d.text.slice(0, 3000)}`);
+      referenceSection = `\n- REFERENCE MATERIALS:\n${docSnippets.join("\n\n")}`;
+    }
+  }
+
+  let additionalSection = "";
+  if (template?.additionalInstructions) {
+    additionalSection = `\n- ADDITIONAL INSTRUCTIONS:\n${template.additionalInstructions}`;
+  }
+
+  return `You are a dental clinical documentation AI assistant analyzing a recorded dental encounter. Your task is to draft structured dental clinical notes from the provider-patient conversation.
+
+CALL CONTEXT:
+${categoryContext}
+${referenceSection}${additionalSection}
+
+Respond with ONLY valid JSON (no markdown, no code fences). The JSON must contain standard analysis fields AND a dental-specific clinical_note object:
+
+{"summary":"Brief encounter summary","topics":["chief complaint","procedures performed"],"sentiment":"positive|neutral|negative","sentiment_score":0.0,"performance_score":0.0,"sub_scores":{"compliance":0.0,"customer_experience":0.0,"communication":0.0,"resolution":0.0},"action_items":["follow-up items"],"feedback":{"strengths":[{"text":"...","timestamp":"MM:SS"}],"suggestions":[{"text":"...","timestamp":"MM:SS"}]},"call_party_type":"medical_facility","flags":[],"detected_agent_name":null,"clinical_note":{"format":"dental_exam","chief_complaint":"...","subjective":"Patient-reported symptoms, dental history, pain description","objective":"Clinical findings, radiographic findings, intraoral exam","assessment":"Dental diagnoses and clinical assessment","plan":["Treatment plan items"],"tooth_numbers":["14","19"],"quadrants":["UR","LL"],"cdt_codes":[{"code":"D0150","description":"Comprehensive oral evaluation"}],"icd10_codes":[{"code":"K02.9","description":"Dental caries, unspecified"}],"periodontal_findings":{"probing_depths":"Generalized 2-3mm, localized 5mm on #3 mesial","bleeding_on_probing":"Localized BOP #3, #14","gingival_description":"Marginal erythema localized to #3"},"treatment_phases":[{"phase":1,"description":"Disease control","procedures":["SRP quadrants 1-4","Re-evaluation 4-6 weeks"],"estimated_cost":"$800-1200"}],"prescriptions":[{"medication":"Amoxicillin 500mg","dosage":"TID x 7 days","instructions":"Take with food, complete full course"}],"follow_up":"Return in 2 weeks for re-evaluation","documentation_completeness":0.0,"clinical_accuracy":0.0,"missing_sections":["sections not covered"]}}
+
+Guidelines for standard fields:
+- summary: Brief 1-2 sentence encounter summary
+- sentiment_score: 0.0-1.0 (patient comfort/satisfaction level)
+- performance_score: 0.0-10.0 (clinical documentation quality)
+- sub_scores: compliance (clinical guidelines adherence), customer_experience (chairside manner), communication (explanation clarity), resolution (addressed patient concerns)
+- detected_agent_name: Provider's name if stated. Return null if uncertain.
+
+Guidelines for dental clinical_note:
+- format: "dental_exam", "dental_operative", "dental_perio", "dental_endo", "dental_ortho_progress", "dental_surgery", or "dental_treatment_plan"
+- chief_complaint: Primary reason for visit in patient's own words
+- subjective: Patient-reported symptoms, dental history, pain level/location, relevant medical history, medications, allergies
+- objective: Clinical findings — intraoral exam, extraoral exam, radiographic findings, vitals if taken
+- assessment: Dental diagnoses with tooth-specific findings
+- plan: Specific treatment steps (procedures, referrals, follow-up)
+- tooth_numbers: Use Universal Numbering System (1-32 for permanent, A-T for primary teeth)
+- quadrants: Affected quadrants (UR=upper right, UL=upper left, LR=lower right, LL=lower left)
+- cdt_codes: CDT (Current Dental Terminology) procedure codes — these are SUGGESTIONS for provider review
+- icd10_codes: Relevant ICD-10-CM diagnostic codes
+- periodontal_findings: Probing depths, bleeding on probing, attachment levels, gingival description, mobility, furcation involvement
+- treatment_phases: For comprehensive plans, organize into phases (1=urgent/disease control, 2=definitive, 3=maintenance)
+- prescriptions: Medications prescribed (antibiotics, analgesics, mouth rinses)
+- follow_up: Return visit timing and instructions
+- documentation_completeness: 0.0-10.0
+- clinical_accuracy: 0.0-10.0
+- missing_sections: Standard sections not covered in the encounter
+
+IMPORTANT:
+- All clinical notes are DRAFTS requiring dentist attestation before use
+- Do NOT fabricate findings not discussed in the encounter
+- Use standard dental terminology (mesial, distal, buccal, lingual, occlusal, etc.)
+- Tooth numbers use Universal Numbering System (1-32) unless Palmer notation is explicitly used
+- CDT codes are suggestions only — the dentist must verify and sign off
+- ICD-10-CM codes for dental: K00-K14 (diseases of oral cavity), K02 (caries), K05 (gingivitis/periodontal), K08 (other disorders)
+- If a procedure was discussed but not performed, note it in the plan, not as a completed procedure`;
 }
 
 /**

@@ -1,0 +1,66 @@
+[
+  {
+    "callCategory": "dental_scheduling",
+    "name": "Dental Scheduling QA",
+    "evaluationCriteria": "Evaluate the front desk staff on:\n1. Patient identity verification (full name, DOB, or last 4 SSN)\n2. Insurance verification or confirmation of insurance on file\n3. Appointment type confirmation (cleaning, exam, procedure, emergency)\n4. Scheduling efficiency — offered multiple time options, filled open slots when possible\n5. Confirmation of appointment details (date, time, provider, location if multi-office)\n6. Pre-appointment instructions communicated (arrive early, bring insurance card, nothing to eat before sedation, etc.)\n7. Friendly, professional tone throughout\n8. HIPAA compliance — did not share PHI with unauthorized parties",
+    "requiredPhrases": [
+      { "phrase": "verify your date of birth", "label": "Patient Identity Verification", "severity": "required" },
+      { "phrase": "confirm your insurance", "label": "Insurance Confirmation", "severity": "recommended" },
+      { "phrase": "arrive 15 minutes early", "label": "Early Arrival Instructions", "severity": "recommended" },
+      { "phrase": "Is there anything else I can help you with", "label": "Closing Offer", "severity": "recommended" }
+    ],
+    "scoringWeights": { "compliance": 30, "customerExperience": 30, "communication": 25, "resolution": 15 },
+    "additionalInstructions": "Pay special attention to whether the staff proactively checked for insurance changes, mentioned any outstanding balance, and confirmed the correct provider. Note if the patient was a new patient vs. established — new patients should be offered a longer appointment slot and asked to complete forms in advance."
+  },
+  {
+    "callCategory": "dental_insurance",
+    "name": "Dental Insurance Verification QA",
+    "evaluationCriteria": "Evaluate the front desk/billing staff on:\n1. Accuracy of insurance benefits communicated (coverage percentages, deductibles, annual maximums)\n2. Clear explanation of patient financial responsibility (copay, coinsurance, out-of-pocket)\n3. Waiting period disclosure if applicable\n4. Frequency limitations explained (e.g., cleanings covered 2x/year, x-rays 1x/year)\n5. Pre-authorization requirements communicated for major procedures\n6. Written estimate offered for procedures over $500\n7. Payment plan options discussed if applicable\n8. HIPAA compliance in handling insurance information",
+    "requiredPhrases": [
+      { "phrase": "estimated patient portion", "label": "Financial Responsibility Disclosure", "severity": "required" },
+      { "phrase": "this is an estimate and not a guarantee of benefits", "label": "Estimate Disclaimer", "severity": "required" },
+      { "phrase": "annual maximum", "label": "Annual Maximum Mentioned", "severity": "recommended" },
+      { "phrase": "pre-authorization", "label": "Pre-Auth Mention for Major Work", "severity": "recommended" }
+    ],
+    "scoringWeights": { "compliance": 35, "customerExperience": 20, "communication": 30, "resolution": 15 },
+    "additionalInstructions": "Insurance calls are high-stakes for patient trust. Score harshly on accuracy — incorrect benefit information leads to patient billing surprises and complaints. Note any instance where the staff gave a definitive answer they should have qualified as an estimate."
+  },
+  {
+    "callCategory": "dental_treatment",
+    "name": "Dental Treatment Acceptance QA",
+    "evaluationCriteria": "Evaluate the staff on treatment presentation and acceptance:\n1. Clear explanation of recommended procedures in patient-friendly language\n2. Clinical rationale communicated (why the treatment is needed, consequences of delaying)\n3. Cost estimate provided with insurance vs. out-of-pocket breakdown\n4. Payment options presented (insurance, payment plans, CareCredit, in-house financing)\n5. Patient questions answered thoroughly and empathetically\n6. No pressure tactics — patient given time to decide\n7. Next steps clearly communicated (scheduling, pre-op instructions)\n8. Treatment acceptance/deferral/decline outcome documented",
+    "requiredPhrases": [
+      { "phrase": "the estimated cost", "label": "Cost Estimate Provided", "severity": "required" },
+      { "phrase": "payment options", "label": "Payment Options Offered", "severity": "recommended" },
+      { "phrase": "Do you have any questions", "label": "Patient Questions Invited", "severity": "required" },
+      { "phrase": "what could happen if we wait", "label": "Consequence of Delay", "severity": "recommended" }
+    ],
+    "scoringWeights": { "compliance": 20, "customerExperience": 30, "communication": 30, "resolution": 20 },
+    "additionalInstructions": "Track the treatment acceptance outcome: ACCEPTED (patient scheduled), DEFERRED (patient wants to think about it), or DECLINED (patient refused). This is the key business metric for dental practices. Also note if financial barriers were the primary reason for deferral/decline, as this indicates a need for better payment option presentation."
+  },
+  {
+    "callCategory": "dental_recall",
+    "name": "Dental Recall/Recare QA",
+    "evaluationCriteria": "Evaluate the staff on recall effectiveness:\n1. Friendly, non-pushy tone\n2. Communicated the importance of preventive care (why regular cleanings matter)\n3. Referenced how long since last visit\n4. Offered convenient scheduling options (multiple dates/times)\n5. Addressed barriers to scheduling (cost concerns, fear/anxiety, time constraints)\n6. If patient declined, handled gracefully and noted reason\n7. Updated patient contact information if needed\n8. Confirmed or collected insurance information",
+    "requiredPhrases": [
+      { "phrase": "since your last visit", "label": "Last Visit Reference", "severity": "recommended" },
+      { "phrase": "preventive care", "label": "Preventive Care Importance", "severity": "recommended" },
+      { "phrase": "what time works best for you", "label": "Flexible Scheduling Offer", "severity": "recommended" }
+    ],
+    "scoringWeights": { "compliance": 15, "customerExperience": 35, "communication": 30, "resolution": 20 },
+    "additionalInstructions": "Recall calls are the lifeblood of a dental practice's recurring revenue. Track the outcome: SCHEDULED, CALLBACK_REQUESTED, DECLINED, VOICEMAIL_LEFT, WRONG_NUMBER. Note if the staff attempted to overcome objections vs. simply accepting a decline."
+  },
+  {
+    "callCategory": "dental_emergency",
+    "name": "Dental Emergency Triage QA",
+    "evaluationCriteria": "Evaluate the staff on emergency triage compliance:\n1. Empathetic acknowledgment of the patient's pain/concern\n2. Proper triage questions asked: onset, location, severity (1-10), swelling, bleeding, trauma history, fever\n3. Relevant medical history collected: allergies, current medications, medical conditions\n4. Appropriate urgency assessment (see-today, see-within-24hrs, next-available, refer-to-ER)\n5. Clear instructions given (ice, OTC pain management, what to avoid, when to go to ER)\n6. Appointment scheduled or appropriate referral made\n7. Provider consulted if clinical advice was needed beyond front desk scope\n8. Follow-up plan communicated",
+    "requiredPhrases": [
+      { "phrase": "on a scale of 1 to 10", "label": "Pain Scale Assessment", "severity": "required" },
+      { "phrase": "any allergies", "label": "Allergy Check", "severity": "required" },
+      { "phrase": "when did this start", "label": "Onset Question", "severity": "required" },
+      { "phrase": "go to the emergency room", "label": "ER Referral Criteria (if applicable)", "severity": "recommended" }
+    ],
+    "scoringWeights": { "compliance": 40, "customerExperience": 25, "communication": 25, "resolution": 10 },
+    "additionalInstructions": "Emergency triage is the highest-stakes call category. Compliance is heavily weighted because improper triage can lead to patient harm. Flag any instance where:\n- Staff gave clinical advice beyond their scope (diagnosing, recommending specific medications without provider input)\n- Patient with potential airway compromise, uncontrolled bleeding, or facial trauma was not immediately directed to the ER\n- Fever + swelling combination was not treated as urgent\nThese should be flagged as 'agent_misconduct:improper_triage' for immediate review."
+  }
+]
