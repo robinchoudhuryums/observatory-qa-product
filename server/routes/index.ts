@@ -21,6 +21,7 @@ import { registerSsoRoutes, setupSamlAuth } from "./sso";
 import { registerMfaRoutes } from "./mfa";
 import { registerABTestRoutes } from "./ab-testing";
 import { registerSpendTrackingRoutes } from "./spend-tracking";
+import { registerClinicalRoutes } from "./clinical";
 
 export async function registerRoutes(app: Express): Promise<Server> {
   // API key auth middleware (before routes, after session middleware)
@@ -53,6 +54,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   registerExportRoutes(app);
   registerABTestRoutes(app);
   registerSpendTrackingRoutes(app);
+  registerClinicalRoutes(app);
 
   const httpServer = createServer(app);
   return httpServer;

@@ -18,6 +18,7 @@ import { logger } from "../services/logger";
 import { searchRelevantChunks, formatRetrievedContext } from "../services/rag";
 import { PLAN_DEFINITIONS, type PlanTier, type UsageRecord } from "@shared/schema";
 import { estimateBedrockCost, estimateAssemblyAICost } from "./ab-testing";
+import { encryptField, decryptField } from "../services/phi-encryption";
 
 // --- Reference document cache (per-org, avoids repeated DB queries) ---
 const REF_DOC_CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes
@@ -267,6 +268,39 @@ async function processAudioFile(orgId: string, callId: string, filePath: string,
       analysis.detectedAgentName = aiAnalysis.detected_agent_name;
     }
 
+    // Pass through clinical note for clinical encounter categories
+    if (aiAnalysis?.clinical_note) {
+      analysis.clinicalNote = {
+        format: aiAnalysis.clinical_note.format || "soap",
+        specialty: aiAnalysis.clinical_note.specialty,
+        chiefComplaint: aiAnalysis.clinical_note.chief_complaint,
+        subjective: aiAnalysis.clinical_note.subjective,
+        objective: aiAnalysis.clinical_note.objective,
+        assessment: aiAnalysis.clinical_note.assessment,
+        plan: aiAnalysis.clinical_note.plan,
+        hpiNarrative: aiAnalysis.clinical_note.hpi_narrative,
+        reviewOfSystems: aiAnalysis.clinical_note.review_of_systems,
+        differentialDiagnoses: aiAnalysis.clinical_note.differential_diagnoses,
+        icd10Codes: aiAnalysis.clinical_note.icd10_codes,
+        cptCodes: aiAnalysis.clinical_note.cpt_codes,
+        prescriptions: aiAnalysis.clinical_note.prescriptions,
+        followUp: aiAnalysis.clinical_note.follow_up,
+        documentationCompleteness: aiAnalysis.clinical_note.documentation_completeness,
+        clinicalAccuracy: aiAnalysis.clinical_note.clinical_accuracy,
+        missingSections: aiAnalysis.clinical_note.missing_sections,
+        patientConsentObtained: false,
+        providerAttested: false,
+      };
+
+      // Encrypt PHI fields in clinical notes
+      const cn = analysis.clinicalNote;
+      if (cn.subjective) cn.subjective = encryptField(cn.subjective);
+      if (cn.objective) cn.objective = encryptField(cn.objective);
+      if (cn.assessment) cn.assessment = encryptField(cn.assessment);
+      if (cn.hpiNarrative) cn.hpiNarrative = encryptField(cn.hpiNarrative);
+      if (cn.chiefComplaint) cn.chiefComplaint = encryptField(cn.chiefComplaint);
+    }
+
     if (confidenceScore < 0.7) {
       const existingFlags = (analysis.flags as string[]) || [];
       existingFlags.push("low_confidence");
@@ -382,6 +416,18 @@ async function processAudioFile(orgId: string, callId: string, filePath: string,
   }
 }
 
+/** Decrypt PHI fields in clinical notes for display */
+function decryptClinicalNote(analysis: Record<string, unknown> | null | undefined): void {
+  if (!analysis) return;
+  const cn = analysis.clinicalNote as Record<string, unknown> | undefined;
+  if (!cn) return;
+  if (typeof cn.subjective === "string") cn.subjective = decryptField(cn.subjective);
+  if (typeof cn.objective === "string") cn.objective = decryptField(cn.objective);
+  if (typeof cn.assessment === "string") cn.assessment = decryptField(cn.assessment);
+  if (typeof cn.hpiNarrative === "string") cn.hpiNarrative = decryptField(cn.hpiNarrative);
+  if (typeof cn.chiefComplaint === "string") cn.chiefComplaint = decryptField(cn.chiefComplaint);
+}
+
 export function registerCallRoutes(app: Express): void {
 
   app.get("/api/calls", requireAuth, injectOrgContext, async (req, res) => {
@@ -432,6 +478,7 @@ export function registerCallRoutes(app: Express): void {
       ]);
 
       const analysis = normalizeAnalysis(rawAnalysis);
+      decryptClinicalNote(analysis as Record<string, unknown> | null);
 
       res.json({
         ...call,
@@ -597,6 +644,7 @@ export function registerCallRoutes(app: Express): void {
         res.status(404).json({ message: "Call analysis not found" });
         return;
       }
+      decryptClinicalNote(analysis as Record<string, unknown>);
       res.json(analysis);
     } catch (error) {
       res.status(500).json({ message: "Failed to get call analysis" });

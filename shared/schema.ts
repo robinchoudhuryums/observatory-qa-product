@@ -106,7 +106,59 @@ export const CALL_CATEGORIES = [
   { value: "outbound", label: "Outbound Call", description: "Employee calling a customer/patient" },
   { value: "internal", label: "Internal", description: "Call between coworkers or departments" },
   { value: "vendor", label: "Vendor/Partner", description: "Call with an external vendor or partner" },
+  { value: "clinical_encounter", label: "Clinical Encounter", description: "Doctor-patient clinical visit recording" },
+  { value: "telemedicine", label: "Telemedicine Visit", description: "Remote telehealth consultation" },
 ] as const;
+
+// --- CLINICAL NOTE SCHEMAS ---
+export const CLINICAL_SPECIALTIES = [
+  { value: "primary_care", label: "Primary Care / Family Medicine" },
+  { value: "internal_medicine", label: "Internal Medicine" },
+  { value: "cardiology", label: "Cardiology" },
+  { value: "dermatology", label: "Dermatology" },
+  { value: "orthopedics", label: "Orthopedics" },
+  { value: "psychiatry", label: "Psychiatry / Behavioral Health" },
+  { value: "pediatrics", label: "Pediatrics" },
+  { value: "ob_gyn", label: "OB/GYN" },
+  { value: "emergency", label: "Emergency Medicine" },
+  { value: "urgent_care", label: "Urgent Care" },
+  { value: "general", label: "General / Other" },
+] as const;
+
+export const CLINICAL_NOTE_FORMATS = [
+  { value: "soap", label: "SOAP Note", description: "Subjective, Objective, Assessment, Plan" },
+  { value: "hpi_focused", label: "HPI-Focused", description: "Detailed History of Present Illness narrative" },
+  { value: "procedure_note", label: "Procedure Note", description: "Procedural documentation" },
+  { value: "progress_note", label: "Progress Note", description: "Follow-up visit documentation" },
+] as const;
+
+export const clinicalNoteSchema = z.object({
+  format: z.string().default("soap"),
+  specialty: z.string().optional(),
+  chiefComplaint: z.string().optional(),
+  subjective: z.string().optional(),
+  objective: z.string().optional(),
+  assessment: z.string().optional(),
+  plan: z.array(z.string()).optional(),
+  hpiNarrative: z.string().optional(),
+  reviewOfSystems: z.record(z.string()).optional(),
+  differentialDiagnoses: z.array(z.string()).optional(),
+  icd10Codes: z.array(z.object({ code: z.string(), description: z.string() })).optional(),
+  cptCodes: z.array(z.object({ code: z.string(), description: z.string() })).optional(),
+  prescriptions: z.array(z.object({
+    medication: z.string(),
+    dosage: z.string().optional(),
+    instructions: z.string().optional(),
+  })).optional(),
+  followUp: z.string().optional(),
+  documentationCompleteness: z.number().min(0).max(10).optional(),
+  clinicalAccuracy: z.number().min(0).max(10).optional(),
+  missingSections: z.array(z.string()).optional(),
+  patientConsentObtained: z.boolean().optional(),
+  providerAttested: z.boolean().default(false),
+});
+
+export type ClinicalNote = z.infer<typeof clinicalNoteSchema>;
 
 export type CallCategory = typeof CALL_CATEGORIES[number]["value"];
 
@@ -223,6 +275,7 @@ export const insertCallAnalysisSchema = z.object({
     resolution: z.number().min(0).max(10).optional(),
   }).optional(),
   detectedAgentName: z.string().optional(),
+  clinicalNote: clinicalNoteSchema.optional(),
 });
 
 export const callAnalysisSchema = insertCallAnalysisSchema.extend({
@@ -321,7 +374,7 @@ export type InsertApiKey = z.infer<typeof insertApiKeySchema>;
 export type ApiKey = z.infer<typeof apiKeySchema>;
 
 // --- BILLING & SUBSCRIPTION SCHEMAS ---
-export const PLAN_TIERS = ["free", "pro", "enterprise"] as const;
+export const PLAN_TIERS = ["free", "pro", "enterprise", "clinical"] as const;
 export type PlanTier = (typeof PLAN_TIERS)[number];
 
 export const planLimitsSchema = z.object({
@@ -334,6 +387,7 @@ export const planLimitsSchema = z.object({
   ragEnabled: z.boolean(),
   ssoEnabled: z.boolean(),
   prioritySupport: z.boolean(),
+  clinicalDocumentationEnabled: z.boolean().default(false),
 });
 export type PlanLimits = z.infer<typeof planLimitsSchema>;
 
@@ -354,6 +408,7 @@ export const PLAN_DEFINITIONS: Record<PlanTier, { name: string; description: str
       ragEnabled: false,
       ssoEnabled: false,
       prioritySupport: false,
+      clinicalDocumentationEnabled: false,
     },
   },
   pro: {
@@ -371,6 +426,7 @@ export const PLAN_DEFINITIONS: Record<PlanTier, { name: string; description: str
       ragEnabled: true,
       ssoEnabled: false,
       prioritySupport: false,
+      clinicalDocumentationEnabled: false,
     },
   },
   enterprise: {
@@ -388,6 +444,25 @@ export const PLAN_DEFINITIONS: Record<PlanTier, { name: string; description: str
       ragEnabled: true,
       ssoEnabled: true,
       prioritySupport: true,
+      clinicalDocumentationEnabled: false,
+    },
+  },
+  clinical: {
+    name: "Clinical Documentation",
+    description: "AI-powered clinical note drafting for healthcare providers",
+    monthlyPriceUsd: 149,
+    yearlyPriceUsd: 1428, // $119/mo billed yearly
+    limits: {
+      callsPerMonth: 500, // encounters per month
+      storageMb: 5000,
+      aiAnalysesPerMonth: 500,
+      apiCallsPerMonth: 10000,
+      maxUsers: 10,
+      customPromptTemplates: true,
+      ragEnabled: true,
+      ssoEnabled: false,
+      prioritySupport: true,
+      clinicalDocumentationEnabled: true,
     },
   },
 };

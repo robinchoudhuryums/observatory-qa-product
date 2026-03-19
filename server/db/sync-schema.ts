@@ -153,6 +153,7 @@ export async function syncSchema(db: Database): Promise<void> {
         confidence_factors JSONB,
         sub_scores JSONB,
         detected_agent_name VARCHAR(255),
+        clinical_note JSONB,
         created_at TIMESTAMP DEFAULT NOW()
       )
     `);
@@ -161,6 +162,7 @@ export async function syncSchema(db: Database): Promise<void> {
     await addColumnIfNotExists(db, "call_analyses", "confidence_score", "VARCHAR(20)");
     await addColumnIfNotExists(db, "call_analyses", "confidence_factors", "JSONB");
     await addColumnIfNotExists(db, "call_analyses", "manual_edits", "JSONB");
+    await addColumnIfNotExists(db, "call_analyses", "clinical_note", "JSONB");
     await db.execute(sql`CREATE UNIQUE INDEX IF NOT EXISTS analyses_call_id_idx ON call_analyses (call_id)`);
     await db.execute(sql`CREATE INDEX IF NOT EXISTS analyses_org_id_idx ON call_analyses (org_id)`);
     await db.execute(sql`CREATE INDEX IF NOT EXISTS analyses_performance_idx ON call_analyses (org_id, performance_score)`);

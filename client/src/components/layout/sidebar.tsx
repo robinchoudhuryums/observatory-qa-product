@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from "react";
 import { Link, useLocation } from "wouter";
-import { BarChart3, Upload, FileText, Heart, Users, UserPlus, Search, LogOut, User, TrendingUp, Sun, Moon, Shield, Building2, SlidersHorizontal, ClipboardCheck, Palette, ScrollText, Menu, X, FlaskConical, DollarSign } from "lucide-react";
+import { BarChart3, Upload, FileText, Heart, Users, UserPlus, Search, LogOut, User, TrendingUp, Sun, Moon, Shield, Building2, SlidersHorizontal, ClipboardCheck, Palette, ScrollText, Menu, X, FlaskConical, DollarSign, Stethoscope } from "lucide-react";
 import { ObservatoryLogo } from "@/components/observatory-logo";
 import { cn } from "@/lib/utils";
 import { useQuery } from "@tanstack/react-query";
@@ -240,6 +240,13 @@ export default function Sidebar() {
             </div>
           );
         })}
+
+        {/* Clinical Documentation links */}
+        <div className="pt-4 pb-1.5 px-3">
+          <p className="text-[10px] uppercase font-semibold text-muted-foreground/70 tracking-widest">Clinical</p>
+        </div>
+        <AdminLink href="/clinical" icon={Stethoscope} label="Clinical Dashboard" testId="nav-link-clinical" />
+        <AdminLink href="/clinical/upload" icon={Upload} label="Record Encounter" testId="nav-link-clinical-upload" />
 
         {/* Admin-only links */}
         {user?.role === "admin" && (

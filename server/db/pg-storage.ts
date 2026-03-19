@@ -440,6 +440,7 @@ export class PostgresStorage implements IStorage {
       confidenceFactors: analysis.confidenceFactors || null,
       subScores: analysis.subScores || null,
       detectedAgentName: analysis.detectedAgentName,
+      clinicalNote: analysis.clinicalNote || null,
     }).returning();
     return this.mapAnalysis(row);
   }
@@ -1003,6 +1004,7 @@ export class PostgresStorage implements IStorage {
       confidenceFactors: row.confidenceFactors as any,
       subScores: row.subScores as any,
       detectedAgentName: row.detectedAgentName,
+      clinicalNote: row.clinicalNote as any,
       createdAt: toISOString(row.createdAt),
     };
   }

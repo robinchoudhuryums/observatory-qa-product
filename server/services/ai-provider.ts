@@ -29,6 +29,26 @@ export interface CallAnalysis {
   call_party_type: string;
   flags: string[];
   detected_agent_name: string | null;
+  /** Present only for clinical encounter / telemedicine categories */
+  clinical_note?: {
+    format: string;
+    specialty?: string;
+    chief_complaint?: string;
+    subjective?: string;
+    objective?: string;
+    assessment?: string;
+    plan?: string[];
+    hpi_narrative?: string;
+    review_of_systems?: Record<string, string>;
+    differential_diagnoses?: string[];
+    icd10_codes?: Array<{ code: string; description: string }>;
+    cpt_codes?: Array<{ code: string; description: string }>;
+    prescriptions?: Array<{ medication: string; dosage?: string; instructions?: string }>;
+    follow_up?: string;
+    documentation_completeness?: number;
+    clinical_accuracy?: number;
+    missing_sections?: string[];
+  };
 }
 
 export interface AIAnalysisProvider {
@@ -98,6 +118,8 @@ const CATEGORY_CONTEXT: Record<string, string> = {
   outbound: "This is an OUTBOUND call — the company employee called a customer or patient. One speaker is the employee/agent and the other is the customer/patient.",
   internal: "This is an INTERNAL call — both speakers are coworkers or employees within the same company. Evaluate collaboration, communication clarity, and productivity rather than customer service metrics.",
   vendor: "This is a VENDOR/PARTNER call — the employee is speaking with an external vendor or business partner. Evaluate negotiation, clarity, and professionalism.",
+  clinical_encounter: "This is a CLINICAL ENCOUNTER recording — a healthcare provider seeing a patient in person. One speaker is the provider (doctor/NP/PA) and the other is the patient. Focus on clinical documentation accuracy rather than customer service metrics.",
+  telemedicine: "This is a TELEMEDICINE VISIT — a remote healthcare consultation via phone or video. One speaker is the healthcare provider and the other is the patient. Focus on clinical documentation accuracy rather than customer service metrics.",
 };
 
 export interface PromptTemplateConfig {
@@ -141,6 +163,11 @@ function smartTruncate(text: string, maxChars = 80000): string {
  * 25-40% input token savings from prompt caching.
  */
 export function buildSystemPrompt(callCategory?: string, template?: PromptTemplateConfig): string {
+  // Clinical documentation mode — entirely different output schema
+  if (callCategory === "clinical_encounter" || callCategory === "telemedicine") {
+    return buildClinicalSystemPrompt(callCategory, template);
+  }
+
   const categoryContext = callCategory && CATEGORY_CONTEXT[callCategory]
     ? `\nCALL CONTEXT:\n${CATEGORY_CONTEXT[callCategory]}\n`
     : "";
@@ -224,6 +251,73 @@ ${evaluationCriteria}${scoringSection}${phrasesSection}${referenceSection}${addi
 - call_party_type: "customer" (patients), "insurance" (reps), "medical_facility" (clinics/hospitals), "medicare" (1-800-MEDICARE), "vendor", "internal" (coworkers), "other"
 - detected_agent_name: Agent's name if clearly stated (e.g. "Hi, my name is Sarah"). Return null if uncertain. Only the agent's name, not the customer's.
 - flags: "medicare_call" if Medicare involved, "low_score" if performance ≤2.0, "exceptional_call" if ≥9.0 with outstanding service, "agent_misconduct:<description>" for serious misconduct (abusive language, hanging up, HIPAA violations, etc.)`;
+}
+
+/**
+ * Build clinical documentation system prompt.
+ * Outputs a combined QA + clinical note JSON for clinical encounter categories.
+ */
+function buildClinicalSystemPrompt(callCategory: string, template?: PromptTemplateConfig): string {
+  const categoryContext = CATEGORY_CONTEXT[callCategory] || "";
+
+  // Build reference documents section (same logic as QA)
+  let referenceSection = "";
+  if (template?.referenceDocuments && template.referenceDocuments.length > 0) {
+    const isRagRetrieved = template.referenceDocuments.some(d => d.category === "rag_retrieval");
+    if (isRagRetrieved) {
+      const ragText = template.referenceDocuments.map(d => d.text).join("\n\n");
+      referenceSection = `\n- CLINICAL KNOWLEDGE BASE: ${ragText}`;
+    } else {
+      const docSnippets = template.referenceDocuments.slice(0, 5).map(d => `--- ${d.name} ---\n${d.text.slice(0, 3000)}`);
+      referenceSection = `\n- REFERENCE MATERIALS:\n${docSnippets.join("\n\n")}`;
+    }
+  }
+
+  let additionalSection = "";
+  if (template?.additionalInstructions) {
+    additionalSection = `\n- ADDITIONAL INSTRUCTIONS:\n${template.additionalInstructions}`;
+  }
+
+  return `You are a clinical documentation AI assistant analyzing a recorded healthcare encounter. Your task is to draft structured clinical notes from the provider-patient conversation.
+
+CALL CONTEXT:
+${categoryContext}
+${referenceSection}${additionalSection}
+
+Respond with ONLY valid JSON (no markdown, no code fences). The JSON must contain BOTH standard analysis fields AND a clinical_note object:
+
+{"summary":"Brief encounter summary","topics":["chief complaint","relevant topics"],"sentiment":"positive|neutral|negative","sentiment_score":0.0,"performance_score":0.0,"sub_scores":{"compliance":0.0,"customer_experience":0.0,"communication":0.0,"resolution":0.0},"action_items":["follow-up items"],"feedback":{"strengths":[{"text":"...","timestamp":"MM:SS"}],"suggestions":[{"text":"...","timestamp":"MM:SS"}]},"call_party_type":"medical_facility","flags":[],"detected_agent_name":null,"clinical_note":{"format":"soap","chief_complaint":"...","subjective":"Patient history and symptoms as reported","objective":"Physical exam findings, vitals, observations mentioned","assessment":"Clinical assessment and diagnoses","plan":["Treatment plan items"],"hpi_narrative":"Detailed HPI narrative","review_of_systems":{"constitutional":"...","cardiovascular":"..."},"differential_diagnoses":["..."],"icd10_codes":[{"code":"Z00.00","description":"General adult medical examination"}],"cpt_codes":[{"code":"99213","description":"Office visit, established patient, low complexity"}],"prescriptions":[{"medication":"...","dosage":"...","instructions":"..."}],"follow_up":"Return in 2 weeks","documentation_completeness":0.0,"clinical_accuracy":0.0,"missing_sections":["sections not covered in the encounter"]}}
+
+Guidelines for standard fields:
+- summary: Brief 1-2 sentence encounter summary
+- sentiment_score: 0.0-1.0 (patient satisfaction/comfort level)
+- performance_score: 0.0-10.0 (clinical documentation quality)
+- sub_scores: compliance (clinical guidelines adherence), customer_experience (bedside manner), communication (clarity of explanations), resolution (addressed patient concerns)
+- detected_agent_name: Provider's name if stated. Return null if uncertain.
+
+Guidelines for clinical_note:
+- format: Always "soap" unless the encounter clearly fits another format
+- chief_complaint: The primary reason for the visit in the patient's own words
+- subjective: Patient-reported symptoms, history, medications, allergies — everything the patient tells the provider
+- objective: Any physical exam findings, vitals, or observations the provider describes
+- assessment: Clinical impression, working diagnoses, differential considerations
+- plan: Array of specific plan items (medications, tests ordered, referrals, lifestyle modifications)
+- hpi_narrative: Detailed History of Present Illness in standard medical documentation format
+- review_of_systems: Only include systems that were actually discussed (e.g., {"constitutional": "No fever, fatigue, or weight loss", "respiratory": "Denies cough or dyspnea"})
+- icd10_codes: Suggest appropriate ICD-10 codes based on the encounter. These are SUGGESTIONS for provider review, not final codes
+- cpt_codes: Suggest appropriate E/M or procedure codes based on encounter complexity
+- prescriptions: Any medications prescribed, discussed, or adjusted during the encounter
+- follow_up: Follow-up instructions or return visit timing
+- documentation_completeness: 0.0-10.0 (how thorough the encounter documentation is)
+- clinical_accuracy: 0.0-10.0 (clinical appropriateness of the AI-generated note)
+- missing_sections: List any standard documentation sections NOT covered in the encounter
+
+IMPORTANT:
+- All clinical notes are DRAFTS requiring provider attestation before use
+- Do NOT fabricate clinical information not discussed in the encounter
+- If information for a section was not discussed, note it in missing_sections
+- Use standard medical terminology and abbreviations where appropriate
+- ICD-10 and CPT codes are suggestions only — provider must verify`;
 }
 
 /**

@@ -159,6 +159,7 @@ export const callAnalyses = pgTable("call_analyses", {
   confidenceFactors: jsonb("confidence_factors"),
   subScores: jsonb("sub_scores"),
   detectedAgentName: varchar("detected_agent_name", { length: 255 }),
+  clinicalNote: jsonb("clinical_note"),
   createdAt: timestamp("created_at").defaultNow(),
 }, (t) => [
   uniqueIndex("analyses_call_id_idx").on(t.callId),
