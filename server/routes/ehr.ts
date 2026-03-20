@@ -14,6 +14,34 @@ import { storage } from "../storage";
 import { logger } from "../services/logger";
 import { logPhiAccess, auditContext } from "../services/audit-log";
 import { getEhrAdapter, getSupportedEhrSystems, type EhrConnectionConfig } from "../services/ehr/index";
+import { encryptField, decryptField } from "../services/phi-encryption";
+
+/** Validates EHR baseUrl to prevent SSRF attacks */
+function isValidEhrBaseUrl(url: string): boolean {
+  try {
+    const parsed = new URL(url);
+    // Must be HTTPS in production
+    if (process.env.NODE_ENV === "production" && parsed.protocol !== "https:") return false;
+    if (parsed.protocol !== "https:" && parsed.protocol !== "http:") return false;
+    // Block internal/metadata IPs
+    const hostname = parsed.hostname;
+    if (hostname === "localhost" || hostname === "127.0.0.1" || hostname === "0.0.0.0") return false;
+    if (hostname.startsWith("169.254.")) return false; // AWS metadata
+    if (hostname.startsWith("10.") || hostname.startsWith("192.168.")) return false;
+    if (/^172\.(1[6-9]|2\d|3[01])\./.test(hostname)) return false;
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/** Decrypt EHR API key from storage */
+function decryptEhrApiKey(ehrConfig: any): EhrConnectionConfig {
+  return {
+    ...ehrConfig,
+    apiKey: ehrConfig.apiKey ? decryptField(ehrConfig.apiKey) : undefined,
+  };
+}
 
 export function registerEhrRoutes(app: Express): void {
 
@@ -33,13 +61,14 @@ export function registerEhrRoutes(app: Express): void {
         return;
       }
 
-      // Redact API key for non-admin users
+      // Decrypt API key for admin display, redact for non-admins
       const isAdmin = (req as any).user?.role === "admin";
+      const decryptedKey = ehrConfig.apiKey ? decryptField(ehrConfig.apiKey) : undefined;
       res.json({
         configured: true,
         system: ehrConfig.system,
         baseUrl: ehrConfig.baseUrl,
-        apiKey: isAdmin ? ehrConfig.apiKey : (ehrConfig.apiKey ? "••••••••" : undefined),
+        apiKey: isAdmin ? decryptedKey : (ehrConfig.apiKey ? "••••••••" : undefined),
         options: ehrConfig.options,
         enabled: ehrConfig.enabled,
       });
@@ -59,6 +88,11 @@ export function registerEhrRoutes(app: Express): void {
         return;
       }
 
+      if (!isValidEhrBaseUrl(baseUrl)) {
+        res.status(400).json({ message: "Invalid baseUrl. Must be a valid HTTPS URL pointing to an external EHR server." });
+        return;
+      }
+
       const adapter = getEhrAdapter(system);
       if (!adapter) {
         res.status(400).json({ message: `Unsupported EHR system: ${system}. Supported: ${getSupportedEhrSystems().map(s => s.system).join(", ")}` });
@@ -71,10 +105,11 @@ export function registerEhrRoutes(app: Express): void {
         return;
       }
 
+      // Encrypt API key before storage (HIPAA: credentials at rest)
       const ehrConfig: EhrConnectionConfig & { enabled: boolean } = {
         system,
         baseUrl,
-        apiKey: apiKey || undefined,
+        apiKey: apiKey ? encryptField(apiKey) : undefined,
         options: options || undefined,
         enabled: true,
       };
@@ -108,7 +143,7 @@ export function registerEhrRoutes(app: Express): void {
         return;
       }
 
-      const result = await adapter.testConnection(ehrConfig);
+      const result = await adapter.testConnection(decryptEhrApiKey(ehrConfig));
       res.json(result);
     } catch (error) {
       logger.error({ err: error }, "EHR connection test failed");
@@ -139,7 +174,7 @@ export function registerEhrRoutes(app: Express): void {
         return;
       }
 
-      const patients = await adapter.searchPatients(ehrConfig, {
+      const patients = await adapter.searchPatients(decryptEhrApiKey(ehrConfig), {
         name: name as string,
         dob: dob as string,
         phone: phone as string,
@@ -176,7 +211,7 @@ export function registerEhrRoutes(app: Express): void {
         return;
       }
 
-      const patient = await adapter.getPatient(ehrConfig, req.params.ehrPatientId);
+      const patient = await adapter.getPatient(decryptEhrApiKey(ehrConfig), req.params.ehrPatientId);
       if (!patient) {
         res.status(404).json({ message: "Patient not found" });
         return;
@@ -214,7 +249,7 @@ export function registerEhrRoutes(app: Express): void {
       }
 
       const providerId = req.query.providerId as string | undefined;
-      const appointments = await adapter.getTodayAppointments(ehrConfig, providerId);
+      const appointments = await adapter.getTodayAppointments(decryptEhrApiKey(ehrConfig), providerId);
       res.json(appointments);
     } catch (error) {
       logger.error({ err: error }, "Failed to get today's appointments");
@@ -245,7 +280,7 @@ export function registerEhrRoutes(app: Express): void {
         return;
       }
 
-      const appointments = await adapter.getAppointments(ehrConfig, {
+      const appointments = await adapter.getAppointments(decryptEhrApiKey(ehrConfig), {
         startDate: startDate as string,
         endDate: endDate as string,
         providerId: providerId as string | undefined,
@@ -293,11 +328,15 @@ export function registerEhrRoutes(app: Express): void {
         return;
       }
 
-      // Format the clinical note as text for EHR
-      const cn = analysis.clinicalNote;
+      // Decrypt PHI fields before formatting for EHR (stored encrypted at rest)
+      const cn = { ...analysis.clinicalNote };
+      const phiFields = ["subjective", "objective", "assessment", "hpiNarrative", "chiefComplaint"];
+      for (const f of phiFields) {
+        if (typeof cn[f] === "string") cn[f] = decryptField(cn[f]);
+      }
       const noteContent = formatClinicalNoteForEhr(cn);
 
-      const result = await adapter.pushClinicalNote(ehrConfig, {
+      const result = await adapter.pushClinicalNote(decryptEhrApiKey(ehrConfig), {
         patientId: ehrPatientId,
         providerId: ehrProviderId || "",
         date: new Date().toISOString().split("T")[0]!,
@@ -343,7 +382,7 @@ export function registerEhrRoutes(app: Express): void {
         return;
       }
 
-      const plans = await adapter.getPatientTreatmentPlans(ehrConfig, req.params.ehrPatientId);
+      const plans = await adapter.getPatientTreatmentPlans(decryptEhrApiKey(ehrConfig), req.params.ehrPatientId);
 
       logPhiAccess({
         ...auditContext(req),

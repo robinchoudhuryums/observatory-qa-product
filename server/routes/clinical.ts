@@ -85,8 +85,24 @@ export function registerClinicalRoutes(app: Express): void {
         return;
       }
 
+      // Verify the attesting user is the provider who should attest this note.
+      // Admins can attest on behalf of others (override); managers must be the
+      // provider associated with the encounter or the one who last edited it.
+      const currentUserName = (req as any).user?.name || (req as any).user?.username;
+      const currentUserRole = (req as any).user?.role;
+      const noteCreator = analysis.clinicalNote.attestedBy // previously attested by
+        || analysis.clinicalNote.editHistory?.at(-1)?.editedBy; // or last editor
+
+      if (currentUserRole !== "admin" && noteCreator && noteCreator !== currentUserName) {
+        res.status(403).json({
+          message: "Only the treating provider or an admin can attest this clinical note",
+          attestedBy: noteCreator,
+        });
+        return;
+      }
+
       analysis.clinicalNote.providerAttested = true;
-      analysis.clinicalNote.attestedBy = (req as any).user?.name || (req as any).user?.username;
+      analysis.clinicalNote.attestedBy = currentUserName;
       analysis.clinicalNote.attestedAt = new Date().toISOString();
 
       await storage.createCallAnalysis(req.orgId!, analysis);
@@ -96,7 +112,7 @@ export function registerClinicalRoutes(app: Express): void {
         event: "attest_clinical_note",
         resourceType: "clinical_note",
         resourceId: req.params.callId,
-        detail: "Provider attested clinical note",
+        detail: `Provider ${currentUserName} attested clinical note`,
       });
 
       logger.info({ callId: req.params.callId }, "Clinical note attested by provider");
@@ -169,26 +185,29 @@ export function registerClinicalRoutes(app: Express): void {
         }
       }
 
+      // Track all edited field names before PHI fields are separated
+      const allEditedFields = Object.keys(req.body).filter(k => allowedFields.includes(k));
+
       // Encrypt PHI fields before storage
       const phiFields = ["subjective", "objective", "assessment", "hpiNarrative", "chiefComplaint"];
       for (const field of phiFields) {
         if (typeof edits[field] === "string") {
           analysis.clinicalNote[field] = encryptField(edits[field] as string);
-          delete edits[field]; // Already handled
+          delete edits[field]; // Already handled via encryption
         }
       }
 
       // Apply non-PHI edits directly
       Object.assign(analysis.clinicalNote, edits);
 
-      // Track edit history
+      // Track edit history (includes both PHI and non-PHI field names, never PHI values)
       if (!analysis.clinicalNote.editHistory) {
         analysis.clinicalNote.editHistory = [];
       }
       analysis.clinicalNote.editHistory.push({
         editedBy: (req as any).user?.name || (req as any).user?.username,
         editedAt: new Date().toISOString(),
-        fieldsChanged: Object.keys(req.body).filter(k => allowedFields.includes(k)),
+        fieldsChanged: allEditedFields,
       });
 
       await storage.createCallAnalysis(req.orgId!, analysis);
@@ -198,7 +217,7 @@ export function registerClinicalRoutes(app: Express): void {
         event: "edit_clinical_note",
         resourceType: "clinical_note",
         resourceId: req.params.callId,
-        detail: `Edited fields: ${Object.keys(edits).join(", ")}`,
+        detail: `Edited fields: ${allEditedFields.join(", ")}`,
       });
 
       logger.info({ callId: req.params.callId, fields: Object.keys(edits) }, "Clinical note edited");

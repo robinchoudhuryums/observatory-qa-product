@@ -216,6 +216,16 @@ export const clinicalNoteSchema = z.object({
   missingSections: z.array(z.string()).optional(),
   patientConsentObtained: z.boolean().optional(),
   providerAttested: z.boolean().default(false),
+  // Attestation & audit metadata (HIPAA-required)
+  attestedBy: z.string().optional(),
+  attestedAt: z.string().optional(),
+  consentRecordedBy: z.string().optional(),
+  consentRecordedAt: z.string().optional(),
+  editHistory: z.array(z.object({
+    editedBy: z.string(),
+    editedAt: z.string(),
+    fieldsChanged: z.array(z.string()),
+  })).optional(),
   // Behavioral health (DAP/BIRP) fields
   data: z.string().optional(), // DAP: combined subjective/objective data
   behavior: z.string().optional(), // BIRP: observable client behaviors
