@@ -63,7 +63,7 @@ async function cleanupFile(filePath: string) {
 }
 
 // Process audio file with AssemblyAI and archive to cloud storage
-async function processAudioFile(orgId: string, callId: string, filePath: string, audioBuffer: Buffer, originalName: string, mimeType: string, callCategory?: string) {
+async function processAudioFile(orgId: string, callId: string, filePath: string, audioBuffer: Buffer, originalName: string, mimeType: string, callCategory?: string, userId?: string) {
   logger.info({ callId }, "Starting audio processing");
   broadcastCallUpdate(callId, "uploading", { step: 1, totalSteps: 6, label: "Uploading audio..." }, orgId);
   try {
@@ -125,6 +125,25 @@ async function processAudioFile(orgId: string, callId: string, filePath: string,
         }
       } catch (tmplError) {
         logger.warn({ callId, err: tmplError }, "Failed to load prompt template (using defaults)");
+      }
+    }
+
+    // Inject provider style preferences for clinical encounters
+    const clinicalCategories = ["clinical_encounter", "telemedicine", "dental_encounter", "dental_consultation"];
+    if (callCategory && clinicalCategories.includes(callCategory)) {
+      try {
+        const org = await storage.getOrganization(orgId);
+        const providerPrefs = userId && (org?.settings as any)?.providerStylePreferences?.[userId];
+        if (providerPrefs) {
+          if (!promptTemplate) promptTemplate = {};
+          promptTemplate.providerStylePreferences = providerPrefs;
+          if (providerPrefs.defaultSpecialty) {
+            promptTemplate.clinicalSpecialty = providerPrefs.defaultSpecialty;
+          }
+          logger.info({ callId, userId }, "Injecting provider style preferences into clinical prompt");
+        }
+      } catch (prefErr) {
+        logger.warn({ callId, err: prefErr }, "Failed to load provider preferences (continuing without)");
       }
     }
 
@@ -270,26 +289,38 @@ async function processAudioFile(orgId: string, callId: string, filePath: string,
 
     // Pass through clinical note for clinical encounter categories
     if (aiAnalysis?.clinical_note) {
+      const cn_raw = aiAnalysis.clinical_note as any;
       analysis.clinicalNote = {
-        format: aiAnalysis.clinical_note.format || "soap",
-        specialty: aiAnalysis.clinical_note.specialty,
-        chiefComplaint: aiAnalysis.clinical_note.chief_complaint,
-        subjective: aiAnalysis.clinical_note.subjective,
-        objective: aiAnalysis.clinical_note.objective,
-        assessment: aiAnalysis.clinical_note.assessment,
-        plan: aiAnalysis.clinical_note.plan,
-        hpiNarrative: aiAnalysis.clinical_note.hpi_narrative,
-        reviewOfSystems: aiAnalysis.clinical_note.review_of_systems,
-        differentialDiagnoses: aiAnalysis.clinical_note.differential_diagnoses,
-        icd10Codes: aiAnalysis.clinical_note.icd10_codes,
-        cptCodes: aiAnalysis.clinical_note.cpt_codes,
-        prescriptions: aiAnalysis.clinical_note.prescriptions,
-        followUp: aiAnalysis.clinical_note.follow_up,
-        documentationCompleteness: aiAnalysis.clinical_note.documentation_completeness,
-        clinicalAccuracy: aiAnalysis.clinical_note.clinical_accuracy,
-        missingSections: aiAnalysis.clinical_note.missing_sections,
+        format: cn_raw.format || "soap",
+        specialty: cn_raw.specialty,
+        chiefComplaint: cn_raw.chief_complaint,
+        subjective: cn_raw.subjective,
+        objective: cn_raw.objective,
+        assessment: cn_raw.assessment,
+        plan: cn_raw.plan,
+        hpiNarrative: cn_raw.hpi_narrative,
+        reviewOfSystems: cn_raw.review_of_systems,
+        differentialDiagnoses: cn_raw.differential_diagnoses,
+        icd10Codes: cn_raw.icd10_codes,
+        cptCodes: cn_raw.cpt_codes,
+        prescriptions: cn_raw.prescriptions,
+        followUp: cn_raw.follow_up,
+        documentationCompleteness: cn_raw.documentation_completeness,
+        clinicalAccuracy: cn_raw.clinical_accuracy,
+        missingSections: cn_raw.missing_sections,
         patientConsentObtained: false,
         providerAttested: false,
+        // Behavioral health (DAP/BIRP) fields
+        data: cn_raw.data,
+        behavior: cn_raw.behavior,
+        intervention: cn_raw.intervention,
+        response: cn_raw.response,
+        // Dental fields
+        cdtCodes: cn_raw.cdt_codes,
+        toothNumbers: cn_raw.tooth_numbers,
+        quadrants: cn_raw.quadrants,
+        periodontalFindings: cn_raw.periodontal_findings,
+        treatmentPhases: cn_raw.treatment_phases,
       };
 
       // Encrypt PHI fields in clinical notes
@@ -530,7 +561,8 @@ export function registerCallRoutes(app: Express): void {
       const originalName = req.file.originalname;
       const mimeType = req.file.mimetype || "audio/mpeg";
       const orgId = req.orgId!;
-      processAudioFile(orgId, call.id, req.file.path, audioBuffer, originalName, mimeType, callCategory)
+      const uploadUserId = (req as any).user?.id;
+      processAudioFile(orgId, call.id, req.file.path, audioBuffer, originalName, mimeType, callCategory, uploadUserId)
         .catch(async (error) => {
           logger.error({ callId: call.id, err: error }, "Failed to process call");
           try {

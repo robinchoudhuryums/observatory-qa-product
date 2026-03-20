@@ -179,6 +179,9 @@ export const CLINICAL_NOTE_FORMATS = [
   { value: "hpi_focused", label: "HPI-Focused", description: "Detailed History of Present Illness narrative" },
   { value: "procedure_note", label: "Procedure Note", description: "Procedural documentation" },
   { value: "progress_note", label: "Progress Note", description: "Follow-up visit documentation" },
+  // Behavioral health note formats
+  { value: "dap", label: "DAP Note", description: "Data, Assessment, Plan — common for therapy/counseling" },
+  { value: "birp", label: "BIRP Note", description: "Behavior, Intervention, Response, Plan — behavioral health" },
   // Dental note formats
   { value: "dental_exam", label: "Dental Examination", description: "Comprehensive or periodic oral examination" },
   { value: "dental_operative", label: "Operative Note", description: "Restorative/operative procedure documentation" },
@@ -213,6 +216,11 @@ export const clinicalNoteSchema = z.object({
   missingSections: z.array(z.string()).optional(),
   patientConsentObtained: z.boolean().optional(),
   providerAttested: z.boolean().default(false),
+  // Behavioral health (DAP/BIRP) fields
+  data: z.string().optional(), // DAP: combined subjective/objective data
+  behavior: z.string().optional(), // BIRP: observable client behaviors
+  intervention: z.string().optional(), // BIRP: therapeutic interventions applied
+  response: z.string().optional(), // BIRP: client's response to interventions
   // Dental-specific fields
   cdtCodes: z.array(z.object({ code: z.string(), description: z.string() })).optional(),
   toothNumbers: z.array(z.string()).optional(),
