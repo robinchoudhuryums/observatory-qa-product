@@ -10,6 +10,9 @@ import {
   getTemplatesBySpecialty, getTemplatesByFormat, getTemplatesByCategory,
   getTemplateById, searchTemplates, CLINICAL_NOTE_TEMPLATES,
 } from "../services/clinical-templates";
+import {
+  validateClinicalNote, getRecommendedFormat, getRequiredSections,
+} from "../services/clinical-validation";
 
 /**
  * Middleware to ensure the org has clinical documentation enabled.
@@ -182,6 +185,21 @@ export function registerClinicalRoutes(app: Express): void {
       for (const field of allowedFields) {
         if (req.body[field] !== undefined) {
           edits[field] = req.body[field];
+        }
+      }
+
+      // Warn if format change would orphan existing sections
+      if (edits.format && edits.format !== analysis.clinicalNote.format) {
+        const newRequired = getRequiredSections(edits.format as string);
+        const oldRequired = getRequiredSections(analysis.clinicalNote.format || "soap");
+        const lostSections = oldRequired.filter(s => !newRequired.includes(s));
+        if (lostSections.length > 0) {
+          logger.info({
+            callId: req.params.callId,
+            oldFormat: analysis.clinicalNote.format,
+            newFormat: edits.format,
+            lostSections,
+          }, "Clinical note format change — some sections may be lost");
         }
       }
 
@@ -499,6 +517,48 @@ export function registerClinicalRoutes(app: Express): void {
     } catch (error) {
       logger.error({ err: error }, "Failed to list clinical templates");
       res.status(500).json({ message: "Failed to list clinical templates" });
+    }
+  });
+
+  // Get recommended format for a specialty
+  app.get("/api/clinical/recommended-format", requireAuth, injectOrgContext, requireClinicalPlan(), async (req, res) => {
+    const { specialty } = req.query;
+    if (!specialty || typeof specialty !== "string") {
+      res.status(400).json({ message: "specialty query parameter is required" });
+      return;
+    }
+    const format = getRecommendedFormat(specialty);
+    const requiredSections = getRequiredSections(format);
+    res.json({ specialty, recommendedFormat: format, requiredSections });
+  });
+
+  // Validate an existing clinical note
+  app.get("/api/clinical/notes/:callId/validate", requireAuth, injectOrgContext, requireClinicalPlan(), async (req, res) => {
+    try {
+      const analysis = await storage.getCallAnalysis(req.orgId!, req.params.callId);
+      if (!analysis) {
+        res.status(404).json({ message: "Analysis not found" });
+        return;
+      }
+      const cn = (analysis as any).clinicalNote;
+      if (!cn) {
+        res.status(404).json({ message: "No clinical note found for this encounter" });
+        return;
+      }
+
+      // Decrypt PHI fields for validation
+      const decrypted = { ...cn };
+      if (typeof decrypted.subjective === "string") decrypted.subjective = decryptField(decrypted.subjective);
+      if (typeof decrypted.objective === "string") decrypted.objective = decryptField(decrypted.objective);
+      if (typeof decrypted.assessment === "string") decrypted.assessment = decryptField(decrypted.assessment);
+      if (typeof decrypted.hpiNarrative === "string") decrypted.hpiNarrative = decryptField(decrypted.hpiNarrative);
+      if (typeof decrypted.chiefComplaint === "string") decrypted.chiefComplaint = decryptField(decrypted.chiefComplaint);
+
+      const result = validateClinicalNote(decrypted);
+      res.json(result);
+    } catch (error) {
+      logger.error({ err: error }, "Failed to validate clinical note");
+      res.status(500).json({ message: "Failed to validate clinical note" });
     }
   });
 

@@ -8,6 +8,19 @@ import { requireAuth, requireRole, injectOrgContext, hashPassword } from "../aut
 import { logger } from "../services/logger";
 import { randomUUID } from "crypto";
 
+/**
+ * Validate password complexity for HIPAA compliance.
+ * Requires: 12+ chars, uppercase, lowercase, digit, special character.
+ */
+function validatePasswordComplexity(password: string): string | null {
+  if (password.length < 12) return "Password must be at least 12 characters";
+  if (!/[A-Z]/.test(password)) return "Password must contain at least one uppercase letter";
+  if (!/[a-z]/.test(password)) return "Password must contain at least one lowercase letter";
+  if (!/[0-9]/.test(password)) return "Password must contain at least one digit";
+  if (!/[^A-Za-z0-9]/.test(password)) return "Password must contain at least one special character";
+  return null;
+}
+
 export function registerRegistrationRoutes(app: Express): void {
   // ==================== SELF-SERVICE REGISTRATION ====================
 
@@ -33,9 +46,10 @@ export function registerRegistrationRoutes(app: Express): void {
         });
       }
 
-      // Validate password strength
-      if (password.length < 8) {
-        return res.status(400).json({ message: "Password must be at least 8 characters" });
+      // Validate password complexity (HIPAA)
+      const pwError = validatePasswordComplexity(password);
+      if (pwError) {
+        return res.status(400).json({ message: pwError });
       }
 
       // Check slug uniqueness
@@ -193,8 +207,9 @@ export function registerRegistrationRoutes(app: Express): void {
         return res.status(400).json({ message: "token, username, password, and name are required" });
       }
 
-      if (password.length < 8) {
-        return res.status(400).json({ message: "Password must be at least 8 characters" });
+      const pwErr = validatePasswordComplexity(password);
+      if (pwErr) {
+        return res.status(400).json({ message: pwErr });
       }
 
       // Find the invitation

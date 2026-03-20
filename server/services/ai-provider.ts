@@ -425,10 +425,13 @@ function buildFormatInstructions(format: string): { jsonTemplate: string; guidel
         jsonTemplate: `{"summary":"Brief encounter summary","topics":["presenting issue"],"sentiment":"positive|neutral|negative","sentiment_score":0.0,"performance_score":0.0,"sub_scores":{"compliance":0.0,"customer_experience":0.0,"communication":0.0,"resolution":0.0},"action_items":["follow-up items"],"feedback":{"strengths":[{"text":"...","timestamp":"MM:SS"}],"suggestions":[{"text":"...","timestamp":"MM:SS"}]},"call_party_type":"medical_facility","flags":[],"detected_agent_name":null,"clinical_note":{"format":"dap","chief_complaint":"Presenting problem","data":"Objective and subjective data from the session — what was observed, reported, and discussed","assessment":"Clinical assessment, diagnosis, treatment effectiveness, progress toward goals","plan":["Next session focus","Homework assignments","Referrals"],"icd10_codes":[{"code":"F41.1","description":"Generalized anxiety disorder"}],"cpt_codes":[{"code":"90834","description":"Psychotherapy, 45 minutes"}],"prescriptions":[],"follow_up":"Next appointment in 1 week","documentation_completeness":0.0,"clinical_accuracy":0.0,"missing_sections":[]}}`,
         guidelines: `Guidelines for DAP clinical_note:
 - format: "dap" (Data, Assessment, Plan)
-- chief_complaint: The presenting problem or reason for the session
-- data: Combined subjective and objective data — what the client reported AND what the clinician observed (affect, behavior, appearance, themes discussed, therapeutic interventions used)
-- assessment: Clinical interpretation — diagnosis, symptom severity changes, progress toward treatment goals, barriers to progress, risk assessment
-- plan: Array of specific items — next session topics, homework/assignments, skills to practice, referrals, medication changes
+- chief_complaint: The presenting problem or reason for the session (REQUIRED — e.g., "Follow-up for generalized anxiety disorder")
+- data: Combined subjective and objective data (REQUIRED). Structure as:
+  * CLIENT REPORT: What the client verbally reported — symptoms since last session, life events, medication effects, sleep, appetite, stressors
+  * CLINICIAN OBSERVATIONS: Observed affect (flat, congruent, labile), appearance, eye contact, psychomotor activity, speech patterns, engagement level
+  * SESSION CONTENT: Key themes discussed, therapeutic interventions used (CBT, MI, psychoeducation topics), client responses to interventions
+- assessment: Clinical interpretation (REQUIRED). Include: diagnosis with current severity, progress toward treatment goals (improved/stable/regressed), barriers to progress, risk assessment (SI/HI/SIB screening result), changes in functional status
+- plan: Array of specific next steps (REQUIRED). Include: next session date/frequency, homework or skills to practice between sessions, referrals, medication management notes, safety plan updates if applicable
 - icd10_codes: Suggest behavioral health ICD-10 codes (F-codes) based on the session
 - cpt_codes: Suggest appropriate therapy CPT codes (90834 for 45min, 90837 for 60min, 90847 for family, etc.)
 - documentation_completeness: 0.0-10.0
@@ -441,11 +444,25 @@ function buildFormatInstructions(format: string): { jsonTemplate: string; guidel
         jsonTemplate: `{"summary":"Brief encounter summary","topics":["presenting issue"],"sentiment":"positive|neutral|negative","sentiment_score":0.0,"performance_score":0.0,"sub_scores":{"compliance":0.0,"customer_experience":0.0,"communication":0.0,"resolution":0.0},"action_items":["follow-up items"],"feedback":{"strengths":[{"text":"...","timestamp":"MM:SS"}],"suggestions":[{"text":"...","timestamp":"MM:SS"}]},"call_party_type":"medical_facility","flags":[],"detected_agent_name":null,"clinical_note":{"format":"birp","chief_complaint":"Presenting problem","behavior":"Observable client behaviors, affect, appearance, engagement level during session","intervention":"Therapeutic interventions applied — techniques, modalities, psychoeducation provided","response":"Client's response to interventions — engagement, insight gained, resistance, emotional reactions","plan":["Next session goals","Homework","Referrals","Medication management"],"icd10_codes":[{"code":"F32.1","description":"Major depressive disorder, single episode, moderate"}],"cpt_codes":[{"code":"90837","description":"Psychotherapy, 60 minutes"}],"prescriptions":[],"follow_up":"Next session in 1 week","documentation_completeness":0.0,"clinical_accuracy":0.0,"missing_sections":[]}}`,
         guidelines: `Guidelines for BIRP clinical_note:
 - format: "birp" (Behavior, Intervention, Response, Plan)
-- chief_complaint: The presenting problem or session focus
-- behavior: Observable client behaviors during the session — affect (flat, anxious, tearful), appearance, engagement level, verbal/nonverbal cues, reported symptoms and behaviors since last session
-- intervention: Specific therapeutic techniques used — CBT, DBT skills, motivational interviewing, psychoeducation topics, mindfulness exercises, role-playing, etc. Be specific about what was done
-- response: How the client responded to interventions — did they engage? Show insight? Demonstrate skill acquisition? Express resistance? Have emotional reactions? Note therapeutic progress
-- plan: Array of specific items — next session focus, homework assignments, coping skills to practice, referrals, safety plan updates, medication management notes
+- chief_complaint: The presenting problem or session focus (REQUIRED — e.g., "Individual therapy for PTSD with panic symptoms")
+- behavior: CLIENT'S presenting behavior (REQUIRED). This is about the CLIENT, not the clinician. Document:
+  * Observed affect and appearance (e.g., "Client appeared anxious, fidgeting, poor eye contact")
+  * Reported symptoms and events since last session
+  * Verbal and nonverbal cues during the session
+  * Current mood as reported by client vs. observed mood
+  * Engagement level (cooperative, guarded, resistant, tearful)
+- intervention: CLINICIAN'S therapeutic interventions (REQUIRED). Be specific about what techniques were used:
+  * Named modality (CBT, DBT, EMDR, MI, psychoeducation, supportive therapy)
+  * Specific techniques (cognitive restructuring, exposure hierarchy, distress tolerance skills, chain analysis)
+  * Topics of psychoeducation provided
+  * Any crisis intervention or safety planning performed
+- response: CLIENT'S response to the interventions (REQUIRED). This captures the therapeutic interaction's effectiveness:
+  * Did the client engage with the intervention or resist?
+  * Was insight demonstrated? (e.g., "Client identified link between avoidance and increased anxiety")
+  * Were skills acquired or practiced? Note skill level (emerging, developing, established)
+  * Emotional reactions during session (catharsis, frustration, relief)
+  * Any shifts in perspective, motivation, or commitment to change
+- plan: Array of specific next steps (REQUIRED). Include: next session focus/goals, homework assignments (be specific — not just "practice skills"), coping skills to use between sessions, referrals, safety plan updates, medication management notes
 - icd10_codes: Suggest behavioral health ICD-10 codes (F-codes)
 - cpt_codes: Suggest therapy CPT codes (90834, 90837, 90846, 90847, etc.)
 - documentation_completeness: 0.0-10.0

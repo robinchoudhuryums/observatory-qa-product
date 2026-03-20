@@ -8,6 +8,7 @@ import { logger } from "./services/logger";
 import { initRedis, checkRateLimit, closeRedis } from "./services/redis";
 import { initQueues, enqueueRetention, closeQueues } from "./services/queue";
 import { initEmail, sendEmail, buildQuotaAlertEmail } from "./services/email";
+import { wafMiddleware } from "./middleware/waf";
 import { PLAN_DEFINITIONS, type PlanTier } from "@shared/schema";
 
 const app = express();
@@ -83,10 +84,13 @@ app.use((req, res, next) => {
   next();
 });
 
+// WAF: Application-level firewall (SQL injection, XSS, path traversal, anomaly scoring)
+app.use(wafMiddleware);
+
 // Stripe webhook needs raw body for signature verification
 app.use("/api/billing/webhook", express.raw({ type: "application/json" }));
-app.use(express.json());
-app.use(express.urlencoded({ extended: false }));
+app.use(express.json({ limit: "1mb" }));
+app.use(express.urlencoded({ extended: false, limit: "1mb" }));
 
 // HIPAA: Security headers including Content-Security-Policy
 app.use((req, res, next) => {
@@ -138,6 +142,16 @@ app.use((req, res, next) => {
 app.post("/api/auth/login", distributedRateLimit(15 * 60 * 1000, 5) as any);
 // Rate limit registration: 3 per hour per IP
 app.post("/api/auth/register", distributedRateLimit(60 * 60 * 1000, 3) as any);
+// Rate limit password reset: 5 per 15 minutes per IP (prevent token brute-force & enumeration)
+app.post("/api/auth/forgot-password", distributedRateLimit(15 * 60 * 1000, 5) as any);
+app.post("/api/auth/reset-password", distributedRateLimit(15 * 60 * 1000, 5) as any);
+// HIPAA: Read rate limiting to prevent bulk data exfiltration
+// 60 requests/min on data endpoints, 5 requests/min on exports
+app.use("/api/export", distributedRateLimit(60 * 1000, 5) as any);
+app.use("/api/calls", distributedRateLimit(60 * 1000, 60) as any);
+app.use("/api/employees", distributedRateLimit(60 * 1000, 60) as any);
+app.use("/api/clinical", distributedRateLimit(60 * 1000, 60) as any);
+app.use("/api/ehr", distributedRateLimit(60 * 1000, 30) as any);
 
 (async () => {
   // --- Infrastructure initialization ---
@@ -153,6 +167,15 @@ app.post("/api/auth/register", distributedRateLimit(60 * 60 * 1000, 3) as any);
   const pgInitialized = await initPostgresStorage();
   if (pgInitialized) {
     logger.info("PostgreSQL storage backend active");
+  } else if (process.env.DATABASE_URL) {
+    // DATABASE_URL is set but PostgreSQL failed to connect — fail fast in production
+    // to prevent silent fallback to in-memory storage (which loses data on restart)
+    if (process.env.NODE_ENV === "production") {
+      logger.error("PostgreSQL is configured (DATABASE_URL set) but unavailable. Refusing to start in production with in-memory fallback.");
+      process.exit(1);
+    } else {
+      logger.warn("PostgreSQL is configured (DATABASE_URL set) but unavailable. Falling back to in-memory storage for development.");
+    }
   }
 
   // 3. Initialize BullMQ job queues
