@@ -9,6 +9,12 @@ import { logger } from "../services/logger";
 import { queryAuditLogs, verifyAuditChain } from "../services/audit-log";
 import { safeInt, withRetry } from "./helpers";
 import { enqueueReanalysis } from "../services/queue";
+import { getWafStats, blockIp, unblockIp } from "../middleware/waf";
+import {
+  declareIncident, advanceIncidentPhase, addTimelineEntry, addActionItem,
+  updateActionItem, updateIncident, getIncident, listIncidents,
+  createBreachReport, updateBreachReport, listBreachReports, getBreachReport,
+} from "../services/incident-response";
 
 export function registerAdminRoutes(app: Express): void {
   // ==================== PROMPT TEMPLATE ROUTES (admin only) ====================
@@ -368,5 +374,125 @@ export function registerAdminRoutes(app: Express): void {
       logger.error({ err: error }, "Failed to verify audit chain");
       res.status(500).json({ message: "Failed to verify audit chain integrity" });
     }
+  });
+
+  // ==================== WAF ADMIN ROUTES ====================
+
+  app.get("/api/admin/waf-stats", requireAuth, requireRole("admin"), (_req, res) => {
+    res.json(getWafStats());
+  });
+
+  app.post("/api/admin/waf/block-ip", requireAuth, requireRole("admin"), (req, res) => {
+    const { ip } = req.body;
+    if (!ip || typeof ip !== "string") {
+      res.status(400).json({ message: "IP address is required" });
+      return;
+    }
+    blockIp(ip);
+    res.json({ success: true, message: `IP ${ip} blocked` });
+  });
+
+  app.post("/api/admin/waf/unblock-ip", requireAuth, requireRole("admin"), (req, res) => {
+    const { ip } = req.body;
+    if (!ip || typeof ip !== "string") {
+      res.status(400).json({ message: "IP address is required" });
+      return;
+    }
+    unblockIp(ip);
+    res.json({ success: true, message: `IP ${ip} unblocked` });
+  });
+
+  // ==================== SECURITY INCIDENTS ====================
+
+  app.get("/api/admin/incidents", requireAuth, requireRole("admin"), injectOrgContext, (req, res) => {
+    res.json(listIncidents(req.orgId!));
+  });
+
+  app.get("/api/admin/incidents/:id", requireAuth, requireRole("admin"), injectOrgContext, (req, res) => {
+    const incident = getIncident(req.orgId!, req.params.id);
+    if (!incident) { res.status(404).json({ message: "Incident not found" }); return; }
+    res.json(incident);
+  });
+
+  app.post("/api/admin/incidents", requireAuth, requireRole("admin"), injectOrgContext, (req, res) => {
+    const { title, description, severity, affectedSystems, estimatedAffectedRecords, phiInvolved } = req.body;
+    if (!title || !description || !severity) {
+      res.status(400).json({ message: "title, description, and severity are required" });
+      return;
+    }
+    const incident = declareIncident(req.orgId!, {
+      title, description, severity,
+      declaredBy: req.user!.username,
+      affectedSystems, estimatedAffectedRecords, phiInvolved,
+    });
+    res.status(201).json(incident);
+  });
+
+  app.post("/api/admin/incidents/:id/advance", requireAuth, requireRole("admin"), injectOrgContext, (req, res) => {
+    const incident = advanceIncidentPhase(req.orgId!, req.params.id, req.user!.username);
+    if (!incident) { res.status(404).json({ message: "Incident not found" }); return; }
+    res.json(incident);
+  });
+
+  app.post("/api/admin/incidents/:id/timeline", requireAuth, requireRole("admin"), injectOrgContext, (req, res) => {
+    const { description } = req.body;
+    if (!description) { res.status(400).json({ message: "description is required" }); return; }
+    const incident = addTimelineEntry(req.orgId!, req.params.id, description, req.user!.username);
+    if (!incident) { res.status(404).json({ message: "Incident not found" }); return; }
+    res.json(incident);
+  });
+
+  app.patch("/api/admin/incidents/:id", requireAuth, requireRole("admin"), injectOrgContext, (req, res) => {
+    const incident = updateIncident(req.orgId!, req.params.id, req.body);
+    if (!incident) { res.status(404).json({ message: "Incident not found" }); return; }
+    res.json(incident);
+  });
+
+  app.post("/api/admin/incidents/:id/action-items", requireAuth, requireRole("admin"), injectOrgContext, (req, res) => {
+    const { description, assignedTo, dueDate } = req.body;
+    if (!description) { res.status(400).json({ message: "description is required" }); return; }
+    const incident = addActionItem(req.orgId!, req.params.id, { description, assignedTo, dueDate });
+    if (!incident) { res.status(404).json({ message: "Incident not found" }); return; }
+    res.json(incident);
+  });
+
+  app.patch("/api/admin/incidents/:incidentId/action-items/:itemId", requireAuth, requireRole("admin"), injectOrgContext, (req, res) => {
+    const { status } = req.body;
+    if (!status) { res.status(400).json({ message: "status is required" }); return; }
+    const incident = updateActionItem(req.orgId!, req.params.incidentId, req.params.itemId, status);
+    if (!incident) { res.status(404).json({ message: "Incident or action item not found" }); return; }
+    res.json(incident);
+  });
+
+  // ==================== BREACH REPORTS ====================
+
+  app.get("/api/admin/breach-reports", requireAuth, requireRole("admin"), injectOrgContext, (req, res) => {
+    res.json(listBreachReports(req.orgId!));
+  });
+
+  app.get("/api/admin/breach-reports/:id", requireAuth, requireRole("admin"), injectOrgContext, (req, res) => {
+    const report = getBreachReport(req.orgId!, req.params.id);
+    if (!report) { res.status(404).json({ message: "Breach report not found" }); return; }
+    res.json(report);
+  });
+
+  app.post("/api/admin/breach-reports", requireAuth, requireRole("admin"), injectOrgContext, (req, res) => {
+    const { title, description, incidentId, affectedIndividuals, phiTypes, correctiveActions } = req.body;
+    if (!title || !description || affectedIndividuals === undefined || !phiTypes?.length) {
+      res.status(400).json({ message: "title, description, affectedIndividuals, and phiTypes are required" });
+      return;
+    }
+    const report = createBreachReport(req.orgId!, {
+      title, description, incidentId,
+      reportedBy: req.user!.username,
+      affectedIndividuals, phiTypes, correctiveActions,
+    });
+    res.status(201).json(report);
+  });
+
+  app.patch("/api/admin/breach-reports/:id", requireAuth, requireRole("admin"), injectOrgContext, (req, res) => {
+    const report = updateBreachReport(req.orgId!, req.params.id, req.body);
+    if (!report) { res.status(404).json({ message: "Breach report not found" }); return; }
+    res.json(report);
   });
 }

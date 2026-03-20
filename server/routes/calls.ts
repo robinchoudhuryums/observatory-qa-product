@@ -19,6 +19,7 @@ import { searchRelevantChunks, formatRetrievedContext } from "../services/rag";
 import { PLAN_DEFINITIONS, type PlanTier, type UsageRecord } from "@shared/schema";
 import { estimateBedrockCost, estimateAssemblyAICost } from "./ab-testing";
 import { encryptField, decryptField } from "../services/phi-encryption";
+import { calibrateAnalysis } from "../services/scoring-calibration";
 
 // --- Reference document cache (per-org, avoids repeated DB queries) ---
 const REF_DOC_CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes
@@ -281,6 +282,37 @@ async function processAudioFile(orgId: string, callId: string, filePath: string,
         communication: aiAnalysis.sub_scores.communication ?? 0,
         resolution: aiAnalysis.sub_scores.resolution ?? 0,
       };
+    }
+
+    // Apply score calibration if enabled (normalizes AI scoring distribution)
+    if (aiAnalysis?.sub_scores && analysis.performanceScore) {
+      try {
+        const org = await storage.getOrganization(orgId);
+        const calibrated = calibrateAnalysis(
+          {
+            performance_score: safeFloat(analysis.performanceScore),
+            sub_scores: {
+              compliance: analysis.subScores?.compliance ?? 0,
+              customer_experience: analysis.subScores?.customerExperience ?? 0,
+              communication: analysis.subScores?.communication ?? 0,
+              resolution: analysis.subScores?.resolution ?? 0,
+            },
+          },
+          org?.settings,
+        );
+        if (calibrated.calibration_applied) {
+          analysis.performanceScore = calibrated.performance_score as any;
+          analysis.subScores = {
+            compliance: calibrated.sub_scores.compliance,
+            customerExperience: calibrated.sub_scores.customer_experience,
+            communication: calibrated.sub_scores.communication,
+            resolution: calibrated.sub_scores.resolution,
+          };
+          logger.info({ callId, originalScore: safeFloat(analysis.performanceScore), calibratedScore: calibrated.performance_score }, "Score calibration applied");
+        }
+      } catch (calErr) {
+        logger.warn({ callId, err: calErr }, "Score calibration failed — using raw scores");
+      }
     }
 
     if (aiAnalysis?.detected_agent_name) {

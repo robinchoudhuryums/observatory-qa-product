@@ -193,6 +193,8 @@ export async function setupAuth(app: Express) {
 
   // HIPAA: 15-minute idle timeout (addressable requirement, standard in healthcare)
   const SESSION_IDLE_TIMEOUT_MS = 15 * 60 * 1000; // 15 minutes
+  // HIPAA: 8-hour absolute session maximum regardless of activity
+  const SESSION_ABSOLUTE_MAX_MS = 8 * 60 * 60 * 1000; // 8 hours
 
   // Prefer Redis session store (distributed, survives restarts)
   // Falls back to MemoryStore if Redis unavailable
@@ -369,12 +371,34 @@ export async function setupAuth(app: Express) {
   });
 }
 
+// HIPAA: 8-hour absolute session maximum regardless of activity
+const SESSION_ABSOLUTE_MAX_MS = 8 * 60 * 60 * 1000;
+
 // Middleware to require authentication on API routes
 export const requireAuth: RequestHandler = (req, res, next) => {
-  if (req.isAuthenticated()) {
-    return next();
+  if (!req.isAuthenticated()) {
+    return res.status(401).json({ message: "Authentication required", errorCode: "OBS-AUTH-003" });
   }
-  res.status(401).json({ message: "Authentication required", errorCode: "OBS-AUTH-003" });
+
+  // Enforce absolute session timeout (8 hours from login)
+  const session = req.session as any;
+  if (session?.createdAt) {
+    const sessionAge = Date.now() - session.createdAt;
+    if (sessionAge > SESSION_ABSOLUTE_MAX_MS) {
+      req.logout(() => {
+        req.session?.destroy(() => {});
+      });
+      return res.status(401).json({
+        message: "Session expired (maximum duration exceeded). Please log in again.",
+        errorCode: "OBS-AUTH-005",
+      });
+    }
+  } else {
+    // Stamp the session creation time (first authenticated request)
+    session.createdAt = Date.now();
+  }
+
+  return next();
 };
 
 // HIPAA: Role-based access control middleware

@@ -17,23 +17,17 @@
 import { createHmac, createHash } from "crypto";
 import type { AIAnalysisProvider, CallAnalysis } from "./ai-provider";
 import { buildSystemPrompt, buildUserMessage, parseJsonResponse } from "./ai-provider";
+import { getAwsCredentials, type AwsCredentials } from "./aws-credentials";
 import { logger } from "./logger";
 
 const DEFAULT_MODEL = "us.anthropic.claude-sonnet-4-6";
-const DEFAULT_REGION = "us-east-1";
 const BEDROCK_TIMEOUT_MS = 120_000; // 2 minutes — long transcripts may need >60s
-
-interface AwsCredentials {
-  accessKeyId: string;
-  secretAccessKey: string;
-  sessionToken?: string;
-  region: string;
-}
 
 export class BedrockProvider implements AIAnalysisProvider {
   readonly name = "bedrock";
   private credentials: AwsCredentials | null = null;
   private model: string;
+  private credentialsInitialized = false;
 
   /**
    * @param modelOverride - Per-org model override (from OrgSettings.bedrockModel)
@@ -41,16 +35,42 @@ export class BedrockProvider implements AIAnalysisProvider {
   constructor(modelOverride?: string) {
     this.model = modelOverride || process.env.BEDROCK_MODEL || DEFAULT_MODEL;
 
+    // Eagerly try env vars for backward compat (async IMDSv2 resolved on first use)
     if (process.env.AWS_ACCESS_KEY_ID && process.env.AWS_SECRET_ACCESS_KEY) {
       this.credentials = {
-        accessKeyId: process.env.AWS_ACCESS_KEY_ID,
-        secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY,
-        sessionToken: process.env.AWS_SESSION_TOKEN,
-        region: process.env.AWS_REGION || DEFAULT_REGION,
+        accessKeyId: process.env.AWS_ACCESS_KEY_ID.trim(),
+        secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY.trim(),
+        sessionToken: process.env.AWS_SESSION_TOKEN?.trim(),
+        region: process.env.AWS_REGION?.trim() || "us-east-1",
+        source: "env" as const,
       };
-      logger.info({ region: this.credentials.region, model: this.model }, "Bedrock provider initialized");
+      this.credentialsInitialized = true;
+      logger.info({ region: this.credentials.region, model: this.model }, "Bedrock provider initialized (env credentials)");
     } else {
-      logger.warn("Bedrock provider: AWS credentials not found. Set AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY.");
+      logger.info({ model: this.model }, "Bedrock provider: will attempt IMDSv2 on first use");
+    }
+  }
+
+  /**
+   * Ensure credentials are resolved (env or IMDSv2).
+   */
+  private async ensureCredentials(): Promise<void> {
+    if (this.credentialsInitialized && this.credentials) {
+      // Check if IMDSv2 creds are about to expire
+      if (this.credentials.expiresAt) {
+        const bufferMs = 5 * 60 * 1000;
+        if (this.credentials.expiresAt.getTime() - Date.now() < bufferMs) {
+          this.credentials = await getAwsCredentials();
+        }
+      }
+      return;
+    }
+    this.credentials = await getAwsCredentials();
+    this.credentialsInitialized = true;
+    if (this.credentials) {
+      logger.info({ source: this.credentials.source, region: this.credentials.region, model: this.model }, "Bedrock provider credentials resolved");
+    } else {
+      logger.warn("Bedrock provider: No AWS credentials available (checked env + IMDSv2)");
     }
   }
 
@@ -64,12 +84,16 @@ export class BedrockProvider implements AIAnalysisProvider {
   }
 
   get isAvailable(): boolean {
+    // If credentials haven't been resolved yet (IMDSv2 path), optimistically return true
+    // since ensureCredentials() will resolve them on first use
+    if (!this.credentialsInitialized) return true;
     return this.credentials !== null;
   }
 
   async generateText(prompt: string): Promise<string> {
+    await this.ensureCredentials();
     if (!this.credentials) {
-      throw new Error("Bedrock provider not configured");
+      throw new Error("Bedrock provider not configured — no AWS credentials available");
     }
 
     const region = this.credentials.region;
@@ -103,8 +127,9 @@ export class BedrockProvider implements AIAnalysisProvider {
   }
 
   async analyzeCallTranscript(transcriptText: string, callId: string, callCategory?: string, promptTemplate?: any): Promise<CallAnalysis> {
+    await this.ensureCredentials();
     if (!this.credentials) {
-      throw new Error("Bedrock provider not configured");
+      throw new Error("Bedrock provider not configured — no AWS credentials available");
     }
 
     // Split prompt into cacheable system prompt + dynamic user message
