@@ -340,7 +340,11 @@ export function registerOnboardingRoutes(app: Express): void {
         let parsedAppliesTo: string[] | undefined;
         if (appliesTo) {
           try {
-            parsedAppliesTo = JSON.parse(appliesTo);
+            const parsed = JSON.parse(appliesTo);
+            if (!Array.isArray(parsed) || !parsed.every((item: unknown) => typeof item === "string")) {
+              return res.status(400).json({ message: "appliesTo must be a JSON array of strings" });
+            }
+            parsedAppliesTo = parsed;
           } catch {
             return res.status(400).json({ message: "Invalid appliesTo format" });
           }

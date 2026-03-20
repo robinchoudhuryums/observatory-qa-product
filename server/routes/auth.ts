@@ -31,13 +31,16 @@ export function registerAuthRoutes(app: Express): void {
         const org = await storage.getOrganization(user.orgId);
         if (org?.settings?.mfaRequired && !dbUser?.mfaEnabled) {
           // Allow login but flag that MFA setup is required
-          req.login(user, (loginErr) => {
-            if (loginErr) return next(loginErr);
-            res.json({
-              id: user.id, username: user.username, name: user.name,
-              role: user.role, orgId: user.orgId, orgSlug: user.orgSlug,
-              mfaSetupRequired: true,
-              message: "Your organization requires MFA. Please set it up immediately.",
+          req.session.regenerate((regenErr) => {
+            if (regenErr) return next(regenErr);
+            req.login(user, (loginErr) => {
+              if (loginErr) return next(loginErr);
+              res.json({
+                id: user.id, username: user.username, name: user.name,
+                role: user.role, orgId: user.orgId, orgSlug: user.orgSlug,
+                mfaSetupRequired: true,
+                message: "Your organization requires MFA. Please set it up immediately.",
+              });
             });
           });
           return;
@@ -46,9 +49,13 @@ export function registerAuthRoutes(app: Express): void {
         // If user lookup fails (e.g. env user), proceed without MFA
       }
 
-      req.login(user, (loginErr) => {
-        if (loginErr) return next(loginErr);
-        res.json({ id: user.id, username: user.username, name: user.name, role: user.role, orgId: user.orgId, orgSlug: user.orgSlug });
+      // Regenerate session ID on login to prevent session fixation attacks
+      req.session.regenerate((regenErr) => {
+        if (regenErr) return next(regenErr);
+        req.login(user, (loginErr) => {
+          if (loginErr) return next(loginErr);
+          res.json({ id: user.id, username: user.username, name: user.name, role: user.role, orgId: user.orgId, orgSlug: user.orgSlug });
+        });
       });
     })(req, res, next);
   });

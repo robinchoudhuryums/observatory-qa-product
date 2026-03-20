@@ -16,7 +16,7 @@ import { upload, safeFloat, withRetry } from "./helpers";
 import { enforceQuota } from "./billing";
 import { logger } from "../services/logger";
 import { searchRelevantChunks, formatRetrievedContext } from "../services/rag";
-import { PLAN_DEFINITIONS, type PlanTier, type UsageRecord } from "@shared/schema";
+import { PLAN_DEFINITIONS, CALL_CATEGORIES, type PlanTier, type UsageRecord } from "@shared/schema";
 import { estimateBedrockCost, estimateAssemblyAICost } from "./ab-testing";
 import { encryptField, decryptField } from "../services/phi-encryption";
 import { calibrateAnalysis } from "../services/scoring-calibration";
@@ -503,8 +503,8 @@ export function registerCallRoutes(app: Express): void {
       });
 
       // Support server-side pagination via limit/offset
-      const parsedLimit = limit ? parseInt(limit as string, 10) : undefined;
-      const parsedOffset = offset ? parseInt(offset as string, 10) : 0;
+      const parsedLimit = limit ? Math.max(0, parseInt(limit as string, 10) || 0) : undefined;
+      const parsedOffset = Math.max(0, parseInt(offset as string, 10) || 0);
 
       if (parsedLimit && parsedLimit > 0) {
         const paged = calls.slice(parsedOffset, parsedOffset + parsedLimit);
@@ -563,6 +563,14 @@ export function registerCallRoutes(app: Express): void {
       }
 
       const { employeeId, callCategory } = req.body;
+
+      // Validate callCategory against allowed values
+      const validCategories = CALL_CATEGORIES.map(c => c.value);
+      if (callCategory && !validCategories.includes(callCategory)) {
+        await cleanupFile(req.file.path);
+        res.status(400).json({ message: `Invalid call category. Must be one of: ${validCategories.join(", ")}` });
+        return;
+      }
 
       if (employeeId) {
         const employee = await storage.getEmployee(req.orgId!, employeeId);
