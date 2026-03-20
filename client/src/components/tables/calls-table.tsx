@@ -1,6 +1,6 @@
 import { useState, useMemo } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Eye, Play, Download, Star, Trash2, UserCheck, AlertTriangle, Award, ChevronLeft, ChevronRight, ArrowUpDown, ArrowUp, ArrowDown, CheckSquare, Square, FileAudio, ShieldQuestion, FileDown } from "lucide-react";
+import { Eye, Play, Download, Star, Trash2, UserCheck, AlertTriangle, Award, ChevronLeft, ChevronRight, ArrowUpDown, ArrowUp, ArrowDown, CheckSquare, Square, FileAudio, ShieldQuestion, FileDown, BrainCircuit } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { HelpTip } from "@/components/ui/help-tip";
@@ -411,17 +411,26 @@ export default function CallsTable() {
                 <td className="py-3 px-2">
                   {call.analysis?.performanceScore && (() => {
                     const score = Number(call.analysis.performanceScore);
-                    const scoreColor = score >= 8 ? "text-green-600" : score >= 6 ? "text-blue-600" : score >= 4 ? "text-yellow-600" : "text-red-600";
-                    const barColor = score >= 8 ? "from-green-500 to-emerald-400" : score >= 6 ? "from-blue-500 to-cyan-400" : score >= 4 ? "from-yellow-500 to-amber-400" : "from-red-500 to-orange-400";
+                    const aiCompleted = call.analysis.confidenceFactors &&
+                      typeof call.analysis.confidenceFactors === "object" &&
+                      (call.analysis.confidenceFactors as Record<string, unknown>).aiAnalysisCompleted === false;
+                    const scoreColor = aiCompleted ? "text-muted-foreground" : score >= 8 ? "text-green-600" : score >= 6 ? "text-blue-600" : score >= 4 ? "text-yellow-600" : "text-red-600";
+                    const barColor = aiCompleted ? "from-gray-400 to-gray-300" : score >= 8 ? "from-green-500 to-emerald-400" : score >= 6 ? "from-blue-500 to-cyan-400" : score >= 4 ? "from-yellow-500 to-amber-400" : "from-red-500 to-orange-400";
                     return (
                       <div className="space-y-1">
                         <div className="flex items-center space-x-2">
-                          <span className={`font-bold ${scoreColor}`}>{score.toFixed(1)}</span>
-                          {renderStars(score)}
+                          <span className={`font-bold ${scoreColor}`}>{aiCompleted ? "—" : score.toFixed(1)}</span>
+                          {aiCompleted ? (
+                            <span title="AI analysis unavailable — score is a default">
+                              <BrainCircuit className="w-4 h-4 text-amber-500" />
+                            </span>
+                          ) : renderStars(score)}
                         </div>
-                        <div className="w-full h-1.5 bg-muted rounded-full overflow-hidden">
-                          <div className={`h-full rounded-full bg-gradient-to-r ${barColor}`} style={{ width: `${score * 10}%` }} />
-                        </div>
+                        {!aiCompleted && (
+                          <div className="w-full h-1.5 bg-muted rounded-full overflow-hidden">
+                            <div className={`h-full rounded-full bg-gradient-to-r ${barColor}`} style={{ width: `${score * 10}%` }} />
+                          </div>
+                        )}
                       </div>
                     );
                   })()}

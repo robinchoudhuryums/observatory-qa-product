@@ -32,6 +32,9 @@ import {
   type InsertSubscription,
   type ReferenceDocument,
   type InsertReferenceDocument,
+  type ABTest,
+  type InsertABTest,
+  type UsageRecord,
 } from "@shared/schema";
 import { randomUUID, randomBytes } from "crypto";
 import { type IStorage, applyCallFilters } from "./types";
@@ -583,6 +586,53 @@ export class MemStorage implements IStorage {
   async deleteReferenceDocument(orgId: string, id: string): Promise<void> {
     const doc = this.referenceDocuments.get(id);
     if (doc?.orgId === orgId) this.referenceDocuments.delete(id);
+  }
+
+  // --- A/B test operations ---
+  private abTests = new Map<string, ABTest>();
+
+  async createABTest(orgId: string, test: InsertABTest): Promise<ABTest> {
+    const id = randomUUID();
+    const record: ABTest = { ...test, id, orgId, createdAt: new Date().toISOString() };
+    this.abTests.set(id, record);
+    return record;
+  }
+
+  async getABTest(orgId: string, id: string): Promise<ABTest | undefined> {
+    const test = this.abTests.get(id);
+    return test?.orgId === orgId ? test : undefined;
+  }
+
+  async getAllABTests(orgId: string): Promise<ABTest[]> {
+    return Array.from(this.abTests.values())
+      .filter(t => t.orgId === orgId)
+      .sort((a, b) => (b.createdAt || "").localeCompare(a.createdAt || ""));
+  }
+
+  async updateABTest(orgId: string, id: string, updates: Partial<ABTest>): Promise<ABTest | undefined> {
+    const test = await this.getABTest(orgId, id);
+    if (!test) return undefined;
+    const updated = { ...test, ...updates, id, orgId };
+    this.abTests.set(id, updated);
+    return updated;
+  }
+
+  async deleteABTest(orgId: string, id: string): Promise<void> {
+    const test = this.abTests.get(id);
+    if (test?.orgId === orgId) this.abTests.delete(id);
+  }
+
+  // --- Spend tracking / usage records ---
+  private usageRecords: UsageRecord[] = [];
+
+  async createUsageRecord(orgId: string, record: UsageRecord): Promise<void> {
+    this.usageRecords.push(record);
+  }
+
+  async getUsageRecords(orgId: string): Promise<UsageRecord[]> {
+    return this.usageRecords
+      .filter(r => r.orgId === orgId)
+      .sort((a, b) => b.timestamp.localeCompare(a.timestamp));
   }
 
   // --- Data retention (org-scoped) ---

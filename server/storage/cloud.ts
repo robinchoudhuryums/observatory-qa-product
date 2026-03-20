@@ -550,4 +550,17 @@ export class CloudStorage implements IStorage {
     return undefined;
   }
   async deleteInvitation(_orgId: string, _id: string): Promise<void> {}
+
+  // --- A/B test operations (not supported in cloud storage) ---
+  async createABTest(_orgId: string, _test: any): Promise<any> {
+    throw new Error("A/B testing requires PostgreSQL or in-memory storage");
+  }
+  async getABTest(_orgId: string, _id: string): Promise<any> { return undefined; }
+  async getAllABTests(_orgId: string): Promise<any[]> { return []; }
+  async updateABTest(_orgId: string, _id: string, _updates: any): Promise<any> { return undefined; }
+  async deleteABTest(_orgId: string, _id: string): Promise<void> {}
+
+  // --- Spend tracking (not supported in cloud storage) ---
+  async createUsageRecord(_orgId: string, _record: any): Promise<void> {}
+  async getUsageRecords(_orgId: string): Promise<any[]> { return []; }
 }

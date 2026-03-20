@@ -1,12 +1,13 @@
 import { useState, useRef, useEffect, useMemo, useCallback } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { Play, Pause, Download, Clock, FileText, AlertTriangle, Shield, Pencil, X, Save, History, Award, Gauge, ShieldQuestion, ClipboardCheck } from "lucide-react";
+import { Play, Pause, Download, Clock, FileText, AlertTriangle, Shield, Pencil, X, Save, History, Award, Gauge, ShieldQuestion, ClipboardCheck, BrainCircuit } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Link } from "wouter";
 import { useBeforeUnload } from "@/hooks/use-before-unload";
+import { toDisplayString } from "@/lib/display-utils";
 import type { CallWithDetails } from "@shared/schema";
 import { AudioWaveform } from "lucide-react";
 
@@ -96,23 +97,6 @@ export default function TranscriptViewer({ callId }: TranscriptViewerProps) {
     }
     editMutation.mutate({ updates, reason: editReason.trim() });
   };
-
-  // Safely coerce a value to a display string (handles objects from Bedrock AI)
-  const toDisplayString = useCallback((val: unknown): string => {
-    if (val == null) return "";
-    if (typeof val === "string") return val;
-    if (typeof val === "number" || typeof val === "boolean") return String(val);
-    if (typeof val === "object") {
-      const obj = val as Record<string, unknown>;
-      if (typeof obj.text === "string") return obj.text;
-      if (typeof obj.name === "string") return obj.name;
-      if (typeof obj.task === "string") return obj.task;
-      if (typeof obj.label === "string") return obj.label;
-      if (typeof obj.description === "string") return obj.description;
-      return JSON.stringify(val);
-    }
-    return String(val);
-  }, []);
 
   // Build keyword set from detected topics for highlighting
   // MUST be called before any early returns to respect Rules of Hooks
@@ -376,6 +360,21 @@ export default function TranscriptViewer({ callId }: TranscriptViewerProps) {
 
       {/* Hidden audio element that streams from S3 via the API */}
       <audio ref={audioRef} src={`/api/calls/${callId}/audio`} preload="metadata" />
+
+      {/* AI analysis failure banner */}
+      {call.analysis?.confidenceFactors && typeof call.analysis.confidenceFactors === "object" &&
+       (call.analysis.confidenceFactors as Record<string, unknown>).aiAnalysisCompleted === false && (
+        <div className="mb-4 rounded-lg border border-amber-200 dark:border-amber-900 bg-amber-50 dark:bg-amber-950/30 p-3 flex items-start gap-3">
+          <BrainCircuit className="w-5 h-5 text-amber-600 dark:text-amber-400 mt-0.5 flex-shrink-0" />
+          <div>
+            <p className="text-sm font-medium text-amber-800 dark:text-amber-300">AI analysis unavailable</p>
+            <p className="text-xs text-amber-700 dark:text-amber-400 mt-0.5">
+              The AI provider could not analyze this call. Scores shown are defaults (5.0) and do not reflect actual performance.
+              Check that your AWS Bedrock credentials are valid, or re-upload the call to retry analysis.
+            </p>
+          </div>
+        </div>
+      )}
 
       {/* Audio progress bar */}
       {audioRef.current && (

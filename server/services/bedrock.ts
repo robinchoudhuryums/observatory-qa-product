@@ -21,6 +21,7 @@ import { logger } from "./logger";
 
 const DEFAULT_MODEL = "us.anthropic.claude-sonnet-4-6";
 const DEFAULT_REGION = "us-east-1";
+const BEDROCK_TIMEOUT_MS = 120_000; // 2 minutes — long transcripts may need >60s
 
 interface AwsCredentials {
   accessKeyId: string;
@@ -53,6 +54,15 @@ export class BedrockProvider implements AIAnalysisProvider {
     }
   }
 
+  /** Create a provider with a specific model — used for A/B testing. */
+  static createWithModel(modelId: string): BedrockProvider {
+    return new BedrockProvider(modelId);
+  }
+
+  get modelId(): string {
+    return this.model;
+  }
+
   get isAvailable(): boolean {
     return this.credentials !== null;
   }
@@ -74,7 +84,7 @@ export class BedrockProvider implements AIAnalysisProvider {
 
     const headers = this.signRequest("POST", host, rawPath, body, region);
     const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 60_000);
+    const timeout = setTimeout(() => controller.abort(), BEDROCK_TIMEOUT_MS);
     try {
       const response = await fetch(url, { method: "POST", headers, body, signal: controller.signal });
 
@@ -123,7 +133,7 @@ export class BedrockProvider implements AIAnalysisProvider {
 
     const headers = this.signRequest("POST", host, rawPath, body, region);
     const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 60_000);
+    const timeout = setTimeout(() => controller.abort(), BEDROCK_TIMEOUT_MS);
     let result: any;
     try {
       const response = await fetch(url, {

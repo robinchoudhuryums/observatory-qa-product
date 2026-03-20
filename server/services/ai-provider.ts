@@ -29,6 +29,26 @@ export interface CallAnalysis {
   call_party_type: string;
   flags: string[];
   detected_agent_name: string | null;
+  /** Present only for clinical encounter / telemedicine categories */
+  clinical_note?: {
+    format: string;
+    specialty?: string;
+    chief_complaint?: string;
+    subjective?: string;
+    objective?: string;
+    assessment?: string;
+    plan?: string[];
+    hpi_narrative?: string;
+    review_of_systems?: Record<string, string>;
+    differential_diagnoses?: string[];
+    icd10_codes?: Array<{ code: string; description: string }>;
+    cpt_codes?: Array<{ code: string; description: string }>;
+    prescriptions?: Array<{ medication: string; dosage?: string; instructions?: string }>;
+    follow_up?: string;
+    documentation_completeness?: number;
+    clinical_accuracy?: number;
+    missing_sections?: string[];
+  };
 }
 
 export interface AIAnalysisProvider {
@@ -98,6 +118,17 @@ const CATEGORY_CONTEXT: Record<string, string> = {
   outbound: "This is an OUTBOUND call — the company employee called a customer or patient. One speaker is the employee/agent and the other is the customer/patient.",
   internal: "This is an INTERNAL call — both speakers are coworkers or employees within the same company. Evaluate collaboration, communication clarity, and productivity rather than customer service metrics.",
   vendor: "This is a VENDOR/PARTNER call — the employee is speaking with an external vendor or business partner. Evaluate negotiation, clarity, and professionalism.",
+  clinical_encounter: "This is a CLINICAL ENCOUNTER recording — a healthcare provider seeing a patient in person. One speaker is the provider (doctor/NP/PA) and the other is the patient. Focus on clinical documentation accuracy rather than customer service metrics.",
+  telemedicine: "This is a TELEMEDICINE VISIT — a remote healthcare consultation via phone or video. One speaker is the healthcare provider and the other is the patient. Focus on clinical documentation accuracy rather than customer service metrics.",
+  // Dental front desk call categories
+  dental_scheduling: "This is a DENTAL SCHEDULING call — a patient or prospective patient is calling to schedule, reschedule, or cancel a dental appointment. One speaker is the front desk staff and the other is the patient. Evaluate scheduling efficiency, patient experience, and whether the staff properly verified insurance and patient identity.",
+  dental_insurance: "This is a DENTAL INSURANCE call — the front desk or billing staff is handling insurance verification, benefits explanation, or pre-authorization. Evaluate accuracy of insurance information communicated, clarity of patient financial responsibility explanation, and compliance with billing protocols.",
+  dental_treatment: "This is a DENTAL TREATMENT DISCUSSION call — staff is discussing a treatment plan with a patient, including procedures, costs, payment options, and scheduling. Evaluate treatment acceptance techniques, clarity of financial presentation, and whether all patient questions were addressed. Track whether the patient accepted, deferred, or declined the proposed treatment.",
+  dental_recall: "This is a DENTAL RECALL/RECARE call — staff is contacting a patient for a recall or recare appointment (routine cleaning, periodic exam). Evaluate persuasiveness, professionalism, and whether the staff communicated the importance of preventive care.",
+  dental_emergency: "This is a DENTAL EMERGENCY TRIAGE call — a patient is calling about an urgent dental issue (toothache, trauma, swelling, broken tooth). One speaker is the front desk or clinical staff and the other is the patient. Evaluate whether proper triage questions were asked (onset, severity, symptoms, allergies, medications), appropriate urgency assessment was made, and clear next-step instructions were given.",
+  // Dental clinical documentation categories
+  dental_encounter: "This is a DENTAL CLINICAL ENCOUNTER — a dentist, hygienist, or dental specialist treating a patient in the office. Focus on clinical documentation accuracy, procedure details, and dental-specific terminology. Use CDT (Current Dental Terminology) codes instead of CPT codes.",
+  dental_consultation: "This is a DENTAL CONSULTATION — a new patient evaluation or second-opinion visit. Focus on comprehensive examination findings, treatment planning, and patient education. Use CDT codes for any procedures discussed or performed.",
 };
 
 export interface PromptTemplateConfig {
@@ -107,6 +138,18 @@ export interface PromptTemplateConfig {
   additionalInstructions?: string;
   /** Extracted text from company reference documents (injected automatically) */
   referenceDocuments?: Array<{ name: string; category: string; text: string }>;
+  /** Provider-specific style preferences for clinical note generation */
+  providerStylePreferences?: {
+    noteFormat?: string;
+    sectionOrder?: string[];
+    abbreviationLevel?: "minimal" | "moderate" | "heavy";
+    includeNegativePertinents?: boolean;
+    defaultSpecialty?: string;
+    customSections?: string[];
+    templateOverrides?: Record<string, string>;
+  };
+  /** Clinical specialty for specialty-specific prompt context */
+  clinicalSpecialty?: string;
 }
 
 /**
@@ -141,6 +184,15 @@ function smartTruncate(text: string, maxChars = 80000): string {
  * 25-40% input token savings from prompt caching.
  */
 export function buildSystemPrompt(callCategory?: string, template?: PromptTemplateConfig): string {
+  // Clinical documentation mode — entirely different output schema
+  const clinicalCategories = ["clinical_encounter", "telemedicine", "dental_encounter", "dental_consultation"];
+  if (callCategory && clinicalCategories.includes(callCategory)) {
+    if (callCategory === "dental_encounter" || callCategory === "dental_consultation") {
+      return buildDentalClinicalSystemPrompt(callCategory, template);
+    }
+    return buildClinicalSystemPrompt(callCategory, template);
+  }
+
   const categoryContext = callCategory && CATEGORY_CONTEXT[callCategory]
     ? `\nCALL CONTEXT:\n${CATEGORY_CONTEXT[callCategory]}\n`
     : "";
@@ -224,6 +276,298 @@ ${evaluationCriteria}${scoringSection}${phrasesSection}${referenceSection}${addi
 - call_party_type: "customer" (patients), "insurance" (reps), "medical_facility" (clinics/hospitals), "medicare" (1-800-MEDICARE), "vendor", "internal" (coworkers), "other"
 - detected_agent_name: Agent's name if clearly stated (e.g. "Hi, my name is Sarah"). Return null if uncertain. Only the agent's name, not the customer's.
 - flags: "medicare_call" if Medicare involved, "low_score" if performance ≤2.0, "exceptional_call" if ≥9.0 with outstanding service, "agent_misconduct:<description>" for serious misconduct (abusive language, hanging up, HIPAA violations, etc.)`;
+}
+
+/**
+ * Specialty-specific clinical prompt context.
+ * Guides the AI on what to focus on for each medical specialty.
+ */
+const SPECIALTY_CONTEXT: Record<string, string> = {
+  primary_care: "Focus on comprehensive assessment, preventive care recommendations, chronic disease management, medication reconciliation, and appropriate screening tests based on age/sex/risk factors.",
+  internal_medicine: "Focus on complex medical decision-making, multi-system assessment, medication interactions, specialist referral appropriateness, and diagnostic reasoning for internal medicine conditions.",
+  cardiology: "Focus on cardiovascular history (chest pain characterization, dyspnea classification, edema assessment), cardiac exam findings (murmurs, rhythm, JVD), cardiac medications, and risk stratification. Use ACC/AHA guidelines where applicable.",
+  dermatology: "Focus on lesion description using dermatologic terminology (morphology, distribution, color, size, borders), differential diagnosis, biopsy decisions, and treatment plans. Document lesion location precisely.",
+  orthopedics: "Focus on musculoskeletal exam (ROM, strength, stability testing, special tests), imaging interpretation, surgical vs. conservative management decisions, and functional limitations. Note laterality clearly.",
+  psychiatry: "Focus on mental status examination (MSE), psychiatric history, safety assessment (SI/HI), medication management (psychotropics, side effects), therapeutic modality, and functional assessment. Include PHQ-9/GAD-7 scores if discussed.",
+  pediatrics: "Focus on developmental milestones, growth parameters (percentiles), immunization status, age-appropriate screening, parent/caregiver concerns, and pediatric-specific dosing. Note age in years/months.",
+  ob_gyn: "Focus on obstetric history (G/P), menstrual history, prenatal care elements (gestational age, fetal assessment), gynecologic exam findings, contraception counseling, and appropriate screening (Pap, mammogram).",
+  emergency: "Focus on chief complaint, triage acuity, time-sensitive interventions, differential diagnosis with critical diagnoses ruled out, disposition decision-making, and discharge instructions. Document medical decision-making complexity.",
+  urgent_care: "Focus on acute complaint assessment, point-of-care testing, return precautions, follow-up recommendations, and appropriate primary care referral. Document why ED referral was or was not indicated.",
+  general_dentistry: "Focus on comprehensive oral examination, periodontal assessment, caries risk assessment, treatment planning, and patient education. Use CDT codes and Universal Numbering System.",
+  periodontics: "Focus on periodontal charting (probing depths, CAL, BOP, mobility, furcation), classification of periodontal disease, scaling/root planing documentation, and maintenance intervals.",
+  endodontics: "Focus on pulp vitality testing, periapical pathology assessment, working length determination, obturation technique, and post-treatment instructions. Note tooth number and canal anatomy.",
+  oral_surgery: "Focus on surgical indications, anesthesia type, surgical technique, specimen handling (if applicable), hemostasis, and post-operative instructions. Document informed consent discussion.",
+  orthodontics: "Focus on malocclusion classification, treatment objectives, appliance adjustments, compliance assessment, and treatment progress relative to planned duration.",
+  prosthodontics: "Focus on prosthesis design, material selection, preparation details, impression technique, shade selection, and occlusal scheme. Document try-in results.",
+  pediatric_dentistry: "Focus on behavior management technique, developmental dental assessment, caries risk assessment, fluoride recommendations, and parent education. Use primary tooth notation (A-T).",
+};
+
+/**
+ * Build provider style preference instructions for clinical note generation.
+ */
+function buildProviderStyleSection(prefs?: PromptTemplateConfig["providerStylePreferences"]): string {
+  if (!prefs) return "";
+
+  const instructions: string[] = [];
+
+  if (prefs.noteFormat) {
+    instructions.push(`- NOTE FORMAT: Use "${prefs.noteFormat}" format for this note`);
+  }
+
+  if (prefs.abbreviationLevel) {
+    const levels: Record<string, string> = {
+      minimal: "Use minimal abbreviations. Write out most terms fully for maximum clarity.",
+      moderate: "Use standard medical abbreviations (SOB, HTN, DM, etc.) but write out uncommon terms.",
+      heavy: "Use heavy abbreviations as preferred by experienced clinicians (pt, hx, dx, tx, rx, etc.).",
+    };
+    instructions.push(`- ABBREVIATION STYLE: ${levels[prefs.abbreviationLevel]}`);
+  }
+
+  if (prefs.includeNegativePertinents === true) {
+    instructions.push("- PERTINENT NEGATIVES: Include relevant negative findings in the ROS and physical exam (e.g., 'Denies chest pain, dyspnea, palpitations')");
+  } else if (prefs.includeNegativePertinents === false) {
+    instructions.push("- PERTINENT NEGATIVES: Only document positive findings unless negative findings are clinically significant");
+  }
+
+  if (prefs.sectionOrder && prefs.sectionOrder.length > 0) {
+    instructions.push(`- SECTION ORDER: Organize the note sections in this order: ${prefs.sectionOrder.join(", ")}`);
+  }
+
+  if (prefs.customSections && prefs.customSections.length > 0) {
+    instructions.push(`- ADDITIONAL SECTIONS: Include these custom sections in the note: ${prefs.customSections.join(", ")}`);
+  }
+
+  if (prefs.templateOverrides) {
+    for (const [section, override] of Object.entries(prefs.templateOverrides)) {
+      instructions.push(`- ${section.toUpperCase()} FORMAT: ${override}`);
+    }
+  }
+
+  return instructions.length > 0
+    ? `\nPROVIDER PREFERENCES (learned from this provider's past notes):\n${instructions.join("\n")}\n`
+    : "";
+}
+
+/**
+ * Build clinical documentation system prompt.
+ * Supports SOAP, DAP, BIRP, and custom note formats.
+ * Includes specialty-specific context and provider style preferences.
+ */
+function buildClinicalSystemPrompt(callCategory: string, template?: PromptTemplateConfig): string {
+  const categoryContext = CATEGORY_CONTEXT[callCategory] || "";
+
+  // Build reference documents section
+  let referenceSection = "";
+  if (template?.referenceDocuments && template.referenceDocuments.length > 0) {
+    const isRagRetrieved = template.referenceDocuments.some(d => d.category === "rag_retrieval");
+    if (isRagRetrieved) {
+      const ragText = template.referenceDocuments.map(d => d.text).join("\n\n");
+      referenceSection = `\n- CLINICAL KNOWLEDGE BASE: ${ragText}`;
+    } else {
+      const docSnippets = template.referenceDocuments.slice(0, 5).map(d => `--- ${d.name} ---\n${d.text.slice(0, 3000)}`);
+      referenceSection = `\n- REFERENCE MATERIALS:\n${docSnippets.join("\n\n")}`;
+    }
+  }
+
+  let additionalSection = "";
+  if (template?.additionalInstructions) {
+    additionalSection = `\n- ADDITIONAL INSTRUCTIONS:\n${template.additionalInstructions}`;
+  }
+
+  // Specialty-specific context
+  const specialty = template?.clinicalSpecialty || template?.providerStylePreferences?.defaultSpecialty;
+  const specialtySection = specialty && SPECIALTY_CONTEXT[specialty]
+    ? `\nSPECIALTY CONTEXT (${specialty}):\n${SPECIALTY_CONTEXT[specialty]}\n`
+    : "";
+
+  // Provider style preferences
+  const styleSection = buildProviderStyleSection(template?.providerStylePreferences);
+
+  // Determine note format for the JSON template
+  const preferredFormat = template?.providerStylePreferences?.noteFormat || "soap";
+  const formatInstructions = buildFormatInstructions(preferredFormat);
+
+  return `You are a clinical documentation AI assistant analyzing a recorded healthcare encounter. Your task is to draft structured clinical notes from the provider-patient conversation.
+
+CALL CONTEXT:
+${categoryContext}
+${specialtySection}${styleSection}${referenceSection}${additionalSection}
+
+Respond with ONLY valid JSON (no markdown, no code fences). The JSON must contain BOTH standard analysis fields AND a clinical_note object:
+
+${formatInstructions.jsonTemplate}
+
+Guidelines for standard fields:
+- summary: Brief 1-2 sentence encounter summary
+- sentiment_score: 0.0-1.0 (patient satisfaction/comfort level)
+- performance_score: 0.0-10.0 (clinical documentation quality)
+- sub_scores: compliance (clinical guidelines adherence), customer_experience (bedside manner), communication (clarity of explanations), resolution (addressed patient concerns)
+- detected_agent_name: Provider's name if stated. Return null if uncertain.
+
+${formatInstructions.guidelines}
+
+IMPORTANT:
+- All clinical notes are DRAFTS requiring provider attestation before use
+- Do NOT fabricate clinical information not discussed in the encounter
+- If information for a section was not discussed, note it in missing_sections
+- Use standard medical terminology and abbreviations where appropriate
+- ICD-10 and CPT codes are suggestions only — provider must verify`;
+}
+
+/**
+ * Build format-specific JSON template and guidelines for clinical notes.
+ * Supports: SOAP, DAP, BIRP, HPI-focused, procedure, progress.
+ */
+function buildFormatInstructions(format: string): { jsonTemplate: string; guidelines: string } {
+  switch (format) {
+    case "dap":
+      return {
+        jsonTemplate: `{"summary":"Brief encounter summary","topics":["presenting issue"],"sentiment":"positive|neutral|negative","sentiment_score":0.0,"performance_score":0.0,"sub_scores":{"compliance":0.0,"customer_experience":0.0,"communication":0.0,"resolution":0.0},"action_items":["follow-up items"],"feedback":{"strengths":[{"text":"...","timestamp":"MM:SS"}],"suggestions":[{"text":"...","timestamp":"MM:SS"}]},"call_party_type":"medical_facility","flags":[],"detected_agent_name":null,"clinical_note":{"format":"dap","chief_complaint":"Presenting problem","data":"Objective and subjective data from the session — what was observed, reported, and discussed","assessment":"Clinical assessment, diagnosis, treatment effectiveness, progress toward goals","plan":["Next session focus","Homework assignments","Referrals"],"icd10_codes":[{"code":"F41.1","description":"Generalized anxiety disorder"}],"cpt_codes":[{"code":"90834","description":"Psychotherapy, 45 minutes"}],"prescriptions":[],"follow_up":"Next appointment in 1 week","documentation_completeness":0.0,"clinical_accuracy":0.0,"missing_sections":[]}}`,
+        guidelines: `Guidelines for DAP clinical_note:
+- format: "dap" (Data, Assessment, Plan)
+- chief_complaint: The presenting problem or reason for the session
+- data: Combined subjective and objective data — what the client reported AND what the clinician observed (affect, behavior, appearance, themes discussed, therapeutic interventions used)
+- assessment: Clinical interpretation — diagnosis, symptom severity changes, progress toward treatment goals, barriers to progress, risk assessment
+- plan: Array of specific items — next session topics, homework/assignments, skills to practice, referrals, medication changes
+- icd10_codes: Suggest behavioral health ICD-10 codes (F-codes) based on the session
+- cpt_codes: Suggest appropriate therapy CPT codes (90834 for 45min, 90837 for 60min, 90847 for family, etc.)
+- documentation_completeness: 0.0-10.0
+- clinical_accuracy: 0.0-10.0
+- missing_sections: Standard DAP sections not adequately covered`,
+      };
+
+    case "birp":
+      return {
+        jsonTemplate: `{"summary":"Brief encounter summary","topics":["presenting issue"],"sentiment":"positive|neutral|negative","sentiment_score":0.0,"performance_score":0.0,"sub_scores":{"compliance":0.0,"customer_experience":0.0,"communication":0.0,"resolution":0.0},"action_items":["follow-up items"],"feedback":{"strengths":[{"text":"...","timestamp":"MM:SS"}],"suggestions":[{"text":"...","timestamp":"MM:SS"}]},"call_party_type":"medical_facility","flags":[],"detected_agent_name":null,"clinical_note":{"format":"birp","chief_complaint":"Presenting problem","behavior":"Observable client behaviors, affect, appearance, engagement level during session","intervention":"Therapeutic interventions applied — techniques, modalities, psychoeducation provided","response":"Client's response to interventions — engagement, insight gained, resistance, emotional reactions","plan":["Next session goals","Homework","Referrals","Medication management"],"icd10_codes":[{"code":"F32.1","description":"Major depressive disorder, single episode, moderate"}],"cpt_codes":[{"code":"90837","description":"Psychotherapy, 60 minutes"}],"prescriptions":[],"follow_up":"Next session in 1 week","documentation_completeness":0.0,"clinical_accuracy":0.0,"missing_sections":[]}}`,
+        guidelines: `Guidelines for BIRP clinical_note:
+- format: "birp" (Behavior, Intervention, Response, Plan)
+- chief_complaint: The presenting problem or session focus
+- behavior: Observable client behaviors during the session — affect (flat, anxious, tearful), appearance, engagement level, verbal/nonverbal cues, reported symptoms and behaviors since last session
+- intervention: Specific therapeutic techniques used — CBT, DBT skills, motivational interviewing, psychoeducation topics, mindfulness exercises, role-playing, etc. Be specific about what was done
+- response: How the client responded to interventions — did they engage? Show insight? Demonstrate skill acquisition? Express resistance? Have emotional reactions? Note therapeutic progress
+- plan: Array of specific items — next session focus, homework assignments, coping skills to practice, referrals, safety plan updates, medication management notes
+- icd10_codes: Suggest behavioral health ICD-10 codes (F-codes)
+- cpt_codes: Suggest therapy CPT codes (90834, 90837, 90846, 90847, etc.)
+- documentation_completeness: 0.0-10.0
+- clinical_accuracy: 0.0-10.0
+- missing_sections: Standard BIRP sections not covered`,
+      };
+
+    case "hpi_focused":
+      return {
+        jsonTemplate: `{"summary":"Brief encounter summary","topics":["chief complaint"],"sentiment":"positive|neutral|negative","sentiment_score":0.0,"performance_score":0.0,"sub_scores":{"compliance":0.0,"customer_experience":0.0,"communication":0.0,"resolution":0.0},"action_items":["follow-up items"],"feedback":{"strengths":[{"text":"...","timestamp":"MM:SS"}],"suggestions":[{"text":"...","timestamp":"MM:SS"}]},"call_party_type":"medical_facility","flags":[],"detected_agent_name":null,"clinical_note":{"format":"hpi_focused","chief_complaint":"...","hpi_narrative":"Detailed narrative HPI using OLDCARTS framework","review_of_systems":{"constitutional":"..."},"subjective":"Additional subjective information","objective":"Physical exam and findings","assessment":"Clinical assessment","plan":["Treatment plan"],"icd10_codes":[],"cpt_codes":[],"prescriptions":[],"follow_up":"...","documentation_completeness":0.0,"clinical_accuracy":0.0,"missing_sections":[]}}`,
+        guidelines: `Guidelines for HPI-focused clinical_note:
+- format: "hpi_focused"
+- hpi_narrative: Detailed History of Present Illness using OLDCARTS framework (Onset, Location, Duration, Character, Aggravating factors, Relieving factors, Timing, Severity). Write as a flowing narrative paragraph.
+- review_of_systems: Organized by organ system, include pertinent positives and negatives
+- Other fields follow standard SOAP structure
+- Emphasis on comprehensive history documentation`,
+      };
+
+    case "procedure_note":
+      return {
+        jsonTemplate: `{"summary":"Brief procedure summary","topics":["procedure performed"],"sentiment":"neutral","sentiment_score":0.5,"performance_score":0.0,"sub_scores":{"compliance":0.0,"customer_experience":0.0,"communication":0.0,"resolution":0.0},"action_items":["post-procedure items"],"feedback":{"strengths":[{"text":"...","timestamp":"MM:SS"}],"suggestions":[{"text":"...","timestamp":"MM:SS"}]},"call_party_type":"medical_facility","flags":[],"detected_agent_name":null,"clinical_note":{"format":"procedure_note","chief_complaint":"Indication for procedure","subjective":"Pre-procedure assessment","objective":"Procedure details: technique, findings, specimens, complications","assessment":"Post-procedure assessment","plan":["Post-procedure care instructions"],"icd10_codes":[],"cpt_codes":[],"prescriptions":[],"follow_up":"Post-procedure follow-up plan","documentation_completeness":0.0,"clinical_accuracy":0.0,"missing_sections":[]}}`,
+        guidelines: `Guidelines for procedure note clinical_note:
+- format: "procedure_note"
+- chief_complaint: Indication/reason for the procedure
+- subjective: Pre-procedure assessment, consent discussion, patient symptoms
+- objective: Procedure details — technique used, anesthesia, findings during procedure, specimens obtained, estimated blood loss, complications or lack thereof
+- assessment: Post-procedure status, immediate outcomes
+- plan: Post-procedure care, activity restrictions, follow-up schedule, wound care
+- Include appropriate procedure CPT codes`,
+      };
+
+    default: // SOAP (default)
+      return {
+        jsonTemplate: `{"summary":"Brief encounter summary","topics":["chief complaint","relevant topics"],"sentiment":"positive|neutral|negative","sentiment_score":0.0,"performance_score":0.0,"sub_scores":{"compliance":0.0,"customer_experience":0.0,"communication":0.0,"resolution":0.0},"action_items":["follow-up items"],"feedback":{"strengths":[{"text":"...","timestamp":"MM:SS"}],"suggestions":[{"text":"...","timestamp":"MM:SS"}]},"call_party_type":"medical_facility","flags":[],"detected_agent_name":null,"clinical_note":{"format":"soap","chief_complaint":"...","subjective":"Patient history and symptoms as reported","objective":"Physical exam findings, vitals, observations mentioned","assessment":"Clinical assessment and diagnoses","plan":["Treatment plan items"],"hpi_narrative":"Detailed HPI narrative","review_of_systems":{"constitutional":"...","cardiovascular":"..."},"differential_diagnoses":["..."],"icd10_codes":[{"code":"Z00.00","description":"General adult medical examination"}],"cpt_codes":[{"code":"99213","description":"Office visit, established patient, low complexity"}],"prescriptions":[{"medication":"...","dosage":"...","instructions":"..."}],"follow_up":"Return in 2 weeks","documentation_completeness":0.0,"clinical_accuracy":0.0,"missing_sections":["sections not covered in the encounter"]}}`,
+        guidelines: `Guidelines for SOAP clinical_note:
+- format: "soap" (Subjective, Objective, Assessment, Plan)
+- chief_complaint: The primary reason for the visit in the patient's own words
+- subjective: Patient-reported symptoms, history, medications, allergies — everything the patient tells the provider
+- objective: Any physical exam findings, vitals, or observations the provider describes
+- assessment: Clinical impression, working diagnoses, differential considerations
+- plan: Array of specific plan items (medications, tests ordered, referrals, lifestyle modifications)
+- hpi_narrative: Detailed History of Present Illness in standard medical documentation format
+- review_of_systems: Only include systems that were actually discussed (e.g., {"constitutional": "No fever, fatigue, or weight loss", "respiratory": "Denies cough or dyspnea"})
+- icd10_codes: Suggest appropriate ICD-10 codes based on the encounter. These are SUGGESTIONS for provider review, not final codes
+- cpt_codes: Suggest appropriate E/M or procedure codes based on encounter complexity
+- prescriptions: Any medications prescribed, discussed, or adjusted during the encounter
+- follow_up: Follow-up instructions or return visit timing
+- documentation_completeness: 0.0-10.0 (how thorough the encounter documentation is)
+- clinical_accuracy: 0.0-10.0 (clinical appropriateness of the AI-generated note)
+- missing_sections: List any standard documentation sections NOT covered in the encounter`,
+      };
+  }
+}
+
+/**
+ * Build dental-specific clinical documentation system prompt.
+ * Outputs dental SOAP notes with CDT codes, tooth numbers, and periodontal findings.
+ */
+function buildDentalClinicalSystemPrompt(callCategory: string, template?: PromptTemplateConfig): string {
+  const categoryContext = CATEGORY_CONTEXT[callCategory] || "";
+
+  let referenceSection = "";
+  if (template?.referenceDocuments && template.referenceDocuments.length > 0) {
+    const isRagRetrieved = template.referenceDocuments.some(d => d.category === "rag_retrieval");
+    if (isRagRetrieved) {
+      const ragText = template.referenceDocuments.map(d => d.text).join("\n\n");
+      referenceSection = `\n- DENTAL KNOWLEDGE BASE: ${ragText}`;
+    } else {
+      const docSnippets = template.referenceDocuments.slice(0, 5).map(d => `--- ${d.name} ---\n${d.text.slice(0, 3000)}`);
+      referenceSection = `\n- REFERENCE MATERIALS:\n${docSnippets.join("\n\n")}`;
+    }
+  }
+
+  let additionalSection = "";
+  if (template?.additionalInstructions) {
+    additionalSection = `\n- ADDITIONAL INSTRUCTIONS:\n${template.additionalInstructions}`;
+  }
+
+  return `You are a dental clinical documentation AI assistant analyzing a recorded dental encounter. Your task is to draft structured dental clinical notes from the provider-patient conversation.
+
+CALL CONTEXT:
+${categoryContext}
+${referenceSection}${additionalSection}
+
+Respond with ONLY valid JSON (no markdown, no code fences). The JSON must contain standard analysis fields AND a dental-specific clinical_note object:
+
+{"summary":"Brief encounter summary","topics":["chief complaint","procedures performed"],"sentiment":"positive|neutral|negative","sentiment_score":0.0,"performance_score":0.0,"sub_scores":{"compliance":0.0,"customer_experience":0.0,"communication":0.0,"resolution":0.0},"action_items":["follow-up items"],"feedback":{"strengths":[{"text":"...","timestamp":"MM:SS"}],"suggestions":[{"text":"...","timestamp":"MM:SS"}]},"call_party_type":"medical_facility","flags":[],"detected_agent_name":null,"clinical_note":{"format":"dental_exam","chief_complaint":"...","subjective":"Patient-reported symptoms, dental history, pain description","objective":"Clinical findings, radiographic findings, intraoral exam","assessment":"Dental diagnoses and clinical assessment","plan":["Treatment plan items"],"tooth_numbers":["14","19"],"quadrants":["UR","LL"],"cdt_codes":[{"code":"D0150","description":"Comprehensive oral evaluation"}],"icd10_codes":[{"code":"K02.9","description":"Dental caries, unspecified"}],"periodontal_findings":{"probing_depths":"Generalized 2-3mm, localized 5mm on #3 mesial","bleeding_on_probing":"Localized BOP #3, #14","gingival_description":"Marginal erythema localized to #3"},"treatment_phases":[{"phase":1,"description":"Disease control","procedures":["SRP quadrants 1-4","Re-evaluation 4-6 weeks"],"estimated_cost":"$800-1200"}],"prescriptions":[{"medication":"Amoxicillin 500mg","dosage":"TID x 7 days","instructions":"Take with food, complete full course"}],"follow_up":"Return in 2 weeks for re-evaluation","documentation_completeness":0.0,"clinical_accuracy":0.0,"missing_sections":["sections not covered"]}}
+
+Guidelines for standard fields:
+- summary: Brief 1-2 sentence encounter summary
+- sentiment_score: 0.0-1.0 (patient comfort/satisfaction level)
+- performance_score: 0.0-10.0 (clinical documentation quality)
+- sub_scores: compliance (clinical guidelines adherence), customer_experience (chairside manner), communication (explanation clarity), resolution (addressed patient concerns)
+- detected_agent_name: Provider's name if stated. Return null if uncertain.
+
+Guidelines for dental clinical_note:
+- format: "dental_exam", "dental_operative", "dental_perio", "dental_endo", "dental_ortho_progress", "dental_surgery", or "dental_treatment_plan"
+- chief_complaint: Primary reason for visit in patient's own words
+- subjective: Patient-reported symptoms, dental history, pain level/location, relevant medical history, medications, allergies
+- objective: Clinical findings — intraoral exam, extraoral exam, radiographic findings, vitals if taken
+- assessment: Dental diagnoses with tooth-specific findings
+- plan: Specific treatment steps (procedures, referrals, follow-up)
+- tooth_numbers: Use Universal Numbering System (1-32 for permanent, A-T for primary teeth)
+- quadrants: Affected quadrants (UR=upper right, UL=upper left, LR=lower right, LL=lower left)
+- cdt_codes: CDT (Current Dental Terminology) procedure codes — these are SUGGESTIONS for provider review
+- icd10_codes: Relevant ICD-10-CM diagnostic codes
+- periodontal_findings: Probing depths, bleeding on probing, attachment levels, gingival description, mobility, furcation involvement
+- treatment_phases: For comprehensive plans, organize into phases (1=urgent/disease control, 2=definitive, 3=maintenance)
+- prescriptions: Medications prescribed (antibiotics, analgesics, mouth rinses)
+- follow_up: Return visit timing and instructions
+- documentation_completeness: 0.0-10.0
+- clinical_accuracy: 0.0-10.0
+- missing_sections: Standard sections not covered in the encounter
+
+IMPORTANT:
+- All clinical notes are DRAFTS requiring dentist attestation before use
+- Do NOT fabricate findings not discussed in the encounter
+- Use standard dental terminology (mesial, distal, buccal, lingual, occlusal, etc.)
+- Tooth numbers use Universal Numbering System (1-32) unless Palmer notation is explicitly used
+- CDT codes are suggestions only — the dentist must verify and sign off
+- ICD-10-CM codes for dental: K00-K14 (diseases of oral cavity), K02 (caries), K05 (gingivitis/periodontal), K08 (other disorders)
+- If a procedure was discussed but not performed, note it in the plan, not as a completed procedure`;
 }
 
 /**

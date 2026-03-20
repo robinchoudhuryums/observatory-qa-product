@@ -153,6 +153,7 @@ export async function syncSchema(db: Database): Promise<void> {
         confidence_factors JSONB,
         sub_scores JSONB,
         detected_agent_name VARCHAR(255),
+        clinical_note JSONB,
         created_at TIMESTAMP DEFAULT NOW()
       )
     `);
@@ -161,6 +162,7 @@ export async function syncSchema(db: Database): Promise<void> {
     await addColumnIfNotExists(db, "call_analyses", "confidence_score", "VARCHAR(20)");
     await addColumnIfNotExists(db, "call_analyses", "confidence_factors", "JSONB");
     await addColumnIfNotExists(db, "call_analyses", "manual_edits", "JSONB");
+    await addColumnIfNotExists(db, "call_analyses", "clinical_note", "JSONB");
     await db.execute(sql`CREATE UNIQUE INDEX IF NOT EXISTS analyses_call_id_idx ON call_analyses (call_id)`);
     await db.execute(sql`CREATE INDEX IF NOT EXISTS analyses_org_id_idx ON call_analyses (org_id)`);
     await db.execute(sql`CREATE INDEX IF NOT EXISTS analyses_performance_idx ON call_analyses (org_id, performance_score)`);
@@ -377,6 +379,45 @@ export async function syncSchema(db: Database): Promise<void> {
     `);
     await db.execute(sql`CREATE INDEX IF NOT EXISTS usage_org_type_idx ON usage_events (org_id, event_type)`);
     await db.execute(sql`CREATE INDEX IF NOT EXISTS usage_created_at_idx ON usage_events (created_at)`);
+
+    // --- A/B Tests ---
+    await db.execute(sql`
+      CREATE TABLE IF NOT EXISTS ab_tests (
+        id TEXT PRIMARY KEY,
+        org_id TEXT NOT NULL REFERENCES organizations(id),
+        file_name VARCHAR(500) NOT NULL,
+        call_category VARCHAR(50),
+        baseline_model VARCHAR(255) NOT NULL,
+        test_model VARCHAR(255) NOT NULL,
+        status VARCHAR(30) NOT NULL DEFAULT 'processing',
+        transcript_text TEXT,
+        baseline_analysis JSONB,
+        test_analysis JSONB,
+        baseline_latency_ms INTEGER,
+        test_latency_ms INTEGER,
+        notes TEXT,
+        created_by VARCHAR(255) NOT NULL,
+        created_at TIMESTAMP DEFAULT NOW()
+      )
+    `);
+    await db.execute(sql`CREATE INDEX IF NOT EXISTS ab_tests_org_id_idx ON ab_tests (org_id)`);
+    await db.execute(sql`CREATE INDEX IF NOT EXISTS ab_tests_status_idx ON ab_tests (org_id, status)`);
+
+    // --- Spend Records ---
+    await db.execute(sql`
+      CREATE TABLE IF NOT EXISTS spend_records (
+        id TEXT PRIMARY KEY,
+        org_id TEXT NOT NULL REFERENCES organizations(id),
+        call_id TEXT NOT NULL,
+        type VARCHAR(20) NOT NULL,
+        timestamp TIMESTAMP NOT NULL DEFAULT NOW(),
+        user_name VARCHAR(255) NOT NULL,
+        services JSONB NOT NULL,
+        total_estimated_cost REAL NOT NULL DEFAULT 0
+      )
+    `);
+    await db.execute(sql`CREATE INDEX IF NOT EXISTS spend_records_org_id_idx ON spend_records (org_id)`);
+    await db.execute(sql`CREATE INDEX IF NOT EXISTS spend_records_timestamp_idx ON spend_records (org_id, timestamp)`);
 
     // --- Audit Logs (tamper-evident) ---
     await db.execute(sql`

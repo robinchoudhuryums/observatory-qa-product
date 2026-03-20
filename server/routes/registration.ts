@@ -1,8 +1,12 @@
 import type { Express } from "express";
 import passport from "passport";
+import { readFileSync } from "fs";
+import { join, dirname } from "path";
+import { fileURLToPath } from "url";
 import { storage } from "../storage";
 import { requireAuth, requireRole, injectOrgContext, hashPassword } from "../auth";
 import { logger } from "../services/logger";
+import { randomUUID } from "crypto";
 
 export function registerRegistrationRoutes(app: Express): void {
   // ==================== SELF-SERVICE REGISTRATION ====================
@@ -13,7 +17,7 @@ export function registerRegistrationRoutes(app: Express): void {
    */
   app.post("/api/auth/register", async (req, res, next) => {
     try {
-      const { orgName, orgSlug, username, password, name } = req.body;
+      const { orgName, orgSlug, username, password, name, industryType } = req.body;
 
       // Validate required fields
       if (!orgName || !orgSlug || !username || !password || !name) {
@@ -46,6 +50,16 @@ export function registerRegistrationRoutes(app: Express): void {
         return res.status(409).json({ message: "Username already taken" });
       }
 
+      // Determine default call categories based on industry
+      const dentalCategories = [
+        "dental_scheduling", "dental_insurance", "dental_treatment",
+        "dental_recall", "dental_emergency", "dental_encounter", "dental_consultation",
+      ];
+      const healthcareCategories = ["inbound", "outbound", "clinical_encounter", "telemedicine"];
+      const defaultCategories = industryType === "dental" ? dentalCategories
+        : industryType === "healthcare" ? healthcareCategories
+        : undefined;
+
       // Create the organization
       const org = await storage.createOrganization({
         name: orgName,
@@ -54,6 +68,8 @@ export function registerRegistrationRoutes(app: Express): void {
         settings: {
           retentionDays: 90,
           branding: { appName: orgName },
+          industryType: industryType || undefined,
+          callCategories: defaultCategories,
         },
       });
 
@@ -67,7 +83,34 @@ export function registerRegistrationRoutes(app: Express): void {
         role: "admin",
       });
 
-      logger.info({ orgId: org.id, userId: user.id, username }, "New organization registered");
+      logger.info({ orgId: org.id, userId: user.id, username, industryType }, "New organization registered");
+
+      // Auto-seed default prompt templates based on industry type
+      if (industryType === "dental") {
+        try {
+          const templatesPath = join(process.cwd(), "data", "dental", "default-prompt-templates.json");
+          const rawTemplates = readFileSync(templatesPath, "utf-8");
+          const templates = JSON.parse(rawTemplates) as Array<{
+            callCategory: string; name: string; evaluationCriteria: string;
+            requiredPhrases?: unknown; scoringWeights?: unknown; additionalInstructions?: string;
+          }>;
+          for (const tmpl of templates) {
+            await storage.createPromptTemplate(org.id, {
+              orgId: org.id,
+              callCategory: tmpl.callCategory,
+              name: tmpl.name,
+              evaluationCriteria: tmpl.evaluationCriteria,
+              requiredPhrases: tmpl.requiredPhrases as any,
+              scoringWeights: tmpl.scoringWeights as any,
+              additionalInstructions: tmpl.additionalInstructions || undefined,
+              isActive: true,
+            });
+          }
+          logger.info({ orgId: org.id, count: templates.length }, "Auto-seeded dental prompt templates");
+        } catch (seedErr) {
+          logger.warn({ err: seedErr, orgId: org.id }, "Failed to seed dental templates — continuing without them");
+        }
+      }
 
       // Auto-login the new user
       const sessionUser = {

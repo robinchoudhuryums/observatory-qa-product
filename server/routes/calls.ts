@@ -1,6 +1,6 @@
 import type { Express } from "express";
 import type { PromptTemplateConfig } from "../services/ai-provider";
-import { createHash } from "crypto";
+import { createHash, randomUUID } from "crypto";
 import path from "path";
 import fs from "fs";
 import { storage, normalizeAnalysis } from "../storage";
@@ -16,7 +16,9 @@ import { upload, safeFloat, withRetry } from "./helpers";
 import { enforceQuota } from "./billing";
 import { logger } from "../services/logger";
 import { searchRelevantChunks, formatRetrievedContext } from "../services/rag";
-import { PLAN_DEFINITIONS, type PlanTier } from "@shared/schema";
+import { PLAN_DEFINITIONS, type PlanTier, type UsageRecord } from "@shared/schema";
+import { estimateBedrockCost, estimateAssemblyAICost } from "./ab-testing";
+import { encryptField, decryptField } from "../services/phi-encryption";
 
 // --- Reference document cache (per-org, avoids repeated DB queries) ---
 const REF_DOC_CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes
@@ -61,7 +63,7 @@ async function cleanupFile(filePath: string) {
 }
 
 // Process audio file with AssemblyAI and archive to cloud storage
-async function processAudioFile(orgId: string, callId: string, filePath: string, audioBuffer: Buffer, originalName: string, mimeType: string, callCategory?: string) {
+async function processAudioFile(orgId: string, callId: string, filePath: string, audioBuffer: Buffer, originalName: string, mimeType: string, callCategory?: string, userId?: string) {
   logger.info({ callId }, "Starting audio processing");
   broadcastCallUpdate(callId, "uploading", { step: 1, totalSteps: 6, label: "Uploading audio..." }, orgId);
   try {
@@ -123,6 +125,25 @@ async function processAudioFile(orgId: string, callId: string, filePath: string,
         }
       } catch (tmplError) {
         logger.warn({ callId, err: tmplError }, "Failed to load prompt template (using defaults)");
+      }
+    }
+
+    // Inject provider style preferences for clinical encounters
+    const clinicalCategories = ["clinical_encounter", "telemedicine", "dental_encounter", "dental_consultation"];
+    if (callCategory && clinicalCategories.includes(callCategory)) {
+      try {
+        const org = await storage.getOrganization(orgId);
+        const providerPrefs = userId && (org?.settings as any)?.providerStylePreferences?.[userId];
+        if (providerPrefs) {
+          if (!promptTemplate) promptTemplate = {};
+          promptTemplate.providerStylePreferences = providerPrefs;
+          if (providerPrefs.defaultSpecialty) {
+            promptTemplate.clinicalSpecialty = providerPrefs.defaultSpecialty;
+          }
+          logger.info({ callId, userId }, "Injecting provider style preferences into clinical prompt");
+        }
+      } catch (prefErr) {
+        logger.warn({ callId, err: prefErr }, "Failed to load provider preferences (continuing without)");
       }
     }
 
@@ -266,6 +287,51 @@ async function processAudioFile(orgId: string, callId: string, filePath: string,
       analysis.detectedAgentName = aiAnalysis.detected_agent_name;
     }
 
+    // Pass through clinical note for clinical encounter categories
+    if (aiAnalysis?.clinical_note) {
+      const cn_raw = aiAnalysis.clinical_note as any;
+      analysis.clinicalNote = {
+        format: cn_raw.format || "soap",
+        specialty: cn_raw.specialty,
+        chiefComplaint: cn_raw.chief_complaint,
+        subjective: cn_raw.subjective,
+        objective: cn_raw.objective,
+        assessment: cn_raw.assessment,
+        plan: cn_raw.plan,
+        hpiNarrative: cn_raw.hpi_narrative,
+        reviewOfSystems: cn_raw.review_of_systems,
+        differentialDiagnoses: cn_raw.differential_diagnoses,
+        icd10Codes: cn_raw.icd10_codes,
+        cptCodes: cn_raw.cpt_codes,
+        prescriptions: cn_raw.prescriptions,
+        followUp: cn_raw.follow_up,
+        documentationCompleteness: cn_raw.documentation_completeness,
+        clinicalAccuracy: cn_raw.clinical_accuracy,
+        missingSections: cn_raw.missing_sections,
+        patientConsentObtained: false,
+        providerAttested: false,
+        // Behavioral health (DAP/BIRP) fields
+        data: cn_raw.data,
+        behavior: cn_raw.behavior,
+        intervention: cn_raw.intervention,
+        response: cn_raw.response,
+        // Dental fields
+        cdtCodes: cn_raw.cdt_codes,
+        toothNumbers: cn_raw.tooth_numbers,
+        quadrants: cn_raw.quadrants,
+        periodontalFindings: cn_raw.periodontal_findings,
+        treatmentPhases: cn_raw.treatment_phases,
+      };
+
+      // Encrypt PHI fields in clinical notes
+      const cn = analysis.clinicalNote;
+      if (cn.subjective) cn.subjective = encryptField(cn.subjective);
+      if (cn.objective) cn.objective = encryptField(cn.objective);
+      if (cn.assessment) cn.assessment = encryptField(cn.assessment);
+      if (cn.hpiNarrative) cn.hpiNarrative = encryptField(cn.hpiNarrative);
+      if (cn.chiefComplaint) cn.chiefComplaint = encryptField(cn.chiefComplaint);
+    }
+
     if (confidenceScore < 0.7) {
       const existingFlags = (analysis.flags as string[]) || [];
       existingFlags.push("low_confidence");
@@ -339,12 +405,58 @@ async function processAudioFile(orgId: string, callId: string, filePath: string,
       trackUsage({ orgId, eventType: "ai_analysis", quantity: 1, metadata: { callId, model: aiProvider.name } });
     }
 
+    // Record detailed spend/cost estimate
+    try {
+      const audioDuration = Math.floor((transcriptResponse.words?.[transcriptResponse.words.length - 1]?.end || 0) / 1000);
+      const assemblyaiCost = estimateAssemblyAICost(audioDuration);
+      const estimatedInputTokens = Math.ceil((transcriptResponse.text || "").length / 4) + 500;
+      const estimatedOutputTokens = 800;
+      const bedrockModel = process.env.BEDROCK_MODEL || "us.anthropic.claude-sonnet-4-6";
+      const bedrockCost = aiAnalysis ? estimateBedrockCost(bedrockModel, estimatedInputTokens, estimatedOutputTokens) : 0;
+
+      const spendRecord: UsageRecord = {
+        id: randomUUID(),
+        orgId,
+        callId,
+        type: "call",
+        timestamp: new Date().toISOString(),
+        user: "system",
+        services: {
+          assemblyai: { durationSeconds: audioDuration, estimatedCost: Math.round(assemblyaiCost * 10000) / 10000 },
+          ...(aiAnalysis ? {
+            bedrock: {
+              model: bedrockModel,
+              estimatedInputTokens,
+              estimatedOutputTokens,
+              estimatedCost: Math.round(bedrockCost * 10000) / 10000,
+            },
+          } : {}),
+        },
+        totalEstimatedCost: Math.round((assemblyaiCost + bedrockCost) * 10000) / 10000,
+      };
+      await storage.createUsageRecord(orgId, spendRecord);
+    } catch (spendErr) {
+      logger.warn({ callId, err: spendErr }, "Failed to record spend (non-blocking)");
+    }
+
   } catch (error) {
     logger.error({ callId, err: error }, "A critical error occurred during audio processing");
     await storage.updateCall(orgId, callId, { status: "failed" });
     broadcastCallUpdate(callId, "failed", { label: "Processing failed" }, orgId);
     await cleanupFile(filePath);
   }
+}
+
+/** Decrypt PHI fields in clinical notes for display */
+function decryptClinicalNote(analysis: Record<string, unknown> | null | undefined): void {
+  if (!analysis) return;
+  const cn = analysis.clinicalNote as Record<string, unknown> | undefined;
+  if (!cn) return;
+  if (typeof cn.subjective === "string") cn.subjective = decryptField(cn.subjective);
+  if (typeof cn.objective === "string") cn.objective = decryptField(cn.objective);
+  if (typeof cn.assessment === "string") cn.assessment = decryptField(cn.assessment);
+  if (typeof cn.hpiNarrative === "string") cn.hpiNarrative = decryptField(cn.hpiNarrative);
+  if (typeof cn.chiefComplaint === "string") cn.chiefComplaint = decryptField(cn.chiefComplaint);
 }
 
 export function registerCallRoutes(app: Express): void {
@@ -397,6 +509,7 @@ export function registerCallRoutes(app: Express): void {
       ]);
 
       const analysis = normalizeAnalysis(rawAnalysis);
+      decryptClinicalNote(analysis as Record<string, unknown> | null);
 
       res.json({
         ...call,
@@ -448,7 +561,8 @@ export function registerCallRoutes(app: Express): void {
       const originalName = req.file.originalname;
       const mimeType = req.file.mimetype || "audio/mpeg";
       const orgId = req.orgId!;
-      processAudioFile(orgId, call.id, req.file.path, audioBuffer, originalName, mimeType, callCategory)
+      const uploadUserId = (req as any).user?.id;
+      processAudioFile(orgId, call.id, req.file.path, audioBuffer, originalName, mimeType, callCategory, uploadUserId)
         .catch(async (error) => {
           logger.error({ callId: call.id, err: error }, "Failed to process call");
           try {
@@ -562,6 +676,7 @@ export function registerCallRoutes(app: Express): void {
         res.status(404).json({ message: "Call analysis not found" });
         return;
       }
+      decryptClinicalNote(analysis as Record<string, unknown>);
       res.json(analysis);
     } catch (error) {
       res.status(500).json({ message: "Failed to get call analysis" });

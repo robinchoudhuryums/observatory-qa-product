@@ -7,7 +7,7 @@ import { useToast } from "@/hooks/use-toast";
 import { LogIn, UserPlus, Shield, Eye, Settings, Loader2, ArrowLeft } from "lucide-react";
 import { ObservatoryLogo } from "@/components/observatory-logo";
 import { apiRequest } from "@/lib/queryClient";
-import { USER_ROLES } from "@shared/schema";
+import { USER_ROLES, INDUSTRY_TYPES } from "@shared/schema";
 import { useAppName } from "@/hooks/use-organization";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 
@@ -40,6 +40,7 @@ export default function AuthPage({ onLogin, onBack, initialView }: AuthPageProps
   const [regName, setRegName] = useState("");
   const [regUsername, setRegUsername] = useState("");
   const [regPassword, setRegPassword] = useState("");
+  const [regIndustryType, setRegIndustryType] = useState("");
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -99,6 +100,7 @@ export default function AuthPage({ onLogin, onBack, initialView }: AuthPageProps
         username: regUsername,
         password: regPassword,
         name: regName,
+        industryType: regIndustryType || undefined,
       });
       toast({ title: "Organization Created", description: "Welcome! Redirecting to dashboard..." });
       onLogin();
@@ -237,6 +239,20 @@ export default function AuthPage({ onLogin, onBack, initialView }: AuthPageProps
                     pattern="^[a-z0-9-]+$"
                   />
                   <p className="text-xs text-muted-foreground mt-1">URL-safe identifier (lowercase, hyphens)</p>
+                </div>
+                <div>
+                  <label className="text-sm font-medium text-foreground">Industry</label>
+                  <Select value={regIndustryType} onValueChange={setRegIndustryType}>
+                    <SelectTrigger>
+                      <SelectValue placeholder="Select your industry (optional)" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {INDUSTRY_TYPES.map((ind) => (
+                        <SelectItem key={ind.value} value={ind.value}>{ind.label}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  <p className="text-xs text-muted-foreground mt-1">We'll set up default templates and categories for your industry</p>
                 </div>
                 <div>
                   <label className="text-sm font-medium text-foreground">Your Full Name</label>

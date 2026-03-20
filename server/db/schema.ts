@@ -159,6 +159,7 @@ export const callAnalyses = pgTable("call_analyses", {
   confidenceFactors: jsonb("confidence_factors"),
   subScores: jsonb("sub_scores"),
   detectedAgentName: varchar("detected_agent_name", { length: 255 }),
+  clinicalNote: jsonb("clinical_note"),
   createdAt: timestamp("created_at").defaultNow(),
 }, (t) => [
   uniqueIndex("analyses_call_id_idx").on(t.callId),
@@ -363,6 +364,43 @@ export const usageEvents = pgTable("usage_events", {
 }, (t) => [
   index("usage_org_type_idx").on(t.orgId, t.eventType),
   index("usage_created_at_idx").on(t.createdAt),
+]);
+
+// --- A/B TESTS ---
+export const abTests = pgTable("ab_tests", {
+  id: text("id").primaryKey(),
+  orgId: text("org_id").notNull().references(() => organizations.id),
+  fileName: varchar("file_name", { length: 500 }).notNull(),
+  callCategory: varchar("call_category", { length: 50 }),
+  baselineModel: varchar("baseline_model", { length: 255 }).notNull(),
+  testModel: varchar("test_model", { length: 255 }).notNull(),
+  status: varchar("status", { length: 30 }).notNull().default("processing"),
+  transcriptText: text("transcript_text"),
+  baselineAnalysis: jsonb("baseline_analysis"),
+  testAnalysis: jsonb("test_analysis"),
+  baselineLatencyMs: integer("baseline_latency_ms"),
+  testLatencyMs: integer("test_latency_ms"),
+  notes: text("notes"),
+  createdBy: varchar("created_by", { length: 255 }).notNull(),
+  createdAt: timestamp("created_at").defaultNow(),
+}, (t) => [
+  index("ab_tests_org_id_idx").on(t.orgId),
+  index("ab_tests_status_idx").on(t.orgId, t.status),
+]);
+
+// --- SPEND RECORDS (detailed per-call cost tracking) ---
+export const spendRecords = pgTable("spend_records", {
+  id: text("id").primaryKey(),
+  orgId: text("org_id").notNull().references(() => organizations.id),
+  callId: text("call_id").notNull(),
+  type: varchar("type", { length: 20 }).notNull(), // 'call' | 'ab-test'
+  timestamp: timestamp("timestamp").notNull().defaultNow(),
+  userName: varchar("user_name", { length: 255 }).notNull(),
+  services: jsonb("services").notNull(), // { assemblyai, bedrock, bedrockSecondary }
+  totalEstimatedCost: real("total_estimated_cost").notNull().default(0),
+}, (t) => [
+  index("spend_records_org_id_idx").on(t.orgId),
+  index("spend_records_timestamp_idx").on(t.orgId, t.timestamp),
 ]);
 
 // --- AUDIT LOGS (append-only, tamper-evident, HIPAA compliance) ---

@@ -32,6 +32,9 @@ import {
   type InsertSubscription,
   type ReferenceDocument,
   type InsertReferenceDocument,
+  type ABTest,
+  type InsertABTest,
+  type UsageRecord,
 } from "@shared/schema";
 
 /**
@@ -213,6 +216,17 @@ export interface IStorage {
   getReferenceDocumentsForCategory(orgId: string, callCategory: string): Promise<ReferenceDocument[]>;
   updateReferenceDocument(orgId: string, id: string, updates: Partial<ReferenceDocument>): Promise<ReferenceDocument | undefined>;
   deleteReferenceDocument(orgId: string, id: string): Promise<void>;
+
+  // A/B test operations (org-scoped)
+  createABTest(orgId: string, test: InsertABTest): Promise<ABTest>;
+  getABTest(orgId: string, id: string): Promise<ABTest | undefined>;
+  getAllABTests(orgId: string): Promise<ABTest[]>;
+  updateABTest(orgId: string, id: string, updates: Partial<ABTest>): Promise<ABTest | undefined>;
+  deleteABTest(orgId: string, id: string): Promise<void>;
+
+  // Spend tracking / usage records (org-scoped)
+  createUsageRecord(orgId: string, record: UsageRecord): Promise<void>;
+  getUsageRecords(orgId: string): Promise<UsageRecord[]>;
 }
 
 export interface UsageSummary {

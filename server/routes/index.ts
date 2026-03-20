@@ -19,6 +19,10 @@ import { registerPasswordResetRoutes } from "./password-reset";
 import { registerExportRoutes } from "./export";
 import { registerSsoRoutes, setupSamlAuth } from "./sso";
 import { registerMfaRoutes } from "./mfa";
+import { registerABTestRoutes } from "./ab-testing";
+import { registerSpendTrackingRoutes } from "./spend-tracking";
+import { registerClinicalRoutes } from "./clinical";
+import { registerEhrRoutes } from "./ehr";
 
 export async function registerRoutes(app: Express): Promise<Server> {
   // API key auth middleware (before routes, after session middleware)
@@ -49,6 +53,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
   registerCoachingRoutes(app);
   registerInsightRoutes(app);
   registerExportRoutes(app);
+  registerABTestRoutes(app);
+  registerSpendTrackingRoutes(app);
+  registerClinicalRoutes(app);
+  registerEhrRoutes(app);
 
   const httpServer = createServer(app);
   return httpServer;

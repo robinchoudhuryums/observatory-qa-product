@@ -9,7 +9,22 @@ export const orgBrandingSchema = z.object({
   onboardingCompleted: z.boolean().optional(),
 });
 
+export const INDUSTRY_TYPES = [
+  { value: "contact_center", label: "Contact Center / Call Center" },
+  { value: "healthcare", label: "Healthcare (General)" },
+  { value: "dental", label: "Dental Practice" },
+  { value: "behavioral_health", label: "Behavioral Health" },
+  { value: "insurance", label: "Insurance" },
+  { value: "financial", label: "Financial Services" },
+  { value: "legal", label: "Legal" },
+  { value: "veterinary", label: "Veterinary" },
+  { value: "other", label: "Other" },
+] as const;
+
+export type IndustryType = typeof INDUSTRY_TYPES[number]["value"];
+
 export const orgSettingsSchema = z.object({
+  industryType: z.string().optional(),
   emailDomain: z.string().optional(),
   departments: z.array(z.string()).optional(),
   subTeams: z.record(z.string(), z.array(z.string())).optional(),
@@ -32,6 +47,24 @@ export const orgSettingsSchema = z.object({
   ssoEnforced: z.boolean().optional(), // When true, only SSO login allowed
   // MFA enforcement (HIPAA recommended safeguard)
   mfaRequired: z.boolean().optional(), // When true, all users in this org must enable MFA
+  // EHR integration configuration
+  ehrConfig: z.object({
+    system: z.enum(["open_dental", "eaglesoft", "dentrix"]),
+    baseUrl: z.string(),
+    apiKey: z.string().optional(),
+    options: z.record(z.string()).optional(),
+    enabled: z.boolean().default(false),
+  }).optional(),
+  // Provider-specific clinical note style preferences (self-learning feature)
+  providerStylePreferences: z.record(z.string(), z.object({
+    noteFormat: z.string().optional(),
+    sectionOrder: z.array(z.string()).optional(),
+    abbreviationLevel: z.enum(["minimal", "moderate", "heavy"]).optional(),
+    includeNegativePertinents: z.boolean().optional(),
+    defaultSpecialty: z.string().optional(),
+    customSections: z.array(z.string()).optional(),
+    templateOverrides: z.record(z.string()).optional(),
+  })).optional(),
 });
 
 export const insertOrganizationSchema = z.object({
@@ -106,7 +139,102 @@ export const CALL_CATEGORIES = [
   { value: "outbound", label: "Outbound Call", description: "Employee calling a customer/patient" },
   { value: "internal", label: "Internal", description: "Call between coworkers or departments" },
   { value: "vendor", label: "Vendor/Partner", description: "Call with an external vendor or partner" },
+  { value: "clinical_encounter", label: "Clinical Encounter", description: "Doctor-patient clinical visit recording" },
+  { value: "telemedicine", label: "Telemedicine Visit", description: "Remote telehealth consultation" },
+  // Dental practice categories
+  { value: "dental_scheduling", label: "Dental Scheduling", description: "Appointment scheduling, rescheduling, or cancellation call" },
+  { value: "dental_insurance", label: "Dental Insurance", description: "Insurance verification, benefits explanation, or pre-authorization" },
+  { value: "dental_treatment", label: "Dental Treatment Discussion", description: "Treatment plan discussion, acceptance, or financial arrangements" },
+  { value: "dental_recall", label: "Dental Recall/Recare", description: "Recall or recare reminder call, hygiene appointment booking" },
+  { value: "dental_emergency", label: "Dental Emergency Triage", description: "Emergency triage call — toothache, trauma, swelling" },
+  { value: "dental_encounter", label: "Dental Clinical Encounter", description: "In-office dental visit or procedure recording" },
+  { value: "dental_consultation", label: "Dental Consultation", description: "New patient consultation or second opinion" },
 ] as const;
+
+// --- CLINICAL NOTE SCHEMAS ---
+export const CLINICAL_SPECIALTIES = [
+  { value: "primary_care", label: "Primary Care / Family Medicine" },
+  { value: "internal_medicine", label: "Internal Medicine" },
+  { value: "cardiology", label: "Cardiology" },
+  { value: "dermatology", label: "Dermatology" },
+  { value: "orthopedics", label: "Orthopedics" },
+  { value: "psychiatry", label: "Psychiatry / Behavioral Health" },
+  { value: "pediatrics", label: "Pediatrics" },
+  { value: "ob_gyn", label: "OB/GYN" },
+  { value: "emergency", label: "Emergency Medicine" },
+  { value: "urgent_care", label: "Urgent Care" },
+  { value: "general", label: "General / Other" },
+  // Dental specialties
+  { value: "general_dentistry", label: "General Dentistry" },
+  { value: "periodontics", label: "Periodontics" },
+  { value: "endodontics", label: "Endodontics" },
+  { value: "oral_surgery", label: "Oral & Maxillofacial Surgery" },
+  { value: "orthodontics", label: "Orthodontics" },
+  { value: "prosthodontics", label: "Prosthodontics" },
+  { value: "pediatric_dentistry", label: "Pediatric Dentistry" },
+] as const;
+
+export const CLINICAL_NOTE_FORMATS = [
+  { value: "soap", label: "SOAP Note", description: "Subjective, Objective, Assessment, Plan" },
+  { value: "hpi_focused", label: "HPI-Focused", description: "Detailed History of Present Illness narrative" },
+  { value: "procedure_note", label: "Procedure Note", description: "Procedural documentation" },
+  { value: "progress_note", label: "Progress Note", description: "Follow-up visit documentation" },
+  // Behavioral health note formats
+  { value: "dap", label: "DAP Note", description: "Data, Assessment, Plan — common for therapy/counseling" },
+  { value: "birp", label: "BIRP Note", description: "Behavior, Intervention, Response, Plan — behavioral health" },
+  // Dental note formats
+  { value: "dental_exam", label: "Dental Examination", description: "Comprehensive or periodic oral examination" },
+  { value: "dental_operative", label: "Operative Note", description: "Restorative/operative procedure documentation" },
+  { value: "dental_perio", label: "Periodontal Note", description: "Periodontal examination and treatment" },
+  { value: "dental_endo", label: "Endodontic Note", description: "Root canal or endodontic procedure" },
+  { value: "dental_ortho_progress", label: "Ortho Progress Note", description: "Orthodontic adjustment/progress visit" },
+  { value: "dental_surgery", label: "Oral Surgery Note", description: "Extraction or oral surgery documentation" },
+  { value: "dental_treatment_plan", label: "Treatment Plan", description: "Comprehensive treatment plan documentation" },
+] as const;
+
+export const clinicalNoteSchema = z.object({
+  format: z.string().default("soap"),
+  specialty: z.string().optional(),
+  chiefComplaint: z.string().optional(),
+  subjective: z.string().optional(),
+  objective: z.string().optional(),
+  assessment: z.string().optional(),
+  plan: z.array(z.string()).optional(),
+  hpiNarrative: z.string().optional(),
+  reviewOfSystems: z.record(z.string()).optional(),
+  differentialDiagnoses: z.array(z.string()).optional(),
+  icd10Codes: z.array(z.object({ code: z.string(), description: z.string() })).optional(),
+  cptCodes: z.array(z.object({ code: z.string(), description: z.string() })).optional(),
+  prescriptions: z.array(z.object({
+    medication: z.string(),
+    dosage: z.string().optional(),
+    instructions: z.string().optional(),
+  })).optional(),
+  followUp: z.string().optional(),
+  documentationCompleteness: z.number().min(0).max(10).optional(),
+  clinicalAccuracy: z.number().min(0).max(10).optional(),
+  missingSections: z.array(z.string()).optional(),
+  patientConsentObtained: z.boolean().optional(),
+  providerAttested: z.boolean().default(false),
+  // Behavioral health (DAP/BIRP) fields
+  data: z.string().optional(), // DAP: combined subjective/objective data
+  behavior: z.string().optional(), // BIRP: observable client behaviors
+  intervention: z.string().optional(), // BIRP: therapeutic interventions applied
+  response: z.string().optional(), // BIRP: client's response to interventions
+  // Dental-specific fields
+  cdtCodes: z.array(z.object({ code: z.string(), description: z.string() })).optional(),
+  toothNumbers: z.array(z.string()).optional(),
+  quadrants: z.array(z.string()).optional(),
+  periodontalFindings: z.record(z.string()).optional(),
+  treatmentPhases: z.array(z.object({
+    phase: z.number(),
+    description: z.string(),
+    procedures: z.array(z.string()),
+    estimatedCost: z.string().optional(),
+  })).optional(),
+});
+
+export type ClinicalNote = z.infer<typeof clinicalNoteSchema>;
 
 export type CallCategory = typeof CALL_CATEGORIES[number]["value"];
 
@@ -223,6 +351,7 @@ export const insertCallAnalysisSchema = z.object({
     resolution: z.number().min(0).max(10).optional(),
   }).optional(),
   detectedAgentName: z.string().optional(),
+  clinicalNote: clinicalNoteSchema.optional(),
 });
 
 export const callAnalysisSchema = insertCallAnalysisSchema.extend({
@@ -321,7 +450,7 @@ export type InsertApiKey = z.infer<typeof insertApiKeySchema>;
 export type ApiKey = z.infer<typeof apiKeySchema>;
 
 // --- BILLING & SUBSCRIPTION SCHEMAS ---
-export const PLAN_TIERS = ["free", "pro", "enterprise"] as const;
+export const PLAN_TIERS = ["free", "pro", "enterprise", "clinical"] as const;
 export type PlanTier = (typeof PLAN_TIERS)[number];
 
 export const planLimitsSchema = z.object({
@@ -334,6 +463,7 @@ export const planLimitsSchema = z.object({
   ragEnabled: z.boolean(),
   ssoEnabled: z.boolean(),
   prioritySupport: z.boolean(),
+  clinicalDocumentationEnabled: z.boolean().default(false),
 });
 export type PlanLimits = z.infer<typeof planLimitsSchema>;
 
@@ -354,6 +484,7 @@ export const PLAN_DEFINITIONS: Record<PlanTier, { name: string; description: str
       ragEnabled: false,
       ssoEnabled: false,
       prioritySupport: false,
+      clinicalDocumentationEnabled: false,
     },
   },
   pro: {
@@ -371,6 +502,7 @@ export const PLAN_DEFINITIONS: Record<PlanTier, { name: string; description: str
       ragEnabled: true,
       ssoEnabled: false,
       prioritySupport: false,
+      clinicalDocumentationEnabled: false,
     },
   },
   enterprise: {
@@ -388,6 +520,25 @@ export const PLAN_DEFINITIONS: Record<PlanTier, { name: string; description: str
       ragEnabled: true,
       ssoEnabled: true,
       prioritySupport: true,
+      clinicalDocumentationEnabled: false,
+    },
+  },
+  clinical: {
+    name: "Clinical Documentation",
+    description: "AI-powered clinical note drafting for healthcare providers",
+    monthlyPriceUsd: 149,
+    yearlyPriceUsd: 1428, // $119/mo billed yearly
+    limits: {
+      callsPerMonth: 500, // encounters per month
+      storageMb: 5000,
+      aiAnalysesPerMonth: 500,
+      apiCallsPerMonth: 10000,
+      maxUsers: 10,
+      customPromptTemplates: true,
+      ragEnabled: true,
+      ssoEnabled: false,
+      prioritySupport: true,
+      clinicalDocumentationEnabled: true,
     },
   },
 };
@@ -476,6 +627,73 @@ export const insertPromptTemplateSchema = promptTemplateSchema.omit({ id: true }
 
 export type PromptTemplate = z.infer<typeof promptTemplateSchema>;
 export type InsertPromptTemplate = z.infer<typeof insertPromptTemplateSchema>;
+
+// --- BEDROCK MODEL PRESETS (for A/B testing and admin model selection) ---
+export const BEDROCK_MODEL_PRESETS = [
+  { value: "us.anthropic.claude-sonnet-4-6", label: "Claude Sonnet 4.6 (Current)", cost: "$$" },
+  { value: "us.anthropic.claude-sonnet-4-20250514", label: "Claude Sonnet 4", cost: "$$" },
+  { value: "us.anthropic.claude-haiku-4-5-20251001", label: "Claude Haiku 4.5", cost: "$" },
+  { value: "anthropic.claude-3-haiku-20240307", label: "Claude 3 Haiku (Cheapest)", cost: "$" },
+  { value: "anthropic.claude-3-5-sonnet-20241022", label: "Claude 3.5 Sonnet v2", cost: "$$" },
+] as const;
+
+// --- A/B MODEL TEST SCHEMAS ---
+export const insertABTestSchema = z.object({
+  orgId: z.string(),
+  fileName: z.string(),
+  callCategory: z.string().optional(),
+  baselineModel: z.string(),
+  testModel: z.string(),
+  status: z.string().default("processing"),
+  transcriptText: z.string().optional(),
+  baselineAnalysis: z.record(z.unknown()).optional(),
+  testAnalysis: z.record(z.unknown()).optional(),
+  baselineLatencyMs: z.number().optional(),
+  testLatencyMs: z.number().optional(),
+  notes: z.string().optional(),
+  createdBy: z.string(),
+});
+
+export const abTestSchema = insertABTestSchema.extend({
+  id: z.string(),
+  createdAt: z.string().optional(),
+});
+
+export type InsertABTest = z.infer<typeof insertABTestSchema>;
+export type ABTest = z.infer<typeof abTestSchema>;
+
+// --- SPEND TRACKING / USAGE RECORD SCHEMAS ---
+export const usageRecordSchema = z.object({
+  id: z.string(),
+  orgId: z.string(),
+  callId: z.string(),
+  type: z.enum(["call", "ab-test"]),
+  timestamp: z.string(),
+  user: z.string(),
+  services: z.object({
+    assemblyai: z.object({
+      durationSeconds: z.number().default(0),
+      estimatedCost: z.number().default(0),
+    }).optional(),
+    bedrock: z.object({
+      model: z.string(),
+      estimatedInputTokens: z.number().default(0),
+      estimatedOutputTokens: z.number().default(0),
+      estimatedCost: z.number().default(0),
+      latencyMs: z.number().optional(),
+    }).optional(),
+    bedrockSecondary: z.object({
+      model: z.string(),
+      estimatedInputTokens: z.number().default(0),
+      estimatedOutputTokens: z.number().default(0),
+      estimatedCost: z.number().default(0),
+      latencyMs: z.number().optional(),
+    }).optional(),
+  }),
+  totalEstimatedCost: z.number(),
+});
+
+export type UsageRecord = z.infer<typeof usageRecordSchema>;
 
 // --- ROLE DEFINITIONS ---
 export const USER_ROLES = [

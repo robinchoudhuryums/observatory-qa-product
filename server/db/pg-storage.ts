@@ -32,6 +32,8 @@ import type {
   ApiKey, InsertApiKey,
   Subscription, InsertSubscription,
   ReferenceDocument, InsertReferenceDocument,
+  ABTest, InsertABTest,
+  UsageRecord,
 } from "@shared/schema";
 import * as tables from "./schema";
 import { normalizeAnalysis } from "../storage";
@@ -438,6 +440,7 @@ export class PostgresStorage implements IStorage {
       confidenceFactors: analysis.confidenceFactors || null,
       subScores: analysis.subScores || null,
       detectedAgentName: analysis.detectedAgentName,
+      clinicalNote: analysis.clinicalNote || null,
     }).returning();
     return this.mapAnalysis(row);
   }
@@ -1001,6 +1004,7 @@ export class PostgresStorage implements IStorage {
       confidenceFactors: row.confidenceFactors as any,
       subScores: row.subScores as any,
       detectedAgentName: row.detectedAgentName,
+      clinicalNote: row.clinicalNote as any,
       createdAt: toISOString(row.createdAt),
     };
   }
@@ -1266,5 +1270,113 @@ export class PostgresStorage implements IStorage {
       acceptedAt: toISOString(row.acceptedAt),
       createdAt: toISOString(row.createdAt),
     };
+  }
+
+  // --- A/B test operations (stored in ab_tests table) ---
+  async createABTest(orgId: string, test: InsertABTest): Promise<ABTest> {
+    const id = randomUUID();
+    const [row] = await this.db.insert(tables.abTests).values({
+      id,
+      orgId,
+      fileName: test.fileName,
+      callCategory: test.callCategory || null,
+      baselineModel: test.baselineModel,
+      testModel: test.testModel,
+      status: test.status || "processing",
+      transcriptText: test.transcriptText || null,
+      baselineAnalysis: test.baselineAnalysis || null,
+      testAnalysis: test.testAnalysis || null,
+      baselineLatencyMs: test.baselineLatencyMs || null,
+      testLatencyMs: test.testLatencyMs || null,
+      notes: test.notes || null,
+      createdBy: test.createdBy,
+    }).returning();
+    return this.mapABTest(row);
+  }
+
+  async getABTest(orgId: string, id: string): Promise<ABTest | undefined> {
+    const [row] = await this.db.select().from(tables.abTests)
+      .where(and(eq(tables.abTests.orgId, orgId), eq(tables.abTests.id, id)));
+    return row ? this.mapABTest(row) : undefined;
+  }
+
+  async getAllABTests(orgId: string): Promise<ABTest[]> {
+    const rows = await this.db.select().from(tables.abTests)
+      .where(eq(tables.abTests.orgId, orgId))
+      .orderBy(desc(tables.abTests.createdAt));
+    return rows.map(r => this.mapABTest(r));
+  }
+
+  async updateABTest(orgId: string, id: string, updates: Partial<ABTest>): Promise<ABTest | undefined> {
+    const values: Record<string, any> = {};
+    if (updates.status !== undefined) values.status = updates.status;
+    if (updates.transcriptText !== undefined) values.transcriptText = updates.transcriptText;
+    if (updates.baselineAnalysis !== undefined) values.baselineAnalysis = updates.baselineAnalysis;
+    if (updates.testAnalysis !== undefined) values.testAnalysis = updates.testAnalysis;
+    if (updates.baselineLatencyMs !== undefined) values.baselineLatencyMs = updates.baselineLatencyMs;
+    if (updates.testLatencyMs !== undefined) values.testLatencyMs = updates.testLatencyMs;
+    if (updates.notes !== undefined) values.notes = updates.notes;
+    if (Object.keys(values).length === 0) return this.getABTest(orgId, id);
+
+    const [row] = await this.db.update(tables.abTests)
+      .set(values)
+      .where(and(eq(tables.abTests.orgId, orgId), eq(tables.abTests.id, id)))
+      .returning();
+    return row ? this.mapABTest(row) : undefined;
+  }
+
+  async deleteABTest(orgId: string, id: string): Promise<void> {
+    await this.db.delete(tables.abTests)
+      .where(and(eq(tables.abTests.orgId, orgId), eq(tables.abTests.id, id)));
+  }
+
+  private mapABTest(row: any): ABTest {
+    return {
+      id: row.id,
+      orgId: row.orgId,
+      fileName: row.fileName,
+      callCategory: row.callCategory || undefined,
+      baselineModel: row.baselineModel,
+      testModel: row.testModel,
+      status: row.status,
+      transcriptText: row.transcriptText || undefined,
+      baselineAnalysis: row.baselineAnalysis || undefined,
+      testAnalysis: row.testAnalysis || undefined,
+      baselineLatencyMs: row.baselineLatencyMs || undefined,
+      testLatencyMs: row.testLatencyMs || undefined,
+      notes: row.notes || undefined,
+      createdBy: row.createdBy,
+      createdAt: toISOString(row.createdAt),
+    };
+  }
+
+  // --- Spend tracking / usage records (stored in spend_records table) ---
+  async createUsageRecord(orgId: string, record: UsageRecord): Promise<void> {
+    await this.db.insert(tables.spendRecords).values({
+      id: record.id,
+      orgId,
+      callId: record.callId,
+      type: record.type,
+      timestamp: new Date(record.timestamp),
+      userName: record.user,
+      services: record.services,
+      totalEstimatedCost: record.totalEstimatedCost,
+    });
+  }
+
+  async getUsageRecords(orgId: string): Promise<UsageRecord[]> {
+    const rows = await this.db.select().from(tables.spendRecords)
+      .where(eq(tables.spendRecords.orgId, orgId))
+      .orderBy(desc(tables.spendRecords.timestamp));
+    return rows.map(r => ({
+      id: r.id,
+      orgId: r.orgId,
+      callId: r.callId,
+      type: r.type as "call" | "ab-test",
+      timestamp: r.timestamp ? r.timestamp.toISOString() : new Date().toISOString(),
+      user: r.userName,
+      services: r.services as UsageRecord["services"],
+      totalEstimatedCost: r.totalEstimatedCost,
+    }));
   }
 }
