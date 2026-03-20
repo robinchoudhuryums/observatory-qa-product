@@ -5,6 +5,8 @@ Observatory QA is a multi-tenant, HIPAA-compliant SaaS platform for call quality
 
 **Product origin**: Evolved from a single-tenant internal tool (CallAnalyzer for UMS) into a multi-tenant SaaS product. The multi-tenant transformation plan is documented in `MULTI_TENANT_TRANSFORMATION_PLAN.md`.
 
+**Healthcare expansion**: The platform is expanding into clinical documentation (AI scribe) and EHR integrations, initially targeting dental practices. The roadmap is documented in `HEALTHCARE_EXPANSION_PLAN.md`.
+
 ## Tech Stack
 - **Frontend**: React 18 + TypeScript, Vite, TailwindCSS 3, shadcn/ui, Recharts, Wouter (routing), TanStack Query, Framer Motion
 - **Backend**: Express.js + TypeScript (ESM), Node.js
@@ -87,7 +89,7 @@ npx vite build         # Frontend-only build (quick verification)
 
 ### Key Directories
 ```
-client/src/pages/            # Route pages (19 pages)
+client/src/pages/            # Route pages (25 pages)
 client/src/components/       # UI components
   ui/                        #   shadcn/ui primitives
   dashboard/                 #   Dashboard cards (metrics-overview, sentiment-analysis, performance-card)
@@ -101,6 +103,10 @@ client/src/components/       # UI components
   owl-loading.tsx            #   Custom owl-themed loading animation (liquid fill CSS)
   onboarding-tour.tsx        #   Interactive product tour (6 steps, localStorage-persistent)
 
+client/src/lib/              # Client utilities
+  display-utils.ts           #   toDisplayString() — safe AI response value rendering
+  error-reporting.ts         #   Centralized error logging (Sentry-ready)
+
 server/
   index.ts                   # App entry: Express setup, middleware, startup sequence
   auth.ts                    # Passport.js auth, session management, org context middleware
@@ -109,16 +115,16 @@ server/
   types.d.ts                 # Express type augmentations
   logger.ts                  # (Legacy) Logger — prefer server/services/logger.ts
 
-server/routes/               # Modular API route files (20 route files)
+server/routes/               # Modular API route files (24 route files)
   index.ts                   #   Route registration orchestrator
   auth.ts                    #   Login/logout/me
-  registration.ts            #   Self-service org + user registration
+  registration.ts            #   Self-service org + user registration (supports industryType)
   oauth.ts                   #   Google OAuth 2.0 flow
   sso.ts                     #   SAML 2.0 SSO (per-org IDP, Enterprise plan)
   mfa.ts                     #   MFA setup/verify/disable (TOTP)
   password-reset.ts          #   Forgot-password + reset-password flow
   onboarding.ts              #   Logo upload, reference doc upload, RAG search, branding
-  calls.ts                   #   Call CRUD, upload, audio streaming, transcript/sentiment/analysis
+  calls.ts                   #   Call CRUD, upload, audio streaming, transcript/sentiment/analysis + clinical notes
   employees.ts               #   Employee CRUD, CSV import
   dashboard.ts               #   Metrics, sentiment distribution, top performers
   reports.ts                 #   Summary/filtered reports, agent profiles
@@ -131,10 +137,14 @@ server/routes/               # Modular API route files (20 route files)
   export.ts                  #   CSV export for calls, employees, performance data
   health.ts                  #   Health check endpoint
   helpers.ts                 #   Shared route utilities
+  clinical.ts                #   Clinical documentation: notes, attestation, style learning, templates
+  ehr.ts                     #   EHR integration: patient lookup, appointment sync, note push
+  ab-testing.ts              #   A/B model testing: upload, dual-model comparison, cost tracking
+  spend-tracking.ts          #   Usage/cost visibility: per-call spend breakdown
 
 server/services/             # Business logic & integrations
   ai-factory.ts              #   AI provider setup (Bedrock, per-org model config)
-  ai-provider.ts             #   AI analysis interface, prompt building, JSON parsing
+  ai-provider.ts             #   AI analysis interface, prompt building, JSON parsing, clinical note generation
   bedrock.ts                 #   AWS Bedrock Claude provider (raw REST + SigV4)
   assemblyai.ts              #   AssemblyAI transcription + transcript processing
   s3.ts                      #   S3 client (raw REST + SigV4, no AWS SDK)
@@ -153,6 +163,14 @@ server/services/             # Business logic & integrations
   email.ts                   #   Transactional email (SMTP, AWS SES, console fallback)
   error-codes.ts             #   Standardized error codes (OBS-{DOMAIN}-{NUMBER})
   coaching-engine.ts         #   Auto-recommendations and AI coaching plan generation
+  clinical-templates.ts      #   Pre-built clinical note templates (10+ specialties, multiple formats)
+  style-learning.ts          #   Provider style analysis — auto-detect note preferences from history
+
+server/services/ehr/         # EHR integration adapters
+  types.ts                   #   IEhrAdapter interface, EhrPatient, EhrAppointment, EhrClinicalNote, EhrTreatmentPlan
+  index.ts                   #   EHR adapter factory (Open Dental, Eaglesoft)
+  open-dental.ts             #   Open Dental adapter (bidirectional: patient lookup, note push, treatment plans)
+  eaglesoft.ts               #   Eaglesoft/Patterson eDex adapter (read-focused: patients, appointments)
 
 server/storage/              # Storage abstraction layer
   types.ts                   #   IStorage interface (all methods org-scoped)
@@ -161,7 +179,7 @@ server/storage/              # Storage abstraction layer
   memory.ts                  #   MemStorage (in-memory, dev only)
 
 server/db/                   # PostgreSQL (Drizzle ORM)
-  schema.ts                  #   Table definitions (18+ tables + pgvector document_chunks)
+  schema.ts                  #   Table definitions (20+ tables + pgvector document_chunks)
   index.ts                   #   Database connection initialization
   migrate.ts                 #   Migration runner
   pg-storage.ts              #   PostgresStorage implementing IStorage
@@ -175,6 +193,9 @@ server/workers/              # BullMQ worker processes (run separately)
   indexing.worker.ts         #   RAG document indexing (chunk + embed)
 
 shared/schema.ts             # Zod schemas + TypeScript types (shared client/server)
+data/dental/                 # Dental-specific reference data
+  default-prompt-templates.json  # 5 dental call categories with evaluation criteria
+  dental-terminology-reference.md  # CDT codes, insurance terminology, coverage tiers
 deploy/ec2/                  # EC2 deployment config (Caddy, systemd, bootstrap script)
 tests/                       # Unit tests (Node test runner)
 ```
@@ -183,7 +204,7 @@ tests/                       # Unit tests (Node test runner)
 | Page | Route | Description |
 |------|-------|-------------|
 | `landing.tsx` | `/` | Public landing / marketing page |
-| `auth.tsx` | `/auth` | Login + registration forms |
+| `auth.tsx` | `/auth` | Login + registration forms (supports industry type selection) |
 | `onboarding.tsx` | `/onboarding` | Post-registration org setup wizard |
 | `invite-accept.tsx` | `/invite/:token` | Accept team invitation |
 | `dashboard.tsx` | `/dashboard` | Main dashboard with KPIs |
@@ -200,18 +221,27 @@ tests/                       # Unit tests (Node test runner)
 | `prompt-templates.tsx` | `/prompt-templates` | AI prompt template management |
 | `admin.tsx` | `/admin` | User management, org settings |
 | `settings.tsx` | `/settings` | User preferences (dark mode, etc.) |
+| `clinical-dashboard.tsx` | `/clinical` | Clinical documentation dashboard (metrics, attestation rates, trends) |
+| `clinical-notes.tsx` | `/clinical/notes/:callId` | View/edit clinical notes, attestation workflow, consent |
+| `clinical-templates.tsx` | `/clinical/templates` | Browse pre-built clinical note templates by specialty/format |
+| `clinical-upload.tsx` | `/clinical/upload` | Upload clinical encounter audio for note generation |
+| `ab-testing.tsx` | `/ab-testing` | A/B model comparison (upload audio, dual-model analysis, cost tracking) |
+| `spend-tracking.tsx` | `/spend-tracking` | Usage & cost visibility (per-call spend breakdown) |
 
 ### Multi-Tenant Data Model
 Every data entity has an `orgId` field. All storage methods take `orgId` as the first parameter. Data isolation is enforced at the storage layer — no method can access data without specifying the org.
 
 **Schemas in `shared/schema.ts`**:
-- `Organization` — id, name, slug, status, settings (departments, subTeams, branding, AI config, quotas)
+- `Organization` — id, name, slug, status, industryType, settings (departments, subTeams, branding, AI config, quotas, ehrConfig, providerStylePreferences)
 - `User` — id, orgId, username, passwordHash, name, role
 - `Employee` — id, orgId, name, email, role, initials, status, subTeam
 - `Call` — id, orgId, employeeId, fileName, status, duration, callCategory, tags
 - `Transcript` — id, orgId, callId, text, confidence, words[]
 - `SentimentAnalysis` — id, orgId, callId, overallSentiment, overallScore, segments[]
-- `CallAnalysis` — id, orgId, callId, performanceScore, subScores, summary, topics, feedback, flags, etc.
+- `CallAnalysis` — id, orgId, callId, performanceScore, subScores, summary, topics, feedback, flags, clinicalNote (optional)
+- `ClinicalNote` — embedded in CallAnalysis: format (SOAP/DAP/BIRP/HPI/procedure), specialty, subjective, objective, assessment, plan, HPI, ROS, differentialDiagnoses, icd10Codes, cptCodes, cdtCodes, toothNumbers, periodontalFindings, treatmentPhases, providerAttested, attestedBy, editHistory, consentObtained, documentationCompleteness (0-10), clinicalAccuracy (0-10)
+- `ABTest` — id, orgId, fileName, baselineModel, testModel, transcriptText, baselineAnalysis, testAnalysis, baselineLatencyMs, testLatencyMs, status, createdBy
+- `UsageRecord` — id, orgId, callId, type (transcription/ai_analysis/ab-test), services (assemblyai/bedrock cost breakdown), totalEstimatedCost
 - `AccessRequest` — id, orgId, name, email, requestedRole, status
 - `CoachingSession` — id, orgId, employeeId, callId, category, title, notes, actionPlan, status
 - `PromptTemplate` — id, orgId, callCategory, evaluationCriteria, requiredPhrases, scoringWeights
@@ -220,12 +250,15 @@ Every data entity has an `orgId` field. All storage methods take `orgId` as the 
 - `Subscription` — id, orgId, planTier, status, stripeCustomerId, billingInterval
 - `ReferenceDocument` — id, orgId, name, category, fileName, extractedText, appliesTo, isActive
 
+**Industry types** (set at registration): `general`, `dental`, `medical`, `behavioral_health`, `veterinary`
+
 **Plan tiers** (defined statically in `shared/schema.ts`):
-| Plan | Price | Calls/mo | Storage | RAG | Custom Templates | SSO |
-|------|-------|----------|---------|-----|-----------------|-----|
-| Free | $0 | 50 | 500 MB | No | No | No |
-| Pro | $99/mo | 1,000 | 10 GB | Yes | Yes | No |
-| Enterprise | $499/mo | Unlimited | 100 GB | Yes | Yes | Yes |
+| Plan | Price | Calls/mo | Storage | RAG | Custom Templates | Clinical Docs | SSO |
+|------|-------|----------|---------|-----|-----------------|---------------|-----|
+| Free | $0 | 50 | 500 MB | No | No | No | No |
+| Clinical Documentation | $49/mo | 200 | 2 GB | Yes | No | Yes | No |
+| Pro | $99/mo | 1,000 | 10 GB | Yes | Yes | No | No |
+| Enterprise | $499/mo | Unlimited | 100 GB | Yes | Yes | Yes | Yes |
 
 ### Audio Processing Pipeline (server/routes/calls.ts)
 1. Upload audio file (multer)
@@ -235,11 +268,12 @@ Every data entity has an `orgId` field. All storage methods take `orgId` as the 
 5. If RAG enabled: retrieve relevant document chunks from pgvector, inject into AI prompt
 6. Send transcript + context to AI provider (Bedrock) for analysis
 7. Normalize results: confidence scores, agent name detection, flag setting
-8. Store transcript, sentiment, and analysis
-9. Auto-assign call to employee if agent name detected
-10. Track usage (transcription + AI analysis events)
-11. Send webhook notification if call flagged
-12. WebSocket notification to org clients
+8. If clinical documentation plan: generate clinical note (SOAP/DAP/BIRP/procedure) with PHI encryption
+9. Store transcript, sentiment, and analysis (+ clinical note if applicable)
+10. Auto-assign call to employee if agent name detected
+11. Track usage with cost estimates (transcription + AI analysis events)
+12. Send webhook notification if call flagged
+13. WebSocket notification to org clients
 
 **On failure**: Call status → "failed", WebSocket notifies client, uploaded file cleaned up. Errors logged without stack traces (HIPAA). No automatic retry — users re-upload.
 
@@ -405,6 +439,49 @@ Uses AWS Bedrock (Claude) for AI analysis. Per-org `bedrockModel` can be configu
 | POST | `/api/onboarding/rag/search` | authenticated | RAG knowledge base search |
 | GET | `/api/onboarding/rag/status` | authenticated | RAG indexing status |
 
+### Clinical Documentation (org-scoped, requires Clinical Documentation plan)
+| Method | Path | Role | Description |
+|--------|------|------|-------------|
+| GET | `/api/clinical/notes/:callId` | authenticated | Get clinical note (PHI decrypted) |
+| POST | `/api/clinical/notes/:callId/attest` | manager+ | Provider attestation of note |
+| POST | `/api/clinical/notes/:callId/consent` | authenticated | Record patient consent for recording |
+| PATCH | `/api/clinical/notes/:callId` | authenticated | Edit note fields (requires re-attestation) |
+| GET | `/api/clinical/provider-preferences` | authenticated | Get provider style preferences |
+| PATCH | `/api/clinical/provider-preferences` | authenticated | Update note formatting preferences |
+| GET | `/api/clinical/metrics` | authenticated | Clinical dashboard metrics (completeness, accuracy, attestation rates) |
+| POST | `/api/clinical/style-learning/analyze` | authenticated | AI analysis of provider's note style from history |
+| POST | `/api/clinical/style-learning/apply` | authenticated | Apply learned style preferences |
+| GET | `/api/clinical/templates` | authenticated | List clinical note templates (filter by specialty/format) |
+| GET | `/api/clinical/templates/:id` | authenticated | Get specific template |
+
+### EHR Integration (org-scoped)
+| Method | Path | Role | Description |
+|--------|------|------|-------------|
+| GET | `/api/ehr/systems` | authenticated | List supported EHR systems |
+| GET | `/api/ehr/config` | authenticated | Get org's EHR configuration |
+| PUT | `/api/ehr/config` | admin | Configure EHR connection |
+| POST | `/api/ehr/test-connection` | admin | Validate EHR credentials |
+| GET | `/api/ehr/patients` | authenticated | Search patients (name, DOB, phone) |
+| GET | `/api/ehr/patients/:ehrPatientId` | authenticated | Get patient demographics, insurance, allergies |
+| GET | `/api/ehr/appointments/today` | authenticated | Today's appointments |
+| GET | `/api/ehr/appointments` | authenticated | Appointments for date range |
+| POST | `/api/ehr/push-note/:callId` | manager+ | Push attested clinical note to EHR |
+| GET | `/api/ehr/patients/:ehrPatientId/treatment-plans` | authenticated | Patient treatment plans (dental) |
+| DELETE | `/api/ehr/config` | admin | Disable EHR integration |
+
+### A/B Model Testing (org-scoped, admin only)
+| Method | Path | Description |
+|--------|------|-------------|
+| GET | `/api/ab-tests` | List all A/B tests |
+| GET | `/api/ab-tests/:id` | Get test with results |
+| POST | `/api/ab-tests/upload` | Upload audio for dual-model comparison |
+| DELETE | `/api/ab-tests/:id` | Delete test |
+
+### Usage & Spend Tracking (org-scoped, admin only)
+| Method | Path | Description |
+|--------|------|-------------|
+| GET | `/api/usage` | Get all usage/cost records |
+
 ### Health
 | Method | Path | Description |
 |--------|------|-------------|
@@ -500,7 +577,7 @@ DISABLE_SECURE_COOKIE           # Set to skip secure cookie flag (for non-TLS de
 
 ## Database Schema (PostgreSQL)
 
-18+ tables defined in `server/db/schema.ts`, auto-synced on startup by `server/db/sync-schema.ts`:
+20+ tables defined in `server/db/schema.ts`, auto-synced on startup by `server/db/sync-schema.ts`:
 
 | Table | Key Indexes | Notes |
 |-------|-------------|-------|
@@ -523,6 +600,8 @@ DISABLE_SECURE_COOKIE           # Set to skip secure cookie flag (for non-TLS de
 | `usage_events` | index on `(org_id, event_type)`, `created_at` | Billing metering |
 | `password_reset_tokens` | unique on `token` | Expirable reset tokens |
 | `audit_logs` | index on `(org_id, event_type)`, `created_at` | Tamper-evident with `integrity_hash`, `prev_hash`, `sequence_num` |
+| `ab_tests` | index on `org_id` | Dual-model comparison results, latency, cost |
+| `usage_records` | index on `(org_id, type)`, `timestamp` | Per-call cost tracking (AssemblyAI + Bedrock spend) |
 
 Requires pgvector extension: `CREATE EXTENSION IF NOT EXISTS vector;`
 
@@ -558,6 +637,11 @@ On startup, `syncSchema(db)` runs idempotent SQL to create all tables and add mi
 - **Custom prompt templates**: Per-org, per-call-category evaluation criteria with required phrases and scoring weights
 - **Dark mode**: Toggle in settings; Recharts dark mode fixes use `!important` in `index.css` (`.dark .recharts-*`)
 - **Hooks ordering**: All React hooks in `transcript-viewer.tsx` MUST be called before early returns (isLoading/!call guards)
+- **Clinical notes as embedded data**: Clinical notes are stored as a JSONB field within `call_analyses`, not a separate table — simplifies the data model and keeps notes tightly coupled with analysis
+- **EHR adapter pattern**: `server/services/ehr/` uses an adapter interface (`IEhrAdapter`) so new EHR systems can be added without touching route logic. Per-org EHR config is stored in org settings
+- **Style learning recency weighting**: Provider style analysis uses exponential decay (30-day half-life) to prefer recent notes, requires minimum 3 attested notes
+- **A/B testing cost tracking**: Each A/B test records estimated costs for both models, enabling data-driven model selection decisions
+- **Industry-aware registration**: Orgs set `industryType` at registration (general/dental/medical/behavioral_health/veterinary) which influences default prompt templates and available features
 
 ## Deployment
 
@@ -616,9 +700,20 @@ Server serves both API and static frontend from the same process.
 - **SSO pre-flight validation**: Always use `/api/auth/sso/check/:orgSlug` before redirecting to `/api/auth/sso/:orgSlug` — prevents users seeing raw JSON error pages for invalid org slugs
 - **Font**: App uses Poppins (loaded via Google Fonts in `index.css`), chosen to match the Observatory logo typeface. Defined in `--font-sans` CSS variable
 - **Landing page wave animation**: Uses SVG SMIL `<animate>` elements on `<linearGradient>` stops for a traveling spark effect. CSS only handles `wave-drift` for gentle positional movement
+- **Clinical note PHI encryption**: PHI fields (subjective, objective, assessment, HPI) are encrypted with AES-256-GCM before storage and decrypted on retrieval in clinical routes
+- **EHR adapters**: Open Dental uses developer key + customer key auth; Eaglesoft uses eDex API with X-API-Key header. Config stored in `org.settings.ehrConfig`
+- **Clinical templates are in-memory**: `clinical-templates.ts` is a static library of pre-built templates, not database-stored. Templates cover 10+ specialties across SOAP, DAP, BIRP, and procedure note formats
+- **A/B tests run models in parallel**: Uses `Promise.allSettled()` so one model failure doesn't block the other
+- When adding new storage methods for A/B tests or usage records: update `IStorage` interface in `types.ts`, then implement in `memory.ts`, `cloud.ts`, and `pg-storage.ts`
 
 ## Future Plans / Roadmap
-- **Knowledge Base plan tier**: Offer the RAG knowledge base as a standalone $49/mo plan tier (alongside existing Free/Pro/Enterprise). Same codebase — conditionally show/hide call analysis UI based on plan. Architecture already supports this: RAG services (`chunker.ts`, `embeddings.ts`, `rag.ts`) are fully decoupled from call analysis
+See `HEALTHCARE_EXPANSION_PLAN.md` for the full 4-phase healthcare expansion roadmap.
+
+- **Phase 1 (done)**: Dental practice QA — dental call categories, prompt templates, CDT code reference, clinical note generation
+- **Phase 2 (in progress)**: Clinical documentation add-on — AI scribe, style learning, multi-format notes (SOAP/DAP/BIRP), provider attestation workflow
+- **Phase 3 (planned)**: EHR integration — Open Dental (bidirectional), Eaglesoft (read-focused), Dentrix (future). Routes and adapters are scaffolded
+- **Phase 4 (planned)**: Expand verticals — urgent care, behavioral health, dermatology, ophthalmology, veterinary
+- **QA + Docs bundle pricing**: $129/mo combined (vs $99 QA-only + $49 Docs-only separately)
 - **Super-admin role**: Platform-level admin (not org-scoped) for managing all organizations — `SUPER_ADMIN_USERS` env var
-- **SSO**: Enterprise plan feature, implemented via SAML 2.0 (`server/routes/sso.ts`) with per-org IDP config
 - **PostgreSQL migration**: Move remaining S3-only deployments to PostgreSQL for better query performance and transactional integrity
+- **Spanish language support**: Multilingual clinical note generation
