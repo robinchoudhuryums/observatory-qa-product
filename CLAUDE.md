@@ -261,19 +261,21 @@ Every data entity has an `orgId` field. All storage methods take `orgId` as the 
 | Enterprise | $499/mo | Unlimited | 100 GB | Yes | Yes | Yes | Yes |
 
 ### Audio Processing Pipeline (server/routes/calls.ts)
-1. Upload audio file (multer)
-2. Archive to S3 (non-blocking — continues with warning on failure)
+1. Upload audio file (multer) — requires active subscription
+2. Archive to S3 (non-blocking — continues with warning on failure, tags call `audio_missing` if S3 fails)
 3. Send to AssemblyAI for transcription (polling until complete)
-4. Load org's custom prompt template by call category (falls back to default)
-5. If RAG enabled: retrieve relevant document chunks from pgvector, inject into AI prompt
-6. Send transcript + context to AI provider (Bedrock) for analysis
-7. Normalize results: confidence scores, agent name detection, flag setting
-8. If clinical documentation plan: generate clinical note (SOAP/DAP/BIRP/procedure) with PHI encryption
-9. Store transcript, sentiment, and analysis (+ clinical note if applicable)
-10. Auto-assign call to employee if agent name detected
-11. Track usage with cost estimates (transcription + AI analysis events)
-12. Send webhook notification if call flagged
-13. WebSocket notification to org clients
+4. **Empty transcript guard**: If transcript text is <10 chars, save with `empty_transcript` flag and skip AI analysis (prevents junk results)
+5. Load org's custom prompt template by call category (falls back to default)
+6. If RAG enabled: retrieve relevant document chunks from pgvector (min relevance score 0.3), inject into AI prompt
+7. Send transcript + context to AI provider (Bedrock) for analysis
+8. **Validate & normalize AI response**: Type-check all fields, clamp scores to valid ranges (0-10 for performance, 0-1 for sentiment), safe defaults for missing fields
+9. **Server-side flag enforcement**: Auto-add `low_score` flag if performance ≤2.0, `exceptional_call` if ≥9.0 (overrides AI)
+10. If clinical documentation plan: generate clinical note (SOAP/DAP/BIRP/procedure) with PHI encryption, use lower of AI vs server-computed completeness score
+11. Store transcript, sentiment, and analysis (+ clinical note if applicable)
+12. Auto-assign call to employee if agent name detected — **only active employees**, skips if ambiguous (multiple matches, no exact full-name match)
+13. Track usage with cost estimates (transcription + AI analysis events)
+14. Send webhook notification if call flagged
+15. WebSocket notification to org clients (orgId required)
 
 **On failure**: Call status → "failed", WebSocket notifies client, uploaded file cleaned up. Errors logged without stack traces (HIPAA). No automatic retry — users re-upload.
 
@@ -283,7 +285,7 @@ Reference documents uploaded by orgs are processed through:
 2. **Chunking** (`chunker.ts`) — sliding window with overlap (400 tokens, 80 token overlap), natural break detection (paragraph > sentence > line), section header tracking
 3. **Embedding** (`embeddings.ts`) — Amazon Titan Embed V2 via Bedrock (1024 dimensions, raw REST + SigV4)
 4. **Storage** — chunks + embeddings stored in `document_chunks` table (pgvector)
-5. **Retrieval** (`rag.ts`) — hybrid search: pgvector cosine similarity + BM25 keyword boosting, weighted scoring (70% semantic, 30% keyword)
+5. **Retrieval** (`rag.ts`) — hybrid search: pgvector cosine similarity + BM25 keyword boosting, weighted scoring (70% semantic, 30% keyword), minimum relevance score threshold (0.3) filters low-quality chunks
 6. **Injection** — relevant chunks formatted and injected into the AI analysis prompt
 
 RAG requires: PostgreSQL with pgvector extension + AWS credentials for Titan embeddings. Document indexing can run via BullMQ worker or in-process fallback.
@@ -582,7 +584,7 @@ DISABLE_SECURE_COOKIE           # Set to skip secure cookie flag (for non-TLS de
 | Table | Key Indexes | Notes |
 |-------|-------------|-------|
 | `organizations` | unique on `slug` | Org settings stored as JSONB (includes SSO config, MFA policy) |
-| `users` | unique on `username`, index on `org_id` | Passwords hashed with scrypt. MFA fields: `mfa_enabled`, `mfa_secret`, `mfa_backup_codes` |
+| `users` | unique on `(org_id, username)` | Per-org username uniqueness (composite index). Passwords hashed with scrypt. MFA fields: `mfa_enabled`, `mfa_secret`, `mfa_backup_codes` |
 | `employees` | unique on `(org_id, email)` | Per-org employee roster |
 | `calls` | index on `(org_id, status)`, `uploaded_at` | Links to employee. `file_hash` for dedup, `call_category`, `tags` (JSONB) |
 | `transcripts` | unique on `call_id` | Cascade delete with call |
@@ -615,7 +617,11 @@ On startup, `syncSchema(db)` runs idempotent SQL to create all tables and add mi
 | **Account lockout** | `server/auth.ts` | 5 failed attempts → 15-min lockout per username |
 | **Structured audit logging** | `server/services/audit-log.ts` | `[HIPAA_AUDIT]` JSON — user, org, resource type, timestamps |
 | **API access audit** | `server/index.ts` | Middleware logs all API calls with user, org, method, status, duration |
-| **Rate limiting** | `server/index.ts` | Login: 5/15min per IP. Redis-backed (distributed) or in-memory fallback |
+| **Rate limiting** | `server/index.ts` | Login: 5/15min per IP. Data endpoints: org-scoped keys (IP + orgId). Redis-backed (distributed) or in-memory fallback |
+| **Session fixation prevention** | `server/routes/mfa.ts` | `req.session.regenerate()` before `req.login()` after MFA verification |
+| **Session destruction on logout** | `server/routes/auth.ts` | `req.session.destroy()` + `res.clearCookie("connect.sid")` — clears server-side session data |
+| **Plan enforcement gates** | `server/routes/billing.ts` | `requirePlanFeature()`, `enforceUserQuota()`, `enforceQuota()`, `requireActiveSubscription()` middlewares — reject missing orgId |
+| **PHI audit coverage** | Multiple route files | `logPhiAccess()` on sentiment, analysis, clinical, coaching, reports, insights, EHR endpoints |
 | **Security headers** | `server/index.ts` | CSP, HSTS, X-Frame-Options, X-Content-Type-Options, X-XSS-Protection, Referrer-Policy, Permissions-Policy |
 | **Session timeout** | `server/auth.ts` | 15-min rolling idle timeout, httpOnly + sameSite=lax + secure (prod) |
 | **HTTPS enforcement** | `server/index.ts` | HTTP → HTTPS redirect in production |
@@ -623,7 +629,7 @@ On startup, `syncSchema(db)` runs idempotent SQL to create all tables and add mi
 | **Error logging** | Throughout | Pino structured logs — never log PHI (patient names, transcripts, call content) |
 | **Encryption at rest** | Infrastructure | EBS encryption (EC2), S3 SSE, PostgreSQL disk encryption |
 | **Encryption in transit** | Infrastructure | Caddy auto-TLS (EC2), Render managed TLS |
-| **Tenant isolation** | `server/storage/` | All storage methods require orgId — cross-org access structurally impossible |
+| **Tenant isolation** | `server/storage/` | All storage methods require orgId — cross-org access structurally impossible. Per-org username uniqueness (composite index). WebSocket broadcasts require orgId. Rate limit keys include org context for authenticated routes |
 | **MFA** | `server/routes/mfa.ts` | TOTP-based MFA, per-org mandatory option (`mfaRequired` in org settings) |
 | **PHI encryption** | `server/services/phi-encryption.ts` | AES-256-GCM application-level encryption for sensitive fields |
 | **Tamper-evident audit** | `server/db/sync-schema.ts` | `audit_logs` table with integrity hashes and sequence numbers |
@@ -642,6 +648,11 @@ On startup, `syncSchema(db)` runs idempotent SQL to create all tables and add mi
 - **Style learning recency weighting**: Provider style analysis uses exponential decay (30-day half-life) to prefer recent notes, requires minimum 3 attested notes
 - **A/B testing cost tracking**: Each A/B test records estimated costs for both models, enabling data-driven model selection decisions
 - **Industry-aware registration**: Orgs set `industryType` at registration (general/dental/medical/behavioral_health/veterinary) which influences default prompt templates and available features
+- **Billing enforcement gates**: Plan feature gating (`requirePlanFeature`), quota enforcement (`enforceQuota`, `enforceUserQuota`), and active subscription checks (`requireActiveSubscription`) are applied as middleware on write routes. All reject requests with missing `orgId` rather than silently allowing
+- **AI response hardening**: `parseJsonResponse()` validates every field type, clamps scores to valid ranges, and provides safe defaults. `normalizeAnalysis()` also clamps on the read path. Server-side flag enforcement overrides AI-set flags
+- **Per-org username uniqueness**: Usernames are unique within an org (composite index `orgId + username`), not globally. `getUserByUsername()` accepts optional `orgId` for scoped lookups. OAuth/SSO flows without org context search globally
+- **Org-scoped rate limiting**: Authenticated data routes include `orgId` in rate limit keys so tenants sharing an IP (corporate networks) don't affect each other. Pre-auth routes (login, register) use IP-only keys
+- **Search scope**: `searchCalls()` searches transcripts, analysis summaries, and topics (not just transcripts). Uses PostgreSQL ILIKE with Set-based deduplication
 
 ## Deployment
 
@@ -705,6 +716,14 @@ Server serves both API and static frontend from the same process.
 - **Clinical templates are in-memory**: `clinical-templates.ts` is a static library of pre-built templates, not database-stored. Templates cover 10+ specialties across SOAP, DAP, BIRP, and procedure note formats
 - **A/B tests run models in parallel**: Uses `Promise.allSettled()` so one model failure doesn't block the other
 - When adding new storage methods for A/B tests or usage records: update `IStorage` interface in `types.ts`, then implement in `memory.ts`, `cloud.ts`, and `pg-storage.ts`
+- **`getUserByUsername()` signature**: Accepts optional `orgId` parameter. When adding new callers, pass `orgId` when available (admin, registration, SSO login). OAuth and password-reset may not have org context — global lookup is acceptable there
+- **Username uniqueness is per-org**: The DB unique index is on `(orgId, username)`, not global `username`. Same email can exist in multiple orgs. The old global index was dropped in `sync-schema.ts` migration
+- **WebSocket `broadcastCallUpdate()` requires `orgId`**: The `orgId` parameter is mandatory (not optional). All callers in calls.ts, admin.ts, and ab-testing.ts already pass it
+- **Quota/plan middleware rejects missing `orgId`**: `enforceQuota()`, `enforceUserQuota()`, `requirePlanFeature()`, and `requireActiveSubscription()` return 403 if `req.orgId` is missing — they do NOT silently allow requests without org context
+- **AI response validation**: `parseJsonResponse()` in `ai-provider.ts` clamps `performanceScore` to 0-10, sentiment scores to 0-1, sub-scores to 0-10, and validates all field types. Missing fields get safe defaults (5.0 for scores, "neutral" for sentiment). `normalizeAnalysis()` in `storage/types.ts` also clamps on read
+- **Empty transcript handling**: If transcript text is <10 characters, the pipeline saves the call with `empty_transcript` flag, low confidence, and skips AI analysis entirely — prevents generating junk analysis from silence/noise
+- **Employee auto-assignment safety**: Only considers active employees. If multiple employees match the detected name, prefers exact full-name match; skips assignment if ambiguous (logs the ambiguity)
+- **`toDisplayString()` handles nested objects**: Checks `value`, `message`, `text` keys for wrapped strings, handles arrays, and caps JSON fallback at 500 chars
 
 ## Future Plans / Roadmap
 See `HEALTHCARE_EXPANSION_PLAN.md` for the full 4-phase healthcare expansion roadmap.

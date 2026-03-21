@@ -27,7 +27,7 @@ AI-powered call quality analysis and clinical documentation for healthcare and c
 - **SSO** — SAML 2.0 single sign-on (Enterprise plan, per-org IDP configuration)
 - **MFA** — TOTP-based multi-factor authentication, optional per-org enforcement
 - **Billing** — Stripe integration with Free / Clinical Documentation ($49/mo) / Pro ($99/mo) / Enterprise ($499/mo) tiers
-- **HIPAA compliant** — session timeouts, audit logging, MFA, PHI field encryption, rate limiting, data retention
+- **HIPAA compliant** — session timeouts, session fixation prevention, audit logging (PHI access on all sensitive endpoints), MFA, PHI field encryption, org-scoped rate limiting, data retention
 - **Data export** — CSV export for calls, employees, and performance data
 - **Password reset** — Self-service forgot-password flow via email
 - **Real-time updates** — WebSocket notifications for call processing status
@@ -213,7 +213,7 @@ Observatory QA implements healthcare-grade security controls:
 - **Audit logging**: Tamper-evident structured JSON logs with integrity hashes for all PHI access
 - **PHI encryption**: AES-256-GCM application-level field encryption for sensitive data
 - **Data retention**: Auto-purge calls per org policy (configurable, default 90 days)
-- **Tenant isolation**: All data access requires org context — cross-org access is structurally impossible
+- **Tenant isolation**: All data access requires org context — cross-org access is structurally impossible. Per-org username uniqueness, org-scoped rate limiting, org-scoped WebSocket broadcasts
 - **Security headers**: CSP, HSTS, X-Frame-Options, X-Content-Type-Options, X-XSS-Protection
 
 ## Testing
@@ -222,7 +222,7 @@ Observatory QA implements healthcare-grade security controls:
 npm run test
 ```
 
-12+ test files covering schemas, routes, multi-tenancy, RBAC, billing, API keys, and more. Uses Node.js built-in test runner via tsx (225 tests).
+12+ test files covering schemas, routes, multi-tenancy, RBAC, billing, API keys, and more. Uses Node.js built-in test runner via tsx (351 tests).
 
 ## Environment Variables
 

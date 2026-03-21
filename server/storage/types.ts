@@ -90,11 +90,11 @@ export function normalizeAnalysis(analysis: CallAnalysis | undefined): CallAnaly
   }
   if (normalized.subScores) {
     normalized.subScores = {
-      compliance: clamp(normalized.subScores.compliance, 0, 10) ?? normalized.subScores.compliance,
-      customerExperience: clamp(normalized.subScores.customerExperience, 0, 10) ?? normalized.subScores.customerExperience,
-      communication: clamp(normalized.subScores.communication, 0, 10) ?? normalized.subScores.communication,
-      resolution: clamp(normalized.subScores.resolution, 0, 10) ?? normalized.subScores.resolution,
-    };
+      compliance: clamp(normalized.subScores.compliance, 0, 10),
+      customerExperience: clamp(normalized.subScores.customerExperience, 0, 10),
+      communication: clamp(normalized.subScores.communication, 0, 10),
+      resolution: clamp(normalized.subScores.resolution, 0, 10),
+    } as any;
   }
 
   return normalized;
