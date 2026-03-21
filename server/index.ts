@@ -148,6 +148,10 @@ app.use((req, res, next) => {
   res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
   res.setHeader('Permissions-Policy', 'camera=(), microphone=(self), geolocation=()');
   // CSP: restrict resource loading to same-origin and trusted CDNs
+  // NOTE: style-src 'unsafe-inline' is required because Recharts renders chart elements with
+  // inline styles (dynamically computed positions, colors, dimensions) and Framer Motion uses
+  // inline transforms for animations. Removing it would break all charts and transitions.
+  // script-src is properly locked down to 'self' only (no unsafe-inline for scripts).
   res.setHeader('Content-Security-Policy',
     "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data: blob:; media-src 'self' blob:; connect-src 'self' wss:; frame-ancestors 'none';"
   );

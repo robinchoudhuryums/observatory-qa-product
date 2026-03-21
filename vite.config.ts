@@ -24,6 +24,14 @@ export default defineConfig({
   build: {
     outDir: path.resolve(__dirname, "dist/public"),
     emptyOutDir: true,
+    rollupOptions: {
+      output: {
+        manualChunks: {
+          // Isolate Recharts into its own chunk — only loaded by pages that need charts
+          recharts: ["recharts"],
+        },
+      },
+    },
   },
   server: {
     fs: {
