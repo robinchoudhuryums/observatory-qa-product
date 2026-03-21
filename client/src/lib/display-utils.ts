@@ -13,7 +13,10 @@ export function toDisplayString(val: unknown): string {
     if (typeof obj.name === "string") return obj.name;
     if (typeof obj.task === "string") return obj.task;
     if (typeof obj.label === "string") return obj.label;
+    if (typeof obj.value === "string") return obj.value;
     if (typeof obj.description === "string") return obj.description;
+    if (typeof obj.message === "string") return obj.message;
+    if (Array.isArray(val)) return val.map(toDisplayString).filter(Boolean).join(", ");
     return JSON.stringify(val);
   }
   return String(val);

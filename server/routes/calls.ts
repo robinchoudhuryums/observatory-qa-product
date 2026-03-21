@@ -417,11 +417,19 @@ async function processAudioFile(orgId: string, callId: string, filePath: string,
       if (cn.chiefComplaint) cn.chiefComplaint = encryptField(cn.chiefComplaint);
     }
 
-    if (confidenceScore < 0.7) {
-      const existingFlags = (analysis.flags as string[]) || [];
+    // Server-side flag enforcement — ensure consistency regardless of AI output
+    const existingFlags: string[] = Array.isArray(analysis.flags) ? [...(analysis.flags as string[])] : [];
+    if (confidenceScore < 0.7 && !existingFlags.includes("low_confidence")) {
       existingFlags.push("low_confidence");
-      analysis.flags = existingFlags;
     }
+    const perfScore = safeFloat(analysis.performanceScore);
+    if (perfScore > 0 && perfScore <= 2.0 && !existingFlags.includes("low_score")) {
+      existingFlags.push("low_score");
+    }
+    if (perfScore >= 9.0 && !existingFlags.includes("exceptional_call")) {
+      existingFlags.push("exceptional_call");
+    }
+    analysis.flags = existingFlags;
 
     logger.info({ callId, step: "5/6", confidencePct: (confidenceScore * 100).toFixed(0) }, "Data processing complete");
 
@@ -439,18 +447,23 @@ async function processAudioFile(orgId: string, callId: string, filePath: string,
     let assignedEmployeeId: string | undefined;
     if (!currentCall?.employeeId && aiAnalysis?.detected_agent_name) {
       const detectedName = aiAnalysis.detected_agent_name.toLowerCase().trim();
-      const allEmployees = await storage.getAllEmployees(orgId);
-      const matchedEmployee = allEmployees.find(emp => {
-        const empName = emp.name.toLowerCase();
-        return empName === detectedName ||
-          empName.split(" ")[0] === detectedName ||
-          empName.split(" ").pop() === detectedName;
-      });
-      if (matchedEmployee) {
-        assignedEmployeeId = matchedEmployee.id;
-        logger.info({ callId, employeeId: matchedEmployee.id }, "Auto-assigned to employee");
-      } else {
-        logger.info({ callId }, "Detected agent name but no matching employee found");
+      if (detectedName) {
+        const allEmployees = await storage.getAllEmployees(orgId);
+        // Only match active employees — don't assign calls to inactive/terminated staff
+        const activeEmployees = allEmployees.filter(emp => !emp.status || emp.status === "Active");
+        const matchedEmployee = activeEmployees.find(emp => {
+          const empName = emp.name.toLowerCase().trim();
+          const nameParts = empName.split(/\s+/);
+          return empName === detectedName ||
+            nameParts[0] === detectedName ||
+            nameParts[nameParts.length - 1] === detectedName;
+        });
+        if (matchedEmployee) {
+          assignedEmployeeId = matchedEmployee.id;
+          logger.info({ callId, employeeId: matchedEmployee.id, detectedName }, "Auto-assigned to employee");
+        } else {
+          logger.info({ callId, detectedName }, "Detected agent name but no matching active employee found");
+        }
       }
     }
 
