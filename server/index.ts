@@ -167,6 +167,12 @@ app.use("/api/ehr", distributedRateLimit(60 * 1000, 30, true) as any);
   redisAvailable = redis !== null;
   if (redisAvailable) {
     logger.info("Redis available — using distributed sessions, rate limiting, and job queues");
+  } else if (process.env.NODE_ENV === "production") {
+    logger.error(
+      "REDIS_URL not configured in production. In-memory sessions will be lost on restart " +
+      "and rate limiting will not work across instances. Set REDIS_URL to continue."
+    );
+    process.exit(1);
   }
 
   // 2. Initialize PostgreSQL storage if configured

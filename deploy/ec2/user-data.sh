@@ -1,5 +1,5 @@
 #!/bin/bash
-# CallAnalyzer — EC2 User Data (bootstrap) Script
+# Observatory QA — EC2 User Data (bootstrap) Script
 # This runs once on first boot when launching the EC2 instance.
 #
 # Usage: Paste into EC2 Launch → Advanced Details → User Data
@@ -12,9 +12,14 @@
 #   - IAM role with S3 + Bedrock access attached to the instance
 
 set -euo pipefail
-exec > >(tee /var/log/callanalyzer-setup.log) 2>&1
+exec > >(tee /var/log/observatory-qa-setup.log) 2>&1
 
-echo "=== CallAnalyzer EC2 Setup — $(date) ==="
+# === REQUIRED: Set these before running ===
+DOMAIN="${DOMAIN:?'Set DOMAIN env var (e.g., qa.yourcompany.com)'}"
+REPO_URL="${REPO_URL:?'Set REPO_URL env var (e.g., https://github.com/org/observatory-qa.git)'}"
+SESSION_SECRET="${SESSION_SECRET:-$(openssl rand -hex 32)}"
+
+echo "=== Observatory QA EC2 Setup — $(date) ==="
 
 # --- System updates ---
 dnf update -y
@@ -42,22 +47,21 @@ chown caddy:caddy /var/log/caddy
 
 # --- Clone and build the application ---
 cd /opt/callanalyzer
-# NOTE: Replace with your actual repo URL
-# git clone https://github.com/YOUR_ORG/assemblyai_tool.git .
-# npm ci --production=false
-# npm run build
-# npm prune --production
+git clone "$REPO_URL" .
+npm ci --production=false
+npm run build
+npm prune --production
 
-# --- Create placeholder .env ---
-# IMPORTANT: You must fill in real values after first boot!
-cat > /opt/callanalyzer/.env << 'ENVFILE'
+# --- Create .env ---
+# IMPORTANT: Fill in the placeholder values after first boot!
+cat > /opt/callanalyzer/.env << ENVFILE
 # === REQUIRED ===
-ASSEMBLYAI_API_KEY=your_key_here
-SESSION_SECRET=CHANGE_ME_TO_RANDOM_STRING
+ASSEMBLYAI_API_KEY=              # Get from https://www.assemblyai.com/
+SESSION_SECRET=${SESSION_SECRET}
 
 # === Authentication ===
-# Format: username:bcrypt_hash:role:displayName (comma-separated for multiple)
-AUTH_USERS=admin:$2b$10$CHANGE_ME:admin:Admin User
+# Format: username:password:role:displayName:orgSlug (comma-separated for multiple)
+AUTH_USERS=                      # e.g., admin:securepassword:admin:Admin User:my-org
 
 # === AWS (Bedrock AI + S3 Storage) ===
 # If using an IAM instance role, you can omit these — the app uses the role automatically
@@ -66,7 +70,7 @@ AUTH_USERS=admin:$2b$10$CHANGE_ME:admin:Admin User
 AWS_REGION=us-east-1
 
 # === Storage ===
-S3_BUCKET=ums-call-archive
+S3_BUCKET=                       # Your S3 bucket name for audio storage
 
 # === Optional ===
 PORT=5000
@@ -82,8 +86,10 @@ chmod 600 /opt/callanalyzer/.env
 # For now, create it inline:
 cat > /etc/systemd/system/callanalyzer.service << 'SERVICEFILE'
 [Unit]
-Description=CallAnalyzer - AI-Powered Call Quality Analysis
+Description=Observatory QA - AI-Powered Call Quality Analysis
 After=network.target
+StartLimitIntervalSec=60
+StartLimitBurst=3
 
 [Service]
 Type=simple
@@ -101,8 +107,9 @@ ProtectSystem=strict
 ProtectHome=true
 ReadWritePaths=/opt/callanalyzer
 PrivateTmp=true
+PrivateDevices=true
 LimitNOFILE=65535
-MemoryMax=512M
+MemoryMax=1G
 StandardOutput=journal
 StandardError=journal
 SyslogIdentifier=callanalyzer
@@ -115,9 +122,8 @@ systemctl daemon-reload
 systemctl enable callanalyzer
 
 # --- Install Caddyfile ---
-# NOTE: Replace YOUR_DOMAIN before running!
-cat > /etc/caddy/Caddyfile << 'CADDYFILE'
-YOUR_DOMAIN {
+cat > /etc/caddy/Caddyfile << CADDYFILE
+${DOMAIN} {
     reverse_proxy localhost:5000
 
     header {
@@ -149,11 +155,8 @@ echo ""
 echo "=== SETUP COMPLETE ==="
 echo ""
 echo "Next steps:"
-echo "  1. Clone your repo to /opt/callanalyzer/"
-echo "  2. Run: npm ci && npm run build && npm prune --production"
-echo "  3. Edit /opt/callanalyzer/.env with real credentials"
-echo "  4. Edit /etc/caddy/Caddyfile — replace YOUR_DOMAIN"
-echo "  5. Point your domain's DNS A record to this instance's public IP"
-echo "  6. Start services: sudo systemctl start callanalyzer && sudo systemctl start caddy"
-echo "  7. Verify: curl https://YOUR_DOMAIN/api/auth/me"
+echo "  1. Edit /opt/callanalyzer/.env with real credentials"
+echo "  2. Point your domain's DNS A record to this instance's public IP"
+echo "  3. Start services: sudo systemctl start callanalyzer && sudo systemctl start caddy"
+echo "  4. Verify: curl https://${DOMAIN}/api/auth/me"
 echo ""
