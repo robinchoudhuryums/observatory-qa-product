@@ -119,6 +119,14 @@ export function registerEhrRoutes(app: Express): void {
         settings: { ...org.settings, ehrConfig } as any,
       });
 
+      logPhiAccess({
+        ...auditContext(req),
+        event: "org_settings_update",
+        resourceType: "organization",
+        resourceId: req.orgId!,
+        detail: `EHR configuration updated: system=${system}`,
+      });
+
       logger.info({ orgId: req.orgId, system }, "EHR configuration updated");
       res.json({ success: true, system, baseUrl });
     } catch (error) {
@@ -435,6 +443,15 @@ export function registerEhrRoutes(app: Express): void {
       }
 
       await storage.updateOrganization(req.orgId!, { settings });
+
+      logPhiAccess({
+        ...auditContext(req),
+        event: "org_settings_update",
+        resourceType: "organization",
+        resourceId: req.orgId!,
+        detail: "EHR integration disabled",
+      });
+
       logger.info({ orgId: req.orgId }, "EHR integration disabled");
       res.json({ success: true, message: "EHR integration disabled" });
     } catch (error) {

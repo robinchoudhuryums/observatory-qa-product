@@ -104,7 +104,7 @@ export const insertEmployeeSchema = z.object({
   role: z.string().optional(),
   email: z.string(),
   initials: z.string().max(2).optional(),
-  status: z.string().default("Active").optional(),
+  status: z.enum(["Active", "Inactive"]).default("Active").optional(),
   subTeam: z.string().optional(),
 });
 
@@ -480,6 +480,7 @@ export const planLimitsSchema = z.object({
   ssoEnabled: z.boolean(),
   prioritySupport: z.boolean(),
   clinicalDocumentationEnabled: z.boolean().default(false),
+  abTestingEnabled: z.boolean().default(false),
 });
 export type PlanLimits = z.infer<typeof planLimitsSchema>;
 
@@ -501,6 +502,7 @@ export const PLAN_DEFINITIONS: Record<PlanTier, { name: string; description: str
       ssoEnabled: false,
       prioritySupport: false,
       clinicalDocumentationEnabled: false,
+      abTestingEnabled: false,
     },
   },
   pro: {
@@ -519,6 +521,7 @@ export const PLAN_DEFINITIONS: Record<PlanTier, { name: string; description: str
       ssoEnabled: false,
       prioritySupport: false,
       clinicalDocumentationEnabled: false,
+      abTestingEnabled: true,
     },
   },
   enterprise: {
@@ -537,6 +540,7 @@ export const PLAN_DEFINITIONS: Record<PlanTier, { name: string; description: str
       ssoEnabled: true,
       prioritySupport: true,
       clinicalDocumentationEnabled: false,
+      abTestingEnabled: true,
     },
   },
   clinical: {
@@ -555,6 +559,7 @@ export const PLAN_DEFINITIONS: Record<PlanTier, { name: string; description: str
       ssoEnabled: false,
       prioritySupport: true,
       clinicalDocumentationEnabled: true,
+      abTestingEnabled: false,
     },
   },
 };
@@ -660,7 +665,7 @@ export const insertABTestSchema = z.object({
   callCategory: z.string().optional(),
   baselineModel: z.string(),
   testModel: z.string(),
-  status: z.string().default("processing"),
+  status: z.enum(["processing", "analyzing", "completed", "failed"]).default("processing"),
   transcriptText: z.string().optional(),
   baselineAnalysis: z.record(z.unknown()).optional(),
   testAnalysis: z.record(z.unknown()).optional(),

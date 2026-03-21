@@ -71,7 +71,7 @@ export function registerABTestRoutes(app: Express): void {
   });
 
   // Upload audio for A/B model comparison
-  app.post("/api/ab-tests/upload", requireAuth, requireRole("admin"), injectOrgContext, requireActiveSubscription(), requirePlanFeature("customPromptTemplates", "A/B model testing requires a Pro or Enterprise plan"), upload.single("audioFile"), async (req, res) => {
+  app.post("/api/ab-tests/upload", requireAuth, requireRole("admin"), injectOrgContext, requireActiveSubscription(), requirePlanFeature("abTestingEnabled", "A/B model testing requires a Pro or Enterprise plan"), upload.single("audioFile"), async (req, res) => {
     try {
       if (!req.file) {
         res.status(400).json({ message: "No audio file provided" });

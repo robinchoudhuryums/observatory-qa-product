@@ -3,6 +3,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import { X, ChevronRight, ChevronLeft, Upload, BarChart3, Search, Users, FileText } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { ObservatoryLogo } from "@/components/observatory-logo";
+import { safeStorage } from "@/lib/utils";
 
 interface TourStep {
   title: string;
@@ -59,7 +60,7 @@ export default function OnboardingTour() {
 
   useEffect(() => {
     // Only show tour if user hasn't completed it
-    const completed = localStorage.getItem(STORAGE_KEY);
+    const completed = safeStorage.getItem(STORAGE_KEY);
     if (completed) return;
 
     // Small delay so the dashboard renders first
@@ -69,7 +70,7 @@ export default function OnboardingTour() {
 
   const dismiss = useCallback(() => {
     setVisible(false);
-    localStorage.setItem(STORAGE_KEY, "true");
+    safeStorage.setItem(STORAGE_KEY, "true");
   }, []);
 
   const next = useCallback(() => {

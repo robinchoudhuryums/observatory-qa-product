@@ -11,6 +11,7 @@ import { randomUUID } from "crypto";
 import { storage, objectStorage } from "../storage";
 import { requireAuth, requireRole, injectOrgContext } from "../auth";
 import { logger } from "../services/logger";
+import { logPhiAccess, auditContext } from "../services/audit-log";
 import { REFERENCE_DOC_CATEGORIES, PLAN_DEFINITIONS, type PlanTier } from "@shared/schema";
 import { enqueueDocumentIndexing } from "../services/queue";
 import { removeDocumentChunks, searchRelevantChunks, formatRetrievedContext, hasIndexedChunks } from "../services/rag";
@@ -262,6 +263,14 @@ export function registerOnboardingRoutes(app: Express): void {
 
         await storage.updateOrganization(orgId, {
           settings: { ...currentSettings, branding: newBranding } as any,
+        });
+
+        logPhiAccess({
+          ...auditContext(req),
+          event: "org_settings_update",
+          resourceType: "organization",
+          resourceId: orgId,
+          detail: "Logo uploaded, branding colors updated",
         });
 
         logger.info({ orgId, storagePath }, "Logo uploaded");
@@ -589,6 +598,14 @@ export function registerOnboardingRoutes(app: Express): void {
 
       await storage.updateOrganization(req.orgId!, {
         settings: { ...settings, branding: { ...branding, onboardingCompleted: true } } as any,
+      });
+
+      logPhiAccess({
+        ...auditContext(req),
+        event: "org_settings_update",
+        resourceType: "organization",
+        resourceId: req.orgId!,
+        detail: "Onboarding completed",
       });
 
       res.json({ message: "Onboarding marked as completed" });

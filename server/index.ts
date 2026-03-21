@@ -22,6 +22,7 @@ const app = express();
 
 // --- In-memory sliding window rate limiter (fallback when Redis unavailable) ---
 // Tracks individual request timestamps per key for accurate sliding window behavior
+const MAX_RATE_LIMIT_ENTRIES = 50_000;
 const rateLimitMap = new Map<string, number[]>();
 function rateLimitKey(req: Request, includeOrg: boolean): string {
   const orgPart = includeOrg && req.orgId ? `:org:${req.orgId}` : "";
@@ -55,8 +56,13 @@ function inMemoryRateLimit(windowMs: number, maxRequests: number, includeOrg = f
       return res.status(429).json({ message: "Too many requests. Please try again later." });
     }
 
-    // Record this request
+    // Record this request (enforce hard cap to prevent unbounded growth)
     timestamps.push(now);
+    if (rateLimitMap.size >= MAX_RATE_LIMIT_ENTRIES && !rateLimitMap.has(key)) {
+      // Evict oldest entry when at capacity
+      const oldest = rateLimitMap.keys().next().value;
+      if (oldest) rateLimitMap.delete(oldest);
+    }
     rateLimitMap.set(key, timestamps);
 
     setRateLimitHeaders(res, maxRequests, maxRequests - timestamps.length, resetSeconds);

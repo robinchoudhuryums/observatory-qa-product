@@ -217,12 +217,14 @@ const translations: Record<Locale, TranslationMap> = {
 // --- State ---
 let currentLocale: Locale = "en";
 
-// Try to restore from localStorage
+// Try to restore from localStorage (wrapped in try-catch for private browsing)
 if (typeof window !== "undefined") {
-  const saved = localStorage.getItem("observatory-locale");
-  if (saved === "en" || saved === "es") {
-    currentLocale = saved;
-  }
+  try {
+    const saved = localStorage.getItem("observatory-locale");
+    if (saved === "en" || saved === "es") {
+      currentLocale = saved;
+    }
+  } catch { /* storage unavailable */ }
 }
 
 /**
@@ -251,7 +253,7 @@ export function t(key: string, params?: Record<string, string | number>): string
 export function setLocale(locale: Locale): void {
   currentLocale = locale;
   if (typeof window !== "undefined") {
-    localStorage.setItem("observatory-locale", locale);
+    try { localStorage.setItem("observatory-locale", locale); } catch { /* storage unavailable */ }
   }
 }
 

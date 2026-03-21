@@ -43,8 +43,8 @@ function requireClinicalPlan() {
       }
       next();
     } catch (err) {
-      logger.warn({ err }, "Clinical plan check failed, failing open");
-      next();
+      logger.error({ err }, "Clinical plan check failed, denying access");
+      res.status(500).json({ message: "Unable to verify clinical plan", code: "OBS-BILLING-011" });
     }
   };
 }
@@ -311,6 +311,14 @@ export function registerClinicalRoutes(app: Express): void {
         settings: { ...settings, providerStylePreferences: allPrefs } as OrgSettings,
       });
 
+      logPhiAccess({
+        ...auditContext(req),
+        event: "org_settings_update",
+        resourceType: "organization",
+        resourceId: req.orgId!,
+        detail: `Provider style preferences updated: ${Object.keys(updates).join(", ")}`,
+      });
+
       logger.info({ orgId: req.orgId, userId, fields: Object.keys(updates) }, "Provider style preferences updated");
       res.json({ success: true, preferences: allPrefs[userId] });
     } catch (error) {
@@ -521,6 +529,14 @@ export function registerClinicalRoutes(app: Express): void {
 
       await storage.updateOrganization(req.orgId!, {
         settings: { ...settings, providerStylePreferences: allPrefs } as OrgSettings,
+      });
+
+      logPhiAccess({
+        ...auditContext(req),
+        event: "org_settings_update",
+        resourceType: "organization",
+        resourceId: req.orgId!,
+        detail: "Applied learned style preferences",
       });
 
       logger.info({ orgId: req.orgId, userId }, "Applied learned style preferences");

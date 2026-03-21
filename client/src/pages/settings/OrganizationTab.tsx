@@ -10,6 +10,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Skeleton } from "@/components/ui/skeleton";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest } from "@/lib/queryClient";
+import { safeStorage } from "@/lib/utils";
 import type { Organization } from "@shared/schema";
 
 export default function OrganizationTab() {
@@ -361,7 +362,7 @@ export default function OrganizationTab() {
             variant="outline"
             size="sm"
             onClick={() => {
-              localStorage.removeItem("observatory-tour-completed");
+              safeStorage.removeItem("observatory-tour-completed");
               window.location.href = "/dashboard";
             }}
           >

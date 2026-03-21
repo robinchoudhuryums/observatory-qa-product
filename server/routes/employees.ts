@@ -42,7 +42,7 @@ export function registerEmployeeRoutes(app: Express): void {
     name: z.string().min(1).optional(),
     email: z.string().email().optional(),
     role: z.string().optional(),
-    status: z.string().optional(),
+    status: z.enum(["Active", "Inactive"]).optional(),
     initials: z.string().max(2).optional(),
     subTeam: z.string().optional(),
   }).strict();

@@ -31,6 +31,7 @@ export interface AuditEntry {
 }
 
 // Per-org chain state (in-memory cache; re-seeded from DB on first write)
+const MAX_CHAIN_STATE_ENTRIES = 10_000;
 const chainState = new Map<string, { prevHash: string; sequenceNum: number }>();
 
 /**
@@ -156,7 +157,11 @@ async function persistAuditEntry(entry: AuditEntry & { timestamp: string }): Pro
       sequenceNum: nextSeq,
     });
 
-    // Update chain state
+    // Update chain state (evict oldest if at capacity)
+    if (chainState.size >= MAX_CHAIN_STATE_ENTRIES && !chainState.has(orgId)) {
+      const oldest = chainState.keys().next().value;
+      if (oldest) chainState.delete(oldest);
+    }
     chainState.set(orgId, { prevHash: integrityHash, sequenceNum: nextSeq });
   } catch (err) {
     logger.warn({ err, orgId: entry.orgId }, "Failed to persist audit log entry to database");
