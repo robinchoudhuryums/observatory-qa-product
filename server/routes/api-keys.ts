@@ -60,14 +60,13 @@ export const apiKeyAuth: RequestHandler = async (req, res, next) => {
         ? "manager"
         : "viewer";
 
-    (req as any).user = {
+    req.user = {
       id: `apikey:${apiKey.id}`,
       username: `api:${apiKey.name}`,
       name: apiKey.name,
       role: permLevel,
       orgId: apiKey.orgId,
       orgSlug: "",
-      apiKeyPermissions: apiKey.permissions,
     };
 
     // Update last used (fire and forget)

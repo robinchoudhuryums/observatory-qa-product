@@ -4,7 +4,10 @@ import { storage } from "../storage";
 import { logger } from "../services/logger";
 import { logPhiAccess, auditContext } from "../services/audit-log";
 import { decryptField, encryptField, decryptClinicalNotePhi } from "../services/phi-encryption";
-import { PLAN_DEFINITIONS, type PlanTier, type OrgSettings } from "@shared/schema";
+import { getOrgAIProvider } from "../services/ai-factory";
+import { parseJsonResponse, type PromptTemplateConfig } from "../services/ai-provider";
+import { sanitizeStylePreferences } from "../services/clinical-validation";
+import { PLAN_DEFINITIONS, type PlanTier, type OrgSettings, type ClinicalNote } from "@shared/schema";
 import { analyzeProviderStyle, type ClinicalNote as StyleClinicalNote } from "../services/style-learning";
 import {
   getTemplatesBySpecialty, getTemplatesByFormat, getTemplatesByCategory,
@@ -40,8 +43,8 @@ function requireClinicalPlan() {
       }
       next();
     } catch (err) {
-      logger.warn({ err }, "Clinical plan check failed, failing open");
-      next();
+      logger.error({ err }, "Clinical plan check failed, denying access");
+      res.status(500).json({ message: "Unable to verify clinical plan", code: "OBS-BILLING-011" });
     }
   };
 }
@@ -308,6 +311,14 @@ export function registerClinicalRoutes(app: Express): void {
         settings: { ...settings, providerStylePreferences: allPrefs } as OrgSettings,
       });
 
+      logPhiAccess({
+        ...auditContext(req),
+        event: "org_settings_update",
+        resourceType: "organization",
+        resourceId: req.orgId!,
+        detail: `Provider style preferences updated: ${Object.keys(updates).join(", ")}`,
+      });
+
       logger.info({ orgId: req.orgId, userId, fields: Object.keys(updates) }, "Provider style preferences updated");
       res.json({ success: true, preferences: allPrefs[userId] });
     } catch (error) {
@@ -520,6 +531,14 @@ export function registerClinicalRoutes(app: Express): void {
         settings: { ...settings, providerStylePreferences: allPrefs } as OrgSettings,
       });
 
+      logPhiAccess({
+        ...auditContext(req),
+        event: "org_settings_update",
+        resourceType: "organization",
+        resourceId: req.orgId!,
+        detail: "Applied learned style preferences",
+      });
+
       logger.info({ orgId: req.orgId, userId }, "Applied learned style preferences");
       res.json({ success: true, preferences: allPrefs[userId] });
     } catch (error) {
@@ -608,4 +627,200 @@ export function registerClinicalRoutes(app: Express): void {
       res.status(500).json({ message: "Failed to get clinical template" });
     }
   });
+
+  // --- Transcript Editing ---
+
+  // Edit transcript text and optionally re-run AI analysis to regenerate the clinical note
+  app.patch("/api/clinical/transcript/:callId",
+    requireAuth, injectOrgContext, requireClinicalPlan(), requireRole("manager", "admin"),
+    async (req, res) => {
+      const orgId = req.orgId!;
+      const user = req.user!;
+      const { callId } = req.params;
+      const { text, reanalyze } = req.body;
+
+      if (!text || typeof text !== "string" || text.trim().length < 10) {
+        res.status(400).json({ message: "Transcript text must be at least 10 characters" });
+        return;
+      }
+
+      try {
+        // Verify call exists and belongs to org
+        const call = await storage.getCall(orgId, callId);
+        if (!call) {
+          res.status(404).json({ message: "Call not found" });
+          return;
+        }
+
+        // Verify transcript exists
+        const existingTranscript = await storage.getTranscript(orgId, callId);
+        if (!existingTranscript) {
+          res.status(404).json({ message: "No transcript found for this call" });
+          return;
+        }
+
+        // Update transcript text
+        const updated = await storage.updateTranscript(orgId, callId, { text: text.trim() });
+        if (!updated) {
+          res.status(500).json({ message: "Failed to update transcript" });
+          return;
+        }
+
+        // Tag the call as transcript_edited
+        const existingTags: string[] = Array.isArray(call.tags) ? [...call.tags] : [];
+        if (!existingTags.includes("transcript_edited")) {
+          existingTags.push("transcript_edited");
+          await storage.updateCall(orgId, callId, { tags: existingTags });
+        }
+
+        logPhiAccess({
+          ...auditContext(req),
+          event: "edit_transcript",
+          resourceType: "transcript",
+          resourceId: callId,
+          detail: `Transcript edited by ${user.name || user.username}. Length: ${existingTranscript.text?.length || 0} -> ${text.trim().length}`,
+        });
+
+        logger.info({ callId, editedBy: user.name || user.username }, "Transcript edited");
+
+        // If reanalyze requested, regenerate clinical note from edited transcript
+        let reanalysisResult: { success: boolean; message: string } | undefined;
+        if (reanalyze) {
+          try {
+            const org = await storage.getOrganization(orgId);
+            const orgSettings = (org?.settings || null) as OrgSettings | null;
+            const callCategory = call.callCategory || "clinical_encounter";
+
+            // Load prompt template
+            const template = await storage.getPromptTemplateByCategory(orgId, callCategory).catch(() => undefined);
+            let templateConfig: PromptTemplateConfig | undefined = template ? {
+              evaluationCriteria: template.evaluationCriteria,
+              requiredPhrases: template.requiredPhrases as PromptTemplateConfig["requiredPhrases"],
+              scoringWeights: template.scoringWeights as PromptTemplateConfig["scoringWeights"],
+              additionalInstructions: template.additionalInstructions || undefined,
+            } : undefined;
+
+            // Load provider style preferences
+            const providerPrefs = user.id && (org?.settings as any)?.providerStylePreferences?.[user.id];
+            if (providerPrefs) {
+              if (!templateConfig) templateConfig = {} as PromptTemplateConfig;
+              const sanitizedPrefs = sanitizeStylePreferences(providerPrefs);
+              templateConfig.providerStylePreferences = sanitizedPrefs as any;
+            }
+
+            // Run AI analysis on edited transcript
+            const provider = getOrgAIProvider(orgId, orgSettings);
+            const result = await provider.analyzeCallTranscript(
+              text.trim(),
+              callId,
+              callCategory,
+              templateConfig,
+            );
+            const parsed = parseJsonResponse(JSON.stringify(result), callId);
+
+            // Build updated clinical note
+            const clinicalNoteRaw = parsed.clinical_note;
+            let cnForStorage: ClinicalNote | undefined;
+            if (clinicalNoteRaw) {
+              const raw = clinicalNoteRaw as Record<string, unknown>;
+              // Encrypt PHI fields
+              const phiFields = ["subjective", "objective", "assessment", "hpiNarrative", "chiefComplaint",
+                "chief_complaint", "hpi_narrative"] as const;
+              const encrypted = { ...raw };
+              for (const field of phiFields) {
+                const val = encrypted[field];
+                if (val && typeof val === "string") {
+                  try { encrypted[field] = encryptField(val); } catch { /* encryption not configured */ }
+                }
+              }
+
+              cnForStorage = {
+                format: (encrypted.format as string) || "soap",
+                providerAttested: false, // Requires re-attestation
+                specialty: encrypted.specialty as string | undefined,
+                chiefComplaint: (encrypted.chief_complaint || encrypted.chiefComplaint) as string | undefined,
+                subjective: encrypted.subjective as string | undefined,
+                objective: encrypted.objective as string | undefined,
+                assessment: encrypted.assessment as string | undefined,
+                plan: encrypted.plan as string[] | undefined,
+                hpiNarrative: (encrypted.hpi_narrative || encrypted.hpiNarrative) as string | undefined,
+                followUp: (encrypted.follow_up || encrypted.followUp) as string | undefined,
+                icd10Codes: (encrypted.icd10_codes || encrypted.icd10Codes) as ClinicalNote["icd10Codes"],
+                cptCodes: (encrypted.cpt_codes || encrypted.cptCodes) as ClinicalNote["cptCodes"],
+                cdtCodes: (encrypted.cdt_codes || encrypted.cdtCodes) as ClinicalNote["cdtCodes"],
+                documentationCompleteness: (encrypted.documentation_completeness || encrypted.documentationCompleteness) as number | undefined,
+                clinicalAccuracy: (encrypted.clinical_accuracy || encrypted.clinicalAccuracy) as number | undefined,
+                missingSections: (encrypted.missing_sections || encrypted.missingSections) as string[] | undefined,
+                editHistory: [{
+                  editedBy: user.name || user.username || "unknown",
+                  editedAt: new Date().toISOString(),
+                  fieldsChanged: ["transcript_reanalysis"],
+                }],
+              };
+            }
+
+            // Update call analysis with new results
+            const existingAnalysis = await storage.getCallAnalysis(orgId, callId);
+            await storage.createCallAnalysis(orgId, {
+              ...(existingAnalysis || {}),
+              orgId,
+              callId,
+              performanceScore: parsed.performance_score?.toString(),
+              summary: parsed.summary,
+              topics: parsed.topics,
+              feedback: parsed.feedback as any,
+              flags: parsed.flags,
+              subScores: {
+                compliance: parsed.sub_scores?.compliance,
+                customerExperience: parsed.sub_scores?.customer_experience,
+                communication: parsed.sub_scores?.communication,
+                resolution: parsed.sub_scores?.resolution,
+              },
+              clinicalNote: cnForStorage || (existingAnalysis?.clinicalNote as ClinicalNote | undefined),
+              confidenceScore: "0.85",
+              confidenceFactors: {
+                transcriptConfidence: 0.90,
+                wordCount: text.trim().split(/\s+/).length,
+                callDurationSeconds: call.duration || 0,
+                transcriptLength: text.trim().length,
+                aiAnalysisCompleted: true,
+                overallScore: 0.85,
+              },
+            });
+
+            // Track usage for billing
+            try {
+              await storage.recordUsageEvent({
+                orgId,
+                eventType: "ai_analysis",
+                quantity: 1,
+                metadata: { callId, source: "transcript_reanalysis" },
+              });
+            } catch { /* non-blocking */ }
+
+            logPhiAccess({
+              ...auditContext(req),
+              event: "transcript_reanalysis",
+              resourceType: "clinical_note",
+              resourceId: callId,
+              detail: "Clinical note regenerated from edited transcript",
+            });
+
+            reanalysisResult = { success: true, message: "Clinical note regenerated from edited transcript. Re-attestation required." };
+          } catch (err) {
+            logger.error({ callId, err }, "Failed to reanalyze transcript");
+            reanalysisResult = { success: false, message: "Transcript saved but AI re-analysis failed. You can retry or edit the clinical note manually." };
+          }
+        }
+
+        res.json({
+          transcript: updated,
+          reanalysis: reanalysisResult,
+        });
+      } catch (error) {
+        logger.error({ err: error, callId }, "Failed to edit transcript");
+        res.status(500).json({ message: "Failed to edit transcript" });
+      }
+    },
+  );
 }

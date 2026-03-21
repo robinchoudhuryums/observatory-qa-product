@@ -34,6 +34,7 @@ import type {
   ReferenceDocument, InsertReferenceDocument,
   ABTest, InsertABTest,
   UsageRecord,
+  LiveSession, InsertLiveSession,
 } from "@shared/schema";
 import * as tables from "./schema";
 import { normalizeAnalysis } from "../storage";
@@ -407,6 +408,14 @@ export class PostgresStorage implements IStorage {
       words: transcript.words || null,
     }).returning();
     return this.mapTranscript(row);
+  }
+
+  async updateTranscript(orgId: string, callId: string, updates: { text: string }): Promise<Transcript | undefined> {
+    const rows = await this.db.update(tables.transcripts)
+      .set({ text: updates.text })
+      .where(and(eq(tables.transcripts.callId, callId), eq(tables.transcripts.orgId, orgId)))
+      .returning();
+    return rows[0] ? this.mapTranscript(rows[0]) : undefined;
   }
 
   // --- Sentiment operations ---
@@ -1524,5 +1533,96 @@ export class PostgresStorage implements IStorage {
       services: r.services as UsageRecord["services"],
       totalEstimatedCost: r.totalEstimatedCost,
     }));
+  }
+
+  // --- Live sessions (real-time clinical recording) ---
+
+  async createLiveSession(orgId: string, session: InsertLiveSession): Promise<LiveSession> {
+    const id = randomUUID();
+    const now = new Date();
+    await this.db.insert(tables.liveSessions).values({
+      id,
+      orgId,
+      createdBy: session.createdBy,
+      specialty: session.specialty || null,
+      noteFormat: session.noteFormat || "soap",
+      encounterType: session.encounterType || "clinical_encounter",
+      status: "active",
+      transcriptText: "",
+      draftClinicalNote: null,
+      durationSeconds: 0,
+      consentObtained: session.consentObtained || false,
+      startedAt: now,
+    });
+    return {
+      id,
+      orgId,
+      createdBy: session.createdBy,
+      specialty: session.specialty,
+      noteFormat: session.noteFormat || "soap",
+      encounterType: session.encounterType || "clinical_encounter",
+      status: "active",
+      transcriptText: "",
+      durationSeconds: 0,
+      consentObtained: session.consentObtained || false,
+      startedAt: now.toISOString(),
+    };
+  }
+
+  async getLiveSession(orgId: string, id: string): Promise<LiveSession | undefined> {
+    const rows = await this.db.select().from(tables.liveSessions)
+      .where(and(eq(tables.liveSessions.orgId, orgId), eq(tables.liveSessions.id, id)));
+    if (!rows[0]) return undefined;
+    return this.mapLiveSessionRow(rows[0]);
+  }
+
+  async updateLiveSession(orgId: string, id: string, updates: Partial<LiveSession>): Promise<LiveSession | undefined> {
+    const dbUpdates: Record<string, unknown> = {};
+    if (updates.status !== undefined) dbUpdates.status = updates.status;
+    if (updates.transcriptText !== undefined) dbUpdates.transcriptText = updates.transcriptText;
+    if (updates.draftClinicalNote !== undefined) dbUpdates.draftClinicalNote = updates.draftClinicalNote;
+    if (updates.durationSeconds !== undefined) dbUpdates.durationSeconds = updates.durationSeconds;
+    if (updates.consentObtained !== undefined) dbUpdates.consentObtained = updates.consentObtained;
+    if (updates.callId !== undefined) dbUpdates.callId = updates.callId;
+    if (updates.endedAt !== undefined) dbUpdates.endedAt = new Date(updates.endedAt);
+
+    const rows = await this.db.update(tables.liveSessions)
+      .set(dbUpdates)
+      .where(and(eq(tables.liveSessions.orgId, orgId), eq(tables.liveSessions.id, id)))
+      .returning();
+    if (!rows[0]) return undefined;
+    return this.mapLiveSessionRow(rows[0]);
+  }
+
+  async getActiveLiveSessions(orgId: string): Promise<LiveSession[]> {
+    const rows = await this.db.select().from(tables.liveSessions)
+      .where(and(eq(tables.liveSessions.orgId, orgId), eq(tables.liveSessions.status, "active")));
+    return rows.map(r => this.mapLiveSessionRow(r));
+  }
+
+  async getLiveSessionsByUser(orgId: string, userId: string): Promise<LiveSession[]> {
+    const rows = await this.db.select().from(tables.liveSessions)
+      .where(and(eq(tables.liveSessions.orgId, orgId), eq(tables.liveSessions.createdBy, userId)))
+      .orderBy(desc(tables.liveSessions.startedAt));
+    return rows.map(r => this.mapLiveSessionRow(r));
+  }
+
+  private mapLiveSessionRow(r: typeof tables.liveSessions.$inferSelect): LiveSession {
+    return {
+      id: r.id,
+      orgId: r.orgId,
+      createdBy: r.createdBy,
+      specialty: r.specialty || undefined,
+      noteFormat: r.noteFormat,
+      encounterType: r.encounterType,
+      status: r.status as LiveSession["status"],
+      transcriptText: r.transcriptText || "",
+      draftClinicalNote: r.draftClinicalNote as LiveSession["draftClinicalNote"],
+      durationSeconds: r.durationSeconds,
+      consentObtained: r.consentObtained,
+      callId: r.callId || undefined,
+      startedAt: toISOString(r.startedAt),
+      endedAt: toISOString(r.endedAt),
+    };
   }
 }

@@ -39,7 +39,12 @@ export function useWebSocket() {
 
       ws.onmessage = (event) => {
         try {
-          const data = JSON.parse(event.data) as CallUpdate;
+          const data = JSON.parse(event.data);
+          if (data.type === "live_transcript") {
+            // Broadcast live transcript events to clinical-live page
+            window.dispatchEvent(new CustomEvent("ws:live_transcript", { detail: data }));
+            return;
+          }
           if (data.type === "call_update") {
             // Broadcast to other components (e.g., file-upload progress tracking)
             window.dispatchEvent(new CustomEvent("ws:call_update", { detail: data }));

@@ -104,7 +104,7 @@ export const insertEmployeeSchema = z.object({
   role: z.string().optional(),
   email: z.string(),
   initials: z.string().max(2).optional(),
-  status: z.string().default("Active").optional(),
+  status: z.enum(["Active", "Inactive"]).default("Active").optional(),
   subTeam: z.string().optional(),
 });
 
@@ -480,6 +480,7 @@ export const planLimitsSchema = z.object({
   ssoEnabled: z.boolean(),
   prioritySupport: z.boolean(),
   clinicalDocumentationEnabled: z.boolean().default(false),
+  abTestingEnabled: z.boolean().default(false),
 });
 export type PlanLimits = z.infer<typeof planLimitsSchema>;
 
@@ -501,6 +502,7 @@ export const PLAN_DEFINITIONS: Record<PlanTier, { name: string; description: str
       ssoEnabled: false,
       prioritySupport: false,
       clinicalDocumentationEnabled: false,
+      abTestingEnabled: false,
     },
   },
   pro: {
@@ -519,6 +521,7 @@ export const PLAN_DEFINITIONS: Record<PlanTier, { name: string; description: str
       ssoEnabled: false,
       prioritySupport: false,
       clinicalDocumentationEnabled: false,
+      abTestingEnabled: true,
     },
   },
   enterprise: {
@@ -537,6 +540,7 @@ export const PLAN_DEFINITIONS: Record<PlanTier, { name: string; description: str
       ssoEnabled: true,
       prioritySupport: true,
       clinicalDocumentationEnabled: false,
+      abTestingEnabled: true,
     },
   },
   clinical: {
@@ -555,6 +559,7 @@ export const PLAN_DEFINITIONS: Record<PlanTier, { name: string; description: str
       ssoEnabled: false,
       prioritySupport: true,
       clinicalDocumentationEnabled: true,
+      abTestingEnabled: false,
     },
   },
 };
@@ -660,7 +665,7 @@ export const insertABTestSchema = z.object({
   callCategory: z.string().optional(),
   baselineModel: z.string(),
   testModel: z.string(),
-  status: z.string().default("processing"),
+  status: z.enum(["processing", "analyzing", "completed", "failed"]).default("processing"),
   transcriptText: z.string().optional(),
   baselineAnalysis: z.record(z.unknown()).optional(),
   testAnalysis: z.record(z.unknown()).optional(),
@@ -710,6 +715,38 @@ export const usageRecordSchema = z.object({
 });
 
 export type UsageRecord = z.infer<typeof usageRecordSchema>;
+
+// --- LIVE SESSION SCHEMAS (real-time clinical recording) ---
+export const LIVE_SESSION_STATUSES = ["active", "paused", "completed", "failed"] as const;
+export type LiveSessionStatus = typeof LIVE_SESSION_STATUSES[number];
+
+export const insertLiveSessionSchema = z.object({
+  orgId: z.string(),
+  createdBy: z.string(),
+  specialty: z.string().optional(),
+  noteFormat: z.string().optional(),
+  encounterType: z.string().optional(),
+  status: z.enum(LIVE_SESSION_STATUSES).optional(),
+  /** Accumulated final transcript segments */
+  transcriptText: z.string().optional(),
+  /** Latest draft clinical note (regenerated periodically) */
+  draftClinicalNote: clinicalNoteSchema.optional(),
+  /** Duration in seconds of accumulated audio */
+  durationSeconds: z.number().optional(),
+  /** Patient consent for recording */
+  consentObtained: z.boolean().optional(),
+  /** Associated call ID (created on session end for permanent storage) */
+  callId: z.string().optional(),
+});
+
+export const liveSessionSchema = insertLiveSessionSchema.extend({
+  id: z.string(),
+  startedAt: z.string().optional(),
+  endedAt: z.string().optional(),
+});
+
+export type InsertLiveSession = z.infer<typeof insertLiveSessionSchema>;
+export type LiveSession = z.infer<typeof liveSessionSchema>;
 
 // --- ROLE DEFINITIONS ---
 // Role hierarchy: super_admin (4) > admin (3) > manager (2) > viewer (1)

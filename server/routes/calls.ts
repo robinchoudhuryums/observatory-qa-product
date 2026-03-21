@@ -25,6 +25,7 @@ import { errorResponse, ERROR_CODES } from "../services/error-codes";
 
 // --- Reference document cache (per-org, avoids repeated DB queries) ---
 const REF_DOC_CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes
+const MAX_REF_DOC_CACHE_ENTRIES = 1_000;
 interface RefDocCacheEntry {
   docs: Array<{ name: string; category: string; extractedText: string | null; id: string }>;
   expiresAt: number;
@@ -42,6 +43,11 @@ async function getCachedRefDocs(orgId: string, callCategory: string) {
   if (cached && Date.now() < cached.expiresAt) return cached.docs;
 
   const docs = await storage.getReferenceDocumentsForCategory(orgId, callCategory);
+  // Evict oldest entry when at capacity
+  if (refDocCache.size >= MAX_REF_DOC_CACHE_ENTRIES && !refDocCache.has(cacheKey)) {
+    const oldest = refDocCache.keys().next().value;
+    if (oldest) refDocCache.delete(oldest);
+  }
   refDocCache.set(cacheKey, { docs: docs as any, expiresAt: Date.now() + REF_DOC_CACHE_TTL_MS });
   return docs;
 }

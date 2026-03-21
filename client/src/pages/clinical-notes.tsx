@@ -9,7 +9,7 @@ import { Input } from "@/components/ui/input";
 import {
   Stethoscope, ShieldCheck, CheckCircle, AlertTriangle, FileText, Pill,
   Calendar, ClipboardList, Printer, Pencil, Save, X, Activity, MessageSquare,
-  Info, Copy,
+  Info, Copy, ChevronDown, ChevronUp, RefreshCw, Type,
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest } from "@/lib/queryClient";
@@ -134,6 +134,53 @@ export default function ClinicalNotesPage() {
       setEditing(false);
       setEditFields({});
       queryClient.invalidateQueries({ queryKey: ["/api/calls", callId] });
+    },
+    onError: (err) => {
+      toast({ title: "Save failed", description: err.message, variant: "destructive" });
+    },
+  });
+
+  // --- Transcript editing state ---
+  const [transcriptExpanded, setTranscriptExpanded] = useState(false);
+  const [editingTranscript, setEditingTranscript] = useState(false);
+  const [transcriptText, setTranscriptText] = useState("");
+  const [showReanalyzeConfirm, setShowReanalyzeConfirm] = useState(false);
+
+  const { data: transcript } = useQuery<{ text?: string; callId: string }>({
+    queryKey: ["/api/calls", callId, "transcript"],
+    queryFn: async () => {
+      const res = await fetch(`/api/calls/${callId}/transcript`, { credentials: "include" });
+      if (!res.ok) return { callId: callId || "", text: "" };
+      return res.json();
+    },
+    enabled: !!callId,
+  });
+
+  const startEditingTranscript = () => {
+    setTranscriptText(transcript?.text || "");
+    setEditingTranscript(true);
+  };
+
+  const saveTranscriptMutation = useMutation({
+    mutationFn: async ({ reanalyze }: { reanalyze: boolean }) => {
+      const res = await apiRequest("PATCH", `/api/clinical/transcript/${callId}`, {
+        text: transcriptText,
+        reanalyze,
+      });
+      return res.json();
+    },
+    onSuccess: (data) => {
+      setEditingTranscript(false);
+      setShowReanalyzeConfirm(false);
+      queryClient.invalidateQueries({ queryKey: ["/api/calls", callId] });
+      queryClient.invalidateQueries({ queryKey: ["/api/calls", callId, "transcript"] });
+      if (data.reanalysis?.success) {
+        toast({ title: "Transcript saved & note regenerated", description: "The clinical note has been updated from the edited transcript. Re-attestation required." });
+      } else if (data.reanalysis && !data.reanalysis.success) {
+        toast({ title: "Transcript saved", description: data.reanalysis.message, variant: "destructive" });
+      } else {
+        toast({ title: "Transcript saved", description: "Transcript updated. The clinical note was not changed." });
+      }
     },
     onError: (err) => {
       toast({ title: "Save failed", description: err.message, variant: "destructive" });
@@ -331,6 +378,83 @@ export default function ClinicalNotesPage() {
               </div>
             </div>
           </CardContent>
+        </Card>
+      )}
+
+      {/* Transcript Section — collapsible, editable */}
+      {transcript?.text && (
+        <Card className="print:hidden">
+          <CardHeader className="pb-2 cursor-pointer" onClick={() => setTranscriptExpanded(!transcriptExpanded)}>
+            <div className="flex items-center justify-between">
+              <CardTitle className="text-base flex items-center gap-2">
+                <Type className="w-4 h-4 text-muted-foreground" />
+                Encounter Transcript
+                <Badge variant="outline" className="text-xs font-normal ml-2">
+                  {transcript.text.length.toLocaleString()} chars
+                </Badge>
+              </CardTitle>
+              <Button variant="ghost" size="sm" className="h-6 w-6 p-0">
+                {transcriptExpanded ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
+              </Button>
+            </div>
+          </CardHeader>
+          {transcriptExpanded && (
+            <CardContent className="space-y-3">
+              {editingTranscript ? (
+                <>
+                  <Textarea
+                    value={transcriptText}
+                    onChange={(e) => setTranscriptText(e.target.value)}
+                    className="min-h-[200px] text-sm font-mono"
+                    placeholder="Transcript text..."
+                  />
+                  <div className="flex items-center gap-2">
+                    {showReanalyzeConfirm ? (
+                      <div className="flex-1 flex items-start gap-3 p-3 rounded-lg border border-blue-200 bg-blue-50 dark:border-blue-900 dark:bg-blue-950/30">
+                        <RefreshCw className="w-4 h-4 text-blue-600 mt-0.5 shrink-0" />
+                        <div className="flex-1 text-sm">
+                          <p className="font-medium text-blue-800 dark:text-blue-200">Re-run AI analysis?</p>
+                          <p className="text-blue-700 dark:text-blue-300 mt-1">
+                            This will regenerate the clinical note from the edited transcript using AI. The existing note will be replaced and will need re-attestation. A small amount of AI usage will be consumed (~$0.02).
+                          </p>
+                          <div className="flex gap-2 mt-2">
+                            <Button size="sm" onClick={() => saveTranscriptMutation.mutate({ reanalyze: true })} disabled={saveTranscriptMutation.isPending}>
+                              <RefreshCw className="w-3.5 h-3.5 mr-1" />
+                              {saveTranscriptMutation.isPending ? "Saving & analyzing..." : "Save & Re-analyze"}
+                            </Button>
+                            <Button size="sm" variant="outline" onClick={() => saveTranscriptMutation.mutate({ reanalyze: false })} disabled={saveTranscriptMutation.isPending}>
+                              Save without re-analysis
+                            </Button>
+                            <Button size="sm" variant="ghost" onClick={() => setShowReanalyzeConfirm(false)} disabled={saveTranscriptMutation.isPending}>
+                              Cancel
+                            </Button>
+                          </div>
+                        </div>
+                      </div>
+                    ) : (
+                      <>
+                        <Button size="sm" onClick={() => setShowReanalyzeConfirm(true)} disabled={transcriptText.trim().length < 10}>
+                          <Save className="w-4 h-4 mr-1" />Save Transcript
+                        </Button>
+                        <Button size="sm" variant="outline" onClick={() => { setEditingTranscript(false); setShowReanalyzeConfirm(false); }}>
+                          <X className="w-4 h-4 mr-1" />Cancel
+                        </Button>
+                      </>
+                    )}
+                  </div>
+                </>
+              ) : (
+                <>
+                  <p className="text-sm text-foreground whitespace-pre-wrap leading-relaxed max-h-[300px] overflow-y-auto">
+                    {transcript.text}
+                  </p>
+                  <Button size="sm" variant="outline" onClick={startEditingTranscript}>
+                    <Pencil className="w-4 h-4 mr-1" />Edit Transcript
+                  </Button>
+                </>
+              )}
+            </CardContent>
+          )}
         </Card>
       )}
 

@@ -23,6 +23,7 @@ import { registerABTestRoutes } from "./ab-testing";
 import { registerSpendTrackingRoutes } from "./spend-tracking";
 import { registerClinicalRoutes } from "./clinical";
 import { registerEhrRoutes } from "./ehr";
+import { registerLiveSessionRoutes } from "./live-session";
 import { registerSuperAdminRoutes } from "./super-admin";
 
 const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -72,6 +73,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   registerSpendTrackingRoutes(app);
   registerClinicalRoutes(app);
   registerEhrRoutes(app);
+  registerLiveSessionRoutes(app);
   registerSuperAdminRoutes(app);
 
   const httpServer = createServer(app);

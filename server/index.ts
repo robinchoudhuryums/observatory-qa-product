@@ -22,6 +22,7 @@ const app = express();
 
 // --- In-memory sliding window rate limiter (fallback when Redis unavailable) ---
 // Tracks individual request timestamps per key for accurate sliding window behavior
+const MAX_RATE_LIMIT_ENTRIES = 50_000;
 const rateLimitMap = new Map<string, number[]>();
 function rateLimitKey(req: Request, includeOrg: boolean): string {
   const orgPart = includeOrg && req.orgId ? `:org:${req.orgId}` : "";
@@ -55,8 +56,13 @@ function inMemoryRateLimit(windowMs: number, maxRequests: number, includeOrg = f
       return res.status(429).json({ message: "Too many requests. Please try again later." });
     }
 
-    // Record this request
+    // Record this request (enforce hard cap to prevent unbounded growth)
     timestamps.push(now);
+    if (rateLimitMap.size >= MAX_RATE_LIMIT_ENTRIES && !rateLimitMap.has(key)) {
+      // Evict oldest entry when at capacity
+      const oldest = rateLimitMap.keys().next().value;
+      if (oldest) rateLimitMap.delete(oldest);
+    }
     rateLimitMap.set(key, timestamps);
 
     setRateLimitHeaders(res, maxRequests, maxRequests - timestamps.length, resetSeconds);
@@ -142,6 +148,10 @@ app.use((req, res, next) => {
   res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
   res.setHeader('Permissions-Policy', 'camera=(), microphone=(self), geolocation=()');
   // CSP: restrict resource loading to same-origin and trusted CDNs
+  // NOTE: style-src 'unsafe-inline' is required because Recharts renders chart elements with
+  // inline styles (dynamically computed positions, colors, dimensions) and Framer Motion uses
+  // inline transforms for animations. Removing it would break all charts and transitions.
+  // script-src is properly locked down to 'self' only (no unsafe-inline for scripts).
   res.setHeader('Content-Security-Policy',
     "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data: blob:; media-src 'self' blob:; connect-src 'self' wss:; frame-ancestors 'none';"
   );
