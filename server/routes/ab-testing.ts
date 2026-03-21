@@ -10,6 +10,7 @@ import { broadcastCallUpdate } from "../services/websocket";
 import { trackUsage } from "../services/queue";
 import { upload } from "./helpers";
 import { logger } from "../services/logger";
+import { requireActiveSubscription } from "./billing";
 import { BEDROCK_MODEL_PRESETS, CALL_CATEGORIES, type UsageRecord } from "@shared/schema";
 
 // --- Cost estimation functions ---
@@ -70,7 +71,7 @@ export function registerABTestRoutes(app: Express): void {
   });
 
   // Upload audio for A/B model comparison
-  app.post("/api/ab-tests/upload", requireAuth, requireRole("admin"), injectOrgContext, upload.single("audioFile"), async (req, res) => {
+  app.post("/api/ab-tests/upload", requireAuth, requireRole("admin"), injectOrgContext, requireActiveSubscription(), upload.single("audioFile"), async (req, res) => {
     try {
       if (!req.file) {
         res.status(400).json({ message: "No audio file provided" });

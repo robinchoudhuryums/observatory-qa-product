@@ -13,7 +13,7 @@ import { notifyFlaggedCall } from "../services/notifications";
 import { onCallAnalysisComplete } from "../services/proactive-alerts";
 import { trackUsage } from "../services/queue";
 import { upload, safeFloat, withRetry } from "./helpers";
-import { enforceQuota } from "./billing";
+import { enforceQuota, requireActiveSubscription } from "./billing";
 import { logger } from "../services/logger";
 import { searchRelevantChunks, formatRetrievedContext } from "../services/rag";
 import { PLAN_DEFINITIONS, CALL_CATEGORIES, type PlanTier, type UsageRecord } from "@shared/schema";
@@ -608,7 +608,7 @@ export function registerCallRoutes(app: Express): void {
     }
   });
 
-  app.post("/api/calls/upload", requireAuth, injectOrgContext, enforceQuota("transcription"), upload.single('audioFile'), async (req, res) => {
+  app.post("/api/calls/upload", requireAuth, injectOrgContext, requireActiveSubscription(), enforceQuota("transcription"), upload.single('audioFile'), async (req, res) => {
     try {
       if (!req.file) {
         res.status(400).json({ message: "No audio file provided" });

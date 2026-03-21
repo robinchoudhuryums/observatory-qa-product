@@ -101,6 +101,78 @@ export function enforceUserQuota() {
   };
 }
 
+/**
+ * Generic feature gate middleware. Checks if a plan feature is enabled.
+ * Use for boolean feature flags like customPromptTemplates, ssoEnabled, etc.
+ */
+export function requirePlanFeature(feature: keyof import("@shared/schema").PlanLimits, errorMessage?: string) {
+  return async (req: Request, res: Response, next: NextFunction) => {
+    const orgId = req.orgId;
+    if (!orgId) return next();
+
+    try {
+      const sub = await storage.getSubscription(orgId);
+      const tier = (sub?.planTier as PlanTier) || "free";
+      const plan = PLAN_DEFINITIONS[tier];
+      if (!plan) return next();
+
+      if (!plan.limits[feature]) {
+        return res.status(403).json({
+          message: errorMessage || `This feature requires a plan upgrade`,
+          code: "PLAN_FEATURE_REQUIRED",
+          feature,
+          currentPlan: tier,
+          upgradeUrl: "/settings?tab=billing",
+        });
+      }
+      next();
+    } catch {
+      next(); // Fail open
+    }
+  };
+}
+
+/**
+ * Middleware to block requests when subscription is past_due or canceled.
+ * Allows read-only access (GET) but blocks mutations.
+ */
+export function requireActiveSubscription() {
+  return async (req: Request, res: Response, next: NextFunction) => {
+    // Allow GET requests (read-only) and auth routes
+    if (req.method === "GET") return next();
+
+    const orgId = req.orgId;
+    if (!orgId) return next();
+
+    try {
+      const sub = await storage.getSubscription(orgId);
+      if (!sub) return next(); // Free tier, no subscription record
+
+      if (sub.status === "past_due") {
+        return res.status(402).json({
+          message: "Your subscription payment is past due. Please update your payment method.",
+          code: "SUBSCRIPTION_PAST_DUE",
+          status: sub.status,
+          portalUrl: "/settings?tab=billing",
+        });
+      }
+
+      if (sub.status === "canceled" || sub.status === "incomplete") {
+        return res.status(403).json({
+          message: "Your subscription is inactive. Please resubscribe to continue.",
+          code: "SUBSCRIPTION_INACTIVE",
+          status: sub.status,
+          upgradeUrl: "/settings?tab=billing",
+        });
+      }
+
+      next();
+    } catch {
+      next(); // Fail open
+    }
+  };
+}
+
 // ============================================================================
 // Billing Routes
 // ============================================================================
@@ -474,5 +546,10 @@ function resolveTierFromPriceId(priceId?: string): PlanTier {
   if (clinM) priceMap[clinM] = "clinical";
   if (clinY) priceMap[clinY] = "clinical";
 
-  return priceMap[priceId] || "pro";
+  const resolved = priceMap[priceId];
+  if (!resolved) {
+    logger.error({ priceId }, "Unknown Stripe price ID — cannot resolve to plan tier, defaulting to free");
+    return "free";
+  }
+  return resolved;
 }

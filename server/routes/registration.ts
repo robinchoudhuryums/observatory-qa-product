@@ -7,6 +7,7 @@ import { storage } from "../storage";
 import { requireAuth, requireRole, injectOrgContext, hashPassword } from "../auth";
 import { logger } from "../services/logger";
 import { randomUUID } from "crypto";
+import { enforceUserQuota } from "./billing";
 
 /**
  * Validate password complexity for HIPAA compliance.
@@ -162,7 +163,7 @@ export function registerRegistrationRoutes(app: Express): void {
   });
 
   // Create invitation (admin/manager only)
-  app.post("/api/invitations", requireAuth, requireRole("manager"), injectOrgContext, async (req, res) => {
+  app.post("/api/invitations", requireAuth, requireRole("manager"), injectOrgContext, enforceUserQuota(), async (req, res) => {
     try {
       const { email, role } = req.body;
       if (!email) {
