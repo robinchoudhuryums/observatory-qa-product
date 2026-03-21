@@ -160,6 +160,12 @@ export const callAnalyses = pgTable("call_analyses", {
   subScores: jsonb("sub_scores"),
   detectedAgentName: varchar("detected_agent_name", { length: 255 }),
   clinicalNote: jsonb("clinical_note"),
+  speechMetrics: jsonb("speech_metrics"),
+  selfReview: jsonb("self_review"),
+  scoreDispute: jsonb("score_dispute"),
+  patientSummary: text("patient_summary"),
+  referralLetter: text("referral_letter"),
+  suggestedBillingCodes: jsonb("suggested_billing_codes"),
   createdAt: timestamp("created_at").defaultNow(),
 }, (t) => [
   uniqueIndex("analyses_call_id_idx").on(t.callId),

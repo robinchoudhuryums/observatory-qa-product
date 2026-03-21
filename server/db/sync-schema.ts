@@ -182,6 +182,12 @@ export async function syncSchema(db: Database): Promise<void> {
     await addColumnIfNotExists(db, "call_analyses", "confidence_factors", "JSONB");
     await addColumnIfNotExists(db, "call_analyses", "manual_edits", "JSONB");
     await addColumnIfNotExists(db, "call_analyses", "clinical_note", "JSONB");
+    await addColumnIfNotExists(db, "call_analyses", "speech_metrics", "JSONB");
+    await addColumnIfNotExists(db, "call_analyses", "self_review", "JSONB");
+    await addColumnIfNotExists(db, "call_analyses", "score_dispute", "JSONB");
+    await addColumnIfNotExists(db, "call_analyses", "patient_summary", "TEXT");
+    await addColumnIfNotExists(db, "call_analyses", "referral_letter", "TEXT");
+    await addColumnIfNotExists(db, "call_analyses", "suggested_billing_codes", "JSONB");
     await db.execute(sql`CREATE UNIQUE INDEX IF NOT EXISTS analyses_call_id_idx ON call_analyses (call_id)`);
     await db.execute(sql`CREATE INDEX IF NOT EXISTS analyses_org_id_idx ON call_analyses (org_id)`);
     await db.execute(sql`CREATE INDEX IF NOT EXISTS analyses_performance_idx ON call_analyses (org_id, performance_score)`);

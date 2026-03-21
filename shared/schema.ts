@@ -343,6 +343,21 @@ export const confidenceFactorsSchema = z.object({
   overallScore: z.number(),
 });
 
+// Speech analytics computed from word timing data
+export const speechMetricsSchema = z.object({
+  talkSpeedWpm: z.number().optional(),             // Words per minute
+  deadAirSeconds: z.number().optional(),            // Total silence > 3s
+  deadAirCount: z.number().optional(),              // Number of silence gaps > 3s
+  longestDeadAirSeconds: z.number().optional(),     // Longest single silence
+  interruptionCount: z.number().optional(),         // Times speakers overlapped
+  fillerWordCount: z.number().optional(),           // "um", "uh", "like", "you know" etc.
+  fillerWords: z.record(z.number()).optional(),      // Breakdown by filler word
+  avgResponseTimeMs: z.number().optional(),         // Avg time between speaker turns
+  talkListenRatio: z.number().optional(),           // Agent talk / total talk ratio
+  speakerATalkPercent: z.number().optional(),       // Speaker A % of total talk time
+  speakerBTalkPercent: z.number().optional(),       // Speaker B % of total talk time
+});
+
 export const insertCallAnalysisSchema = z.object({
   orgId: z.string(),
   callId: z.string(),
@@ -368,6 +383,36 @@ export const insertCallAnalysisSchema = z.object({
   }).optional(),
   detectedAgentName: z.string().optional(),
   clinicalNote: clinicalNoteSchema.optional(),
+  speechMetrics: speechMetricsSchema.optional(),
+  // Self-review: agent can review their own call
+  selfReview: z.object({
+    score: z.number().min(0).max(10).optional(),
+    notes: z.string().optional(),
+    reviewedAt: z.string().optional(),
+    reviewedBy: z.string().optional(),
+  }).optional(),
+  // Score dispute: agent can dispute the QA score
+  scoreDispute: z.object({
+    status: z.enum(["open", "under_review", "accepted", "rejected"]),
+    reason: z.string(),
+    disputedBy: z.string(),
+    disputedAt: z.string(),
+    resolvedBy: z.string().optional(),
+    resolvedAt: z.string().optional(),
+    resolution: z.string().optional(),
+    originalScore: z.number().optional(),
+    adjustedScore: z.number().optional(),
+  }).optional(),
+  // Patient-facing visit summary (plain language)
+  patientSummary: z.string().optional(),
+  // AI-generated referral letter
+  referralLetter: z.string().optional(),
+  // Auto-suggested billing codes from transcript
+  suggestedBillingCodes: z.object({
+    cptCodes: z.array(z.object({ code: z.string(), description: z.string(), confidence: z.number() })).optional(),
+    icd10Codes: z.array(z.object({ code: z.string(), description: z.string(), confidence: z.number() })).optional(),
+    cdtCodes: z.array(z.object({ code: z.string(), description: z.string(), confidence: z.number() })).optional(),
+  }).optional(),
 });
 
 export const callAnalysisSchema = insertCallAnalysisSchema.extend({

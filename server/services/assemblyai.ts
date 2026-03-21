@@ -84,6 +84,14 @@ export class AssemblyAIService {
         punctuate: true,
         format_text: true,
         sentiment_analysis: true,
+        // PII/PHI auto-redaction: replaces sensitive data with hash markers in transcript
+        redact_pii: true,
+        redact_pii_policies: [
+          "person_name", "phone_number", "email_address", "date_of_birth",
+          "us_social_security_number", "credit_card_number", "medical_record_number",
+          "blood_type", "drug", "injury", "medical_condition",
+        ],
+        redact_pii_sub: "hash", // Replace with ### instead of removing
       })
     });
     if (!response.ok) throw new Error(`Failed to start transcription: ${await response.text()}`);
@@ -224,6 +232,9 @@ Evaluate the agent on: professionalism, product knowledge, empathy, problem reso
       }
     }
 
+    // --- Speech Analytics: compute from word timing data ---
+    const speechMetrics = this.computeSpeechMetrics(words);
+
     // Determine flags
     const flags: string[] = aiAnalysis?.flags || [];
     if (performanceScore <= 2.0 && !flags.includes("low_score")) {
@@ -247,9 +258,103 @@ Evaluate the agent on: professionalism, product knowledge, empathy, problem reso
       lemurResponse: undefined,
       callPartyType: typeof aiAnalysis?.call_party_type === "string" ? aiAnalysis.call_party_type : undefined,
       flags: flags.length > 0 ? flags : undefined,
+      speechMetrics: Object.keys(speechMetrics).length > 0 ? speechMetrics : undefined,
     };
 
     return { transcript, sentiment, analysis };
+  }
+
+  /**
+   * Compute speech analytics metrics from AssemblyAI word timing data.
+   * Analyzes dead air, interruptions, talk speed, filler words, and response times.
+   */
+  private computeSpeechMetrics(words: TranscriptWord[]): Record<string, unknown> {
+    if (!words || words.length < 2) return {};
+
+    const DEAD_AIR_THRESHOLD_MS = 3000; // 3 seconds
+    const FILLER_WORDS = new Set(["um", "uh", "uhm", "hmm", "like", "you know", "basically", "actually", "right", "so", "well", "I mean"]);
+
+    const totalDurationMs = words[words.length - 1].end - words[0].start;
+    if (totalDurationMs <= 0) return {};
+
+    // --- Talk speed (words per minute) ---
+    const totalWords = words.length;
+    const talkSpeedWpm = Math.round((totalWords / (totalDurationMs / 60000)) * 10) / 10;
+
+    // --- Dead air detection ---
+    let deadAirSeconds = 0;
+    let deadAirCount = 0;
+    let longestDeadAirMs = 0;
+
+    for (let i = 1; i < words.length; i++) {
+      const gap = words[i].start - words[i - 1].end;
+      if (gap >= DEAD_AIR_THRESHOLD_MS) {
+        deadAirCount++;
+        deadAirSeconds += gap / 1000;
+        if (gap > longestDeadAirMs) longestDeadAirMs = gap;
+      }
+    }
+
+    // --- Interruption detection (speaker overlap) ---
+    let interruptionCount = 0;
+    for (let i = 1; i < words.length; i++) {
+      if (words[i].speaker && words[i - 1].speaker &&
+          words[i].speaker !== words[i - 1].speaker) {
+        // Speaker changed — check if there's overlap (new speaker starts before old ends)
+        if (words[i].start < words[i - 1].end) {
+          interruptionCount++;
+        }
+      }
+    }
+
+    // --- Filler word count ---
+    const fillerWordCounts: Record<string, number> = {};
+    let fillerWordTotal = 0;
+    for (const w of words) {
+      const lower = w.text.toLowerCase().replace(/[.,!?]/g, "");
+      if (FILLER_WORDS.has(lower)) {
+        fillerWordCounts[lower] = (fillerWordCounts[lower] || 0) + 1;
+        fillerWordTotal++;
+      }
+    }
+
+    // --- Average response time between speaker turns ---
+    const turnGaps: number[] = [];
+    for (let i = 1; i < words.length; i++) {
+      if (words[i].speaker && words[i - 1].speaker &&
+          words[i].speaker !== words[i - 1].speaker) {
+        const gap = words[i].start - words[i - 1].end;
+        if (gap > 0 && gap < 30000) { // Ignore unreasonable gaps
+          turnGaps.push(gap);
+        }
+      }
+    }
+    const avgResponseTimeMs = turnGaps.length > 0
+      ? Math.round(turnGaps.reduce((a, b) => a + b, 0) / turnGaps.length)
+      : undefined;
+
+    // --- Per-speaker talk percentages ---
+    const speakerTime: Record<string, number> = {};
+    for (const w of words) {
+      const speaker = w.speaker || "unknown";
+      speakerTime[speaker] = (speakerTime[speaker] || 0) + (w.end - w.start);
+    }
+    const totalTalkTime = Object.values(speakerTime).reduce((a, b) => a + b, 0);
+    const speakerATalkPercent = totalTalkTime > 0 ? Math.round(((speakerTime["A"] || 0) / totalTalkTime) * 100) : undefined;
+    const speakerBTalkPercent = totalTalkTime > 0 ? Math.round(((speakerTime["B"] || 0) / totalTalkTime) * 100) : undefined;
+
+    return {
+      talkSpeedWpm,
+      deadAirSeconds: Math.round(deadAirSeconds * 10) / 10,
+      deadAirCount,
+      longestDeadAirSeconds: Math.round((longestDeadAirMs / 1000) * 10) / 10,
+      interruptionCount,
+      fillerWordCount: fillerWordTotal,
+      fillerWords: Object.keys(fillerWordCounts).length > 0 ? fillerWordCounts : undefined,
+      avgResponseTimeMs,
+      speakerATalkPercent,
+      speakerBTalkPercent,
+    };
   }
 }
 
