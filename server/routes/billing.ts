@@ -291,14 +291,16 @@ export function registerBillingRoutes(app: Express): void {
         }
       }
 
-      // No Stripe — just downgrade immediately
+      // No Stripe — just downgrade immediately (preserve customer ID for re-subscription)
       await storage.upsertSubscription(req.orgId!, {
         orgId: req.orgId!,
         planTier: "free",
         status: "active",
         billingInterval: "monthly",
+        stripeCustomerId: sub?.stripeCustomerId,
       });
 
+      logger.info({ orgId: req.orgId }, "Downgraded to free plan");
       res.json({ message: "Downgraded to free plan" });
     } catch (error) {
       res.status(500).json({ message: "Failed to downgrade" });
@@ -418,6 +420,29 @@ export function registerBillingRoutes(app: Express): void {
           break;
         }
 
+        case "invoice.paid": {
+          const invoice = event.data.object as any;
+          const customerId = invoice.customer;
+          if (!customerId) break;
+
+          // Re-activate subscription if it was past_due
+          const sub = await storage.getSubscriptionByStripeCustomerId(customerId);
+          if (sub && sub.status === "past_due") {
+            await storage.updateSubscription(sub.orgId, { status: "active" });
+            logger.info({ orgId: sub.orgId }, "Invoice paid — subscription re-activated from past_due");
+          }
+          break;
+        }
+
+        case "customer.subscription.trial_will_end": {
+          const stripeSub = event.data.object as any;
+          const orgId = stripeSub.metadata?.orgId;
+          if (orgId) {
+            logger.info({ orgId, trialEnd: new Date(stripeSub.trial_end * 1000).toISOString() }, "Trial ending soon");
+          }
+          break;
+        }
+
         default:
           logger.debug({ type: event.type }, "Unhandled Stripe event");
       }
@@ -439,11 +464,15 @@ function resolveTierFromPriceId(priceId?: string): PlanTier {
   const proY = process.env.STRIPE_PRICE_PRO_YEARLY;
   const entM = process.env.STRIPE_PRICE_ENTERPRISE_MONTHLY;
   const entY = process.env.STRIPE_PRICE_ENTERPRISE_YEARLY;
+  const clinM = process.env.STRIPE_PRICE_CLINICAL_MONTHLY;
+  const clinY = process.env.STRIPE_PRICE_CLINICAL_YEARLY;
 
   if (proM) priceMap[proM] = "pro";
   if (proY) priceMap[proY] = "pro";
   if (entM) priceMap[entM] = "enterprise";
   if (entY) priceMap[entY] = "enterprise";
+  if (clinM) priceMap[clinM] = "clinical";
+  if (clinY) priceMap[clinY] = "clinical";
 
   return priceMap[priceId] || "pro";
 }

@@ -43,6 +43,22 @@ export default function SettingsPage() {
     if (tabParam && ["branding", "users", "invitations", "api-keys", "billing", "organization"].includes(tabParam)) {
       setTab(tabParam as TabView);
     }
+
+    // Handle checkout result
+    const checkout = params.get("checkout");
+    if (checkout === "success") {
+      toast({ title: "Subscription activated", description: "Your plan has been upgraded. Features are now available." });
+      queryClient.invalidateQueries({ queryKey: ["/api/billing/subscription"] });
+      // Clean up URL
+      params.delete("checkout");
+      const cleanUrl = params.toString() ? `${window.location.pathname}?${params}` : window.location.pathname;
+      window.history.replaceState({}, "", cleanUrl);
+    } else if (checkout === "canceled") {
+      toast({ title: "Checkout canceled", description: "No changes were made to your subscription.", variant: "destructive" });
+      params.delete("checkout");
+      const cleanUrl = params.toString() ? `${window.location.pathname}?${params}` : window.location.pathname;
+      window.history.replaceState({}, "", cleanUrl);
+    }
   }, [location]);
 
   return (
@@ -837,7 +853,15 @@ function BillingTab() {
                 size="sm"
                 className="text-red-600"
                 onClick={() => {
-                  if (confirm("Downgrade to the free plan? You'll lose access to premium features at the end of your billing period.")) {
+                  const lostFeatures: string[] = [];
+                  if (currentPlan.limits.customPromptTemplates) lostFeatures.push("Custom prompt templates");
+                  if (currentPlan.limits.ragEnabled) lostFeatures.push("Knowledge base (RAG)");
+                  if (currentPlan.limits.ssoEnabled) lostFeatures.push("SSO/SAML");
+                  if (currentPlan.limits.clinicalDocumentationEnabled) lostFeatures.push("Clinical documentation");
+                  if (currentPlan.limits.prioritySupport) lostFeatures.push("Priority support");
+                  const callWarning = usage.callsThisMonth > 50 ? `\n\nWarning: You've used ${usage.callsThisMonth} calls this month. Free plan allows 50.` : "";
+                  const msg = `Downgrade to the free plan?\n\nYou'll lose access to:\n${lostFeatures.map(f => `  - ${f}`).join("\n")}${callWarning}\n\nChanges take effect at the end of your billing period.`;
+                  if (confirm(msg)) {
                     downgradeMutation.mutate();
                   }
                 }}
@@ -903,6 +927,8 @@ function BillingTab() {
                     <PlanFeature label={`${plan.limits.maxUsers === -1 ? "Unlimited" : plan.limits.maxUsers} users`} />
                     <PlanFeature label={`${Number(plan.limits.storageMb) >= 100000 ? "100 GB" : Number(plan.limits.storageMb) >= 10000 ? "10 GB" : plan.limits.storageMb + " MB"} storage`} />
                     {plan.limits.customPromptTemplates && <PlanFeature label="Custom prompt templates" />}
+                    {plan.limits.ragEnabled && <PlanFeature label="Knowledge base (RAG)" />}
+                    {plan.limits.clinicalDocumentationEnabled && <PlanFeature label="Clinical documentation" />}
                     {plan.limits.ssoEnabled && <PlanFeature label="SSO / SAML" />}
                     {plan.limits.prioritySupport && <PlanFeature label="Priority support" />}
                   </ul>
