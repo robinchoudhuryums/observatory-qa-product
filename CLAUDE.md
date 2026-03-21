@@ -102,6 +102,7 @@ client/src/components/       # UI components
   branding-provider.tsx      #   Per-org branding context
   owl-loading.tsx            #   Custom owl-themed loading animation (liquid fill CSS)
   onboarding-tour.tsx        #   Interactive product tour (6 steps, localStorage-persistent)
+  feedback-widget.tsx        #   Floating feedback button (bottom-right), auto-detects page context
 
 client/src/lib/              # Client utilities
   display-utils.ts           #   toDisplayString() — safe AI response value rendering
@@ -141,6 +142,11 @@ server/routes/               # Modular API route files (24 route files)
   ehr.ts                     #   EHR integration: patient lookup, appointment sync, note push
   ab-testing.ts              #   A/B model testing: upload, dual-model comparison, cost tracking
   spend-tracking.ts          #   Usage/cost visibility: per-call spend breakdown
+  feedback.ts                #   User feedback: submit, list, summary, NPS calculation
+  gamification.ts            #   Gamification: leaderboard, badges, employee profiles, points
+  insurance-narratives.ts    #   Insurance narrative drafting: prior auth, appeals, medical necessity
+  revenue.ts                 #   Revenue tracking: per-call dollar values, conversion status, metrics
+  calibration.ts             #   Calibration sessions: multi-evaluator QA alignment, variance tracking
 
 server/services/             # Business logic & integrations
   ai-factory.ts              #   AI provider setup (Bedrock, per-org model config)
@@ -227,6 +233,11 @@ tests/                       # Unit tests (Node test runner)
 | `clinical-upload.tsx` | `/clinical/upload` | Upload clinical encounter audio for note generation |
 | `ab-testing.tsx` | `/ab-testing` | A/B model comparison (upload audio, dual-model analysis, cost tracking) |
 | `spend-tracking.tsx` | `/spend-tracking` | Usage & cost visibility (per-call spend breakdown) |
+| `feedback.tsx` | `/admin/feedback` | Admin feedback dashboard: NPS, feature ratings, bug reports |
+| `gamification.tsx` | `/gamification` | Leaderboard, badges, employee achievement profiles |
+| `insurance-narratives.tsx` | `/insurance-narratives` | Insurance letter drafting: prior auth, appeals, medical necessity |
+| `revenue.tsx` | `/revenue` | Revenue tracking: per-call dollar values, conversion metrics |
+| `calibration.tsx` | `/calibration` | QA calibration sessions: multi-evaluator scoring alignment |
 
 ### Multi-Tenant Data Model
 Every data entity has an `orgId` field. All storage methods take `orgId` as the first parameter. Data isolation is enforced at the storage layer — no method can access data without specifying the org.
@@ -249,6 +260,12 @@ Every data entity has an `orgId` field. All storage methods take `orgId` as the 
 - `ApiKey` — id, orgId, name, keyHash, keyPrefix, permissions, status
 - `Subscription` — id, orgId, planTier, status, stripeCustomerId, billingInterval
 - `ReferenceDocument` — id, orgId, name, category, fileName, extractedText, appliesTo, isActive
+- `Feedback` — id, orgId, userId, type (feature_rating/bug_report/suggestion/nps/general), context (page/feature), rating (1-10), comment, metadata, status, adminResponse
+- `EmployeeBadge` — id, orgId, employeeId, badgeId, awardedAt, awardedFor. 12 badge definitions: milestone (first_call, ten_calls, hundred_calls), performance (perfect_score, high_performer, consistency_king), improvement (most_improved, comeback_kid), engagement (self_reviewer, coaching_champion), streak (streak_7, streak_30)
+- `InsuranceNarrative` — id, orgId, callId, patientName, insurerName, letterType (prior_auth/appeal/predetermination/medical_necessity/peer_to_peer), diagnosisCodes, procedureCodes, clinicalJustification, generatedNarrative, status (draft/finalized/submitted)
+- `CallRevenue` — id, orgId, callId, estimatedRevenue, actualRevenue, revenueType (production/collection/scheduled/lost), treatmentValue, scheduledProcedures, conversionStatus (converted/pending/lost/unknown)
+- `CalibrationSession` — id, orgId, title, callId, facilitatorId, evaluatorIds, status (scheduled/in_progress/completed), targetScore, consensusNotes
+- `CalibrationEvaluation` — id, orgId, sessionId, evaluatorId, performanceScore, subScores, notes
 
 **Industry types** (set at registration): `general`, `dental`, `medical`, `behavioral_health`, `veterinary`
 
@@ -484,6 +501,52 @@ Uses AWS Bedrock (Claude) for AI analysis. Per-org `bedrockModel` can be configu
 |--------|------|-------------|
 | GET | `/api/usage` | Get all usage/cost records |
 
+### User Feedback (org-scoped)
+| Method | Path | Role | Description |
+|--------|------|------|-------------|
+| POST | `/api/feedback` | authenticated | Submit feedback (rating, bug, suggestion, NPS) |
+| GET | `/api/feedback` | admin | List all org feedback |
+| GET | `/api/feedback/summary` | admin | Feedback analytics (NPS score, ratings by feature) |
+| PATCH | `/api/feedback/:id` | admin | Update status / add admin response |
+
+### Gamification (org-scoped)
+| Method | Path | Description |
+|--------|------|-------------|
+| GET | `/api/gamification/leaderboard` | Org leaderboard (points, streaks, badges) |
+| GET | `/api/gamification/profile/:employeeId` | Employee gamification profile with badges |
+| GET | `/api/gamification/badges` | List all badge definitions |
+
+### Insurance Narratives (org-scoped)
+| Method | Path | Role | Description |
+|--------|------|------|-------------|
+| GET | `/api/insurance-narratives/types` | authenticated | List letter types |
+| POST | `/api/insurance-narratives` | manager+ | Create narrative (generates AI letter) |
+| GET | `/api/insurance-narratives` | authenticated | List narratives |
+| GET | `/api/insurance-narratives/:id` | authenticated | Get specific narrative |
+| PATCH | `/api/insurance-narratives/:id` | manager+ | Update narrative/status |
+| DELETE | `/api/insurance-narratives/:id` | manager+ | Delete narrative |
+| POST | `/api/insurance-narratives/:id/regenerate` | manager+ | Regenerate letter text |
+
+### Revenue Tracking (org-scoped)
+| Method | Path | Role | Description |
+|--------|------|------|-------------|
+| GET | `/api/revenue/metrics` | authenticated | Revenue summary (totals, conversion rate, avg deal) |
+| GET | `/api/revenue` | authenticated | List all call revenue records |
+| GET | `/api/revenue/call/:callId` | authenticated | Get revenue for specific call |
+| PUT | `/api/revenue/call/:callId` | manager+ | Create/update call revenue |
+| GET | `/api/revenue/by-employee` | authenticated | Revenue aggregated by employee |
+
+### Calibration Sessions (org-scoped)
+| Method | Path | Role | Description |
+|--------|------|------|-------------|
+| POST | `/api/calibration` | manager+ | Create calibration session |
+| GET | `/api/calibration` | manager+ | List sessions with stats |
+| GET | `/api/calibration/:id` | manager+ | Get session with all evaluations |
+| POST | `/api/calibration/:id/evaluate` | authenticated | Submit evaluation (evaluators only) |
+| POST | `/api/calibration/:id/complete` | manager+ | Complete session (set consensus) |
+| DELETE | `/api/calibration/:id` | manager+ | Delete session |
+| GET | `/api/calibration/analytics` | manager+ | Variance trends, evaluator alignment |
+
 ### Health
 | Method | Path | Description |
 |--------|------|-------------|
@@ -604,6 +667,13 @@ DISABLE_SECURE_COOKIE           # Set to skip secure cookie flag (for non-TLS de
 | `audit_logs` | index on `(org_id, event_type)`, `created_at` | Tamper-evident with `integrity_hash`, `prev_hash`, `sequence_num` |
 | `ab_tests` | index on `org_id` | Dual-model comparison results, latency, cost |
 | `usage_records` | index on `(org_id, type)`, `timestamp` | Per-call cost tracking (AssemblyAI + Bedrock spend) |
+| `feedbacks` | index on `(org_id, type)`, `created_at` | User feedback: ratings, bug reports, NPS, suggestions |
+| `employee_badges` | unique on `(org_id, employee_id, badge_id)` | Gamification badge awards |
+| `gamification_profiles` | unique on `(org_id, employee_id)`, index on `total_points` | Points, streaks, last activity |
+| `insurance_narratives` | index on `(org_id, status)`, `(org_id, call_id)` | Prior auth and appeal letter drafts |
+| `call_revenues` | unique on `(org_id, call_id)`, index on `conversion_status` | Per-call revenue/conversion tracking |
+| `calibration_sessions` | index on `(org_id, status)` | Multi-evaluator QA alignment sessions |
+| `calibration_evaluations` | unique on `(session_id, evaluator_id)` | Individual evaluator scores, cascade delete with session |
 
 Requires pgvector extension: `CREATE EXTENSION IF NOT EXISTS vector;`
 
