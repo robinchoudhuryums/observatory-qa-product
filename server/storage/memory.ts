@@ -54,6 +54,10 @@ import {
   type InsertLearningPath,
   type LearningProgress,
   type InsertLearningProgress,
+  type MarketingCampaign,
+  type InsertMarketingCampaign,
+  type CallAttribution,
+  type InsertCallAttribution,
 } from "@shared/schema";
 import { randomUUID, randomBytes } from "crypto";
 import { type IStorage, applyCallFilters } from "./types";
@@ -904,6 +908,66 @@ export class MemStorage implements IStorage {
     const updated = { ...e, ...updates };
     this.calibrationEvaluationsStore.set(id, updated);
     return updated;
+  }
+
+  // --- Marketing Attribution ---
+  private marketingCampaignsStore = new Map<string, MarketingCampaign>();
+  private callAttributionsStore = new Map<string, CallAttribution>();
+
+  async createMarketingCampaign(orgId: string, campaign: InsertMarketingCampaign): Promise<MarketingCampaign> {
+    const id = randomUUID();
+    const c: MarketingCampaign = { ...campaign, id, orgId, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() };
+    this.marketingCampaignsStore.set(id, c);
+    return c;
+  }
+  async getMarketingCampaign(orgId: string, id: string): Promise<MarketingCampaign | undefined> {
+    const c = this.marketingCampaignsStore.get(id);
+    return c?.orgId === orgId ? c : undefined;
+  }
+  async listMarketingCampaigns(orgId: string, filters?: { source?: string; isActive?: boolean }): Promise<MarketingCampaign[]> {
+    let results = Array.from(this.marketingCampaignsStore.values()).filter(c => c.orgId === orgId);
+    if (filters?.source) results = results.filter(c => c.source === filters.source);
+    if (filters?.isActive !== undefined) results = results.filter(c => c.isActive === filters.isActive);
+    return results;
+  }
+  async updateMarketingCampaign(orgId: string, id: string, updates: Partial<MarketingCampaign>): Promise<MarketingCampaign | undefined> {
+    const c = this.marketingCampaignsStore.get(id);
+    if (!c || c.orgId !== orgId) return undefined;
+    const updated = { ...c, ...updates, updatedAt: new Date().toISOString() };
+    this.marketingCampaignsStore.set(id, updated);
+    return updated;
+  }
+  async deleteMarketingCampaign(orgId: string, id: string): Promise<void> {
+    const c = this.marketingCampaignsStore.get(id);
+    if (c?.orgId === orgId) this.marketingCampaignsStore.delete(id);
+  }
+
+  async createCallAttribution(orgId: string, attribution: InsertCallAttribution): Promise<CallAttribution> {
+    const id = randomUUID();
+    const a: CallAttribution = { ...attribution, id, orgId, createdAt: new Date().toISOString() };
+    this.callAttributionsStore.set(attribution.callId, a);
+    return a;
+  }
+  async getCallAttribution(orgId: string, callId: string): Promise<CallAttribution | undefined> {
+    const a = this.callAttributionsStore.get(callId);
+    return a?.orgId === orgId ? a : undefined;
+  }
+  async listCallAttributions(orgId: string, filters?: { source?: string; campaignId?: string }): Promise<CallAttribution[]> {
+    let results = Array.from(this.callAttributionsStore.values()).filter(a => a.orgId === orgId);
+    if (filters?.source) results = results.filter(a => a.source === filters.source);
+    if (filters?.campaignId) results = results.filter(a => a.campaignId === filters.campaignId);
+    return results;
+  }
+  async updateCallAttribution(orgId: string, callId: string, updates: Partial<CallAttribution>): Promise<CallAttribution | undefined> {
+    const a = this.callAttributionsStore.get(callId);
+    if (!a || a.orgId !== orgId) return undefined;
+    const updated = { ...a, ...updates };
+    this.callAttributionsStore.set(callId, updated);
+    return updated;
+  }
+  async deleteCallAttribution(orgId: string, callId: string): Promise<void> {
+    const a = this.callAttributionsStore.get(callId);
+    if (a?.orgId === orgId) this.callAttributionsStore.delete(callId);
   }
 
   // --- LMS: Learning Modules ---

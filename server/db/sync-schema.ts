@@ -682,6 +682,50 @@ export async function syncSchema(db: Database): Promise<void> {
     await db.execute(sql`CREATE INDEX IF NOT EXISTS learning_progress_org_idx ON learning_progress (org_id)`);
     await db.execute(sql`CREATE INDEX IF NOT EXISTS learning_progress_employee_idx ON learning_progress (org_id, employee_id)`);
 
+    // --- Marketing Campaigns ---
+    await db.execute(sql`
+      CREATE TABLE IF NOT EXISTS marketing_campaigns (
+        id TEXT PRIMARY KEY,
+        org_id TEXT NOT NULL REFERENCES organizations(id),
+        name VARCHAR(500) NOT NULL,
+        source VARCHAR(50) NOT NULL,
+        medium VARCHAR(50),
+        start_date TIMESTAMP,
+        end_date TIMESTAMP,
+        budget REAL,
+        tracking_code VARCHAR(255),
+        is_active BOOLEAN NOT NULL DEFAULT true,
+        notes TEXT,
+        created_by VARCHAR(255) NOT NULL,
+        created_at TIMESTAMP DEFAULT NOW(),
+        updated_at TIMESTAMP DEFAULT NOW()
+      )
+    `);
+    await db.execute(sql`CREATE INDEX IF NOT EXISTS marketing_campaigns_org_idx ON marketing_campaigns (org_id)`);
+    await db.execute(sql`CREATE INDEX IF NOT EXISTS marketing_campaigns_source_idx ON marketing_campaigns (org_id, source)`);
+
+    // --- Call Attribution ---
+    await db.execute(sql`
+      CREATE TABLE IF NOT EXISTS call_attributions (
+        id TEXT PRIMARY KEY,
+        org_id TEXT NOT NULL REFERENCES organizations(id),
+        call_id TEXT NOT NULL REFERENCES calls(id) ON DELETE CASCADE,
+        source VARCHAR(50) NOT NULL,
+        campaign_id TEXT REFERENCES marketing_campaigns(id),
+        medium VARCHAR(50),
+        is_new_patient BOOLEAN,
+        referrer_name VARCHAR(255),
+        detection_method VARCHAR(30),
+        confidence REAL,
+        notes TEXT,
+        attributed_by VARCHAR(255),
+        created_at TIMESTAMP DEFAULT NOW()
+      )
+    `);
+    await db.execute(sql`CREATE INDEX IF NOT EXISTS call_attributions_org_idx ON call_attributions (org_id)`);
+    await db.execute(sql`CREATE INDEX IF NOT EXISTS call_attributions_source_idx ON call_attributions (org_id, source)`);
+    await db.execute(sql`CREATE INDEX IF NOT EXISTS call_attributions_campaign_idx ON call_attributions (org_id, campaign_id)`);
+
     // --- Audit Logs (tamper-evident) ---
     await db.execute(sql`
       CREATE TABLE IF NOT EXISTS audit_logs (

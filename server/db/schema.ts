@@ -642,6 +642,49 @@ export const learningProgress = pgTable("learning_progress", {
   uniqueIndex("learning_progress_unique_idx").on(t.orgId, t.employeeId, t.moduleId),
 ]);
 
+// --- MARKETING CAMPAIGNS ---
+export const marketingCampaigns = pgTable("marketing_campaigns", {
+  id: text("id").primaryKey(),
+  orgId: text("org_id").notNull().references(() => organizations.id),
+  name: varchar("name", { length: 500 }).notNull(),
+  source: varchar("source", { length: 50 }).notNull(),
+  medium: varchar("medium", { length: 50 }),
+  startDate: timestamp("start_date"),
+  endDate: timestamp("end_date"),
+  budget: real("budget"),
+  trackingCode: varchar("tracking_code", { length: 255 }),
+  isActive: boolean("is_active").notNull().default(true),
+  notes: text("notes"),
+  createdBy: varchar("created_by", { length: 255 }).notNull(),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+}, (t) => [
+  index("marketing_campaigns_org_idx").on(t.orgId),
+  index("marketing_campaigns_source_idx").on(t.orgId, t.source),
+]);
+
+// --- CALL ATTRIBUTION ---
+export const callAttributions = pgTable("call_attributions", {
+  id: text("id").primaryKey(),
+  orgId: text("org_id").notNull().references(() => organizations.id),
+  callId: text("call_id").notNull().references(() => calls.id, { onDelete: "cascade" }),
+  source: varchar("source", { length: 50 }).notNull(),
+  campaignId: text("campaign_id").references(() => marketingCampaigns.id),
+  medium: varchar("medium", { length: 50 }),
+  isNewPatient: boolean("is_new_patient"),
+  referrerName: varchar("referrer_name", { length: 255 }),
+  detectionMethod: varchar("detection_method", { length: 30 }),
+  confidence: real("confidence"),
+  notes: text("notes"),
+  attributedBy: varchar("attributed_by", { length: 255 }),
+  createdAt: timestamp("created_at").defaultNow(),
+}, (t) => [
+  index("call_attributions_org_idx").on(t.orgId),
+  uniqueIndex("call_attributions_call_idx").on(t.orgId, t.callId),
+  index("call_attributions_source_idx").on(t.orgId, t.source),
+  index("call_attributions_campaign_idx").on(t.orgId, t.campaignId),
+]);
+
 // --- AUDIT LOGS (append-only, tamper-evident, HIPAA compliance) ---
 export const auditLogs = pgTable("audit_logs", {
   id: text("id").primaryKey(),

@@ -68,6 +68,7 @@ const RevenuePage = lazy(() => import("@/pages/revenue"));
 const CalibrationPage = lazy(() => import("@/pages/calibration"));
 const EmailsPage = lazy(() => import("@/pages/emails"));
 const LearningPage = lazy(() => import("@/pages/learning"));
+const MarketingPage = lazy(() => import("@/pages/marketing"));
 const NotFound = lazy(() => import("@/pages/not-found"));
 
 function PageLoader() {
@@ -221,6 +222,7 @@ function Router() {
               <Route path="/calibration">{() => <ErrorBoundary><AnimatedPage><ProtectedRoute minRole="manager"><CalibrationPage /></ProtectedRoute></AnimatedPage></ErrorBoundary>}</Route>
               <Route path="/emails">{() => <ErrorBoundary><AnimatedPage><EmailsPage /></AnimatedPage></ErrorBoundary>}</Route>
               <Route path="/learning">{() => <ErrorBoundary><AnimatedPage><LearningPage /></AnimatedPage></ErrorBoundary>}</Route>
+              <Route path="/marketing">{() => <ErrorBoundary><AnimatedPage><MarketingPage /></AnimatedPage></ErrorBoundary>}</Route>
               <Route path="/onboarding">{() => <ErrorBoundary><OnboardingWizard /></ErrorBoundary>}</Route>
               <Route>{() => <AnimatedPage><NotFound /></AnimatedPage>}</Route>
             </Switch>

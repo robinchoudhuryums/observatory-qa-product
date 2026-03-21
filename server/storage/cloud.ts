@@ -54,6 +54,10 @@ import {
   type InsertLearningPath,
   type LearningProgress,
   type InsertLearningProgress,
+  type MarketingCampaign,
+  type InsertMarketingCampaign,
+  type CallAttribution,
+  type InsertCallAttribution,
 } from "@shared/schema";
 import { randomUUID } from "crypto";
 import { type IStorage, type ObjectStorageClient, mapConcurrent, normalizeAnalysis, applyCallFilters } from "./types";
@@ -647,6 +651,18 @@ export class CloudStorage implements IStorage {
   async createCalibrationEvaluation(_orgId: string, evaluation: InsertCalibrationEvaluation): Promise<CalibrationEvaluation> { return { id: "mock", ...evaluation } as CalibrationEvaluation; }
   async getCalibrationEvaluations(_orgId: string, _sessionId: string): Promise<CalibrationEvaluation[]> { return []; }
   async updateCalibrationEvaluation(_orgId: string, _id: string, _updates: Partial<CalibrationEvaluation>): Promise<CalibrationEvaluation | undefined> { return undefined; }
+
+  // --- Marketing attribution (not supported in cloud storage) ---
+  async createMarketingCampaign(_orgId: string, campaign: InsertMarketingCampaign): Promise<MarketingCampaign> { return { id: "mock", ...campaign } as MarketingCampaign; }
+  async getMarketingCampaign(_orgId: string, _id: string): Promise<MarketingCampaign | undefined> { return undefined; }
+  async listMarketingCampaigns(_orgId: string): Promise<MarketingCampaign[]> { return []; }
+  async updateMarketingCampaign(_orgId: string, _id: string, _u: Partial<MarketingCampaign>): Promise<MarketingCampaign | undefined> { return undefined; }
+  async deleteMarketingCampaign(_orgId: string, _id: string): Promise<void> {}
+  async createCallAttribution(_orgId: string, attr: InsertCallAttribution): Promise<CallAttribution> { return { id: "mock", ...attr } as CallAttribution; }
+  async getCallAttribution(_orgId: string, _callId: string): Promise<CallAttribution | undefined> { return undefined; }
+  async listCallAttributions(_orgId: string): Promise<CallAttribution[]> { return []; }
+  async updateCallAttribution(_orgId: string, _callId: string, _u: Partial<CallAttribution>): Promise<CallAttribution | undefined> { return undefined; }
+  async deleteCallAttribution(_orgId: string, _callId: string): Promise<void> {}
 
   // --- LMS (not supported in cloud storage) ---
   async createLearningModule(_orgId: string, module: InsertLearningModule): Promise<LearningModule> { return { id: "mock", ...module } as LearningModule; }

@@ -1296,3 +1296,88 @@ export type LearningPathWithModules = LearningPath & {
   completedCount: number;
   totalModules: number;
 };
+
+// --- MARKETING ATTRIBUTION SCHEMAS ---
+
+export const MARKETING_SOURCES = [
+  { value: "google_ads", label: "Google Ads", icon: "search" },
+  { value: "facebook_ads", label: "Facebook/Meta Ads", icon: "share-2" },
+  { value: "instagram", label: "Instagram", icon: "camera" },
+  { value: "website", label: "Website", icon: "globe" },
+  { value: "google_organic", label: "Google Organic", icon: "search" },
+  { value: "yelp", label: "Yelp", icon: "star" },
+  { value: "referral_patient", label: "Patient Referral", icon: "users" },
+  { value: "referral_doctor", label: "Doctor Referral", icon: "user-plus" },
+  { value: "walk_in", label: "Walk-In", icon: "map-pin" },
+  { value: "phone_directory", label: "Phone Directory", icon: "phone" },
+  { value: "direct_mail", label: "Direct Mail", icon: "mail" },
+  { value: "email_campaign", label: "Email Campaign", icon: "mail" },
+  { value: "sms_campaign", label: "SMS Campaign", icon: "message-square" },
+  { value: "insurance_portal", label: "Insurance Portal", icon: "shield" },
+  { value: "community_event", label: "Community Event", icon: "calendar" },
+  { value: "social_organic", label: "Social Media (Organic)", icon: "share" },
+  { value: "returning_patient", label: "Returning Patient", icon: "repeat" },
+  { value: "unknown", label: "Unknown / Not Asked", icon: "help-circle" },
+  { value: "other", label: "Other", icon: "more-horizontal" },
+] as const;
+
+export type MarketingSourceType = typeof MARKETING_SOURCES[number]["value"];
+
+// Marketing campaign for grouping attribution data
+export const insertMarketingCampaignSchema = z.object({
+  orgId: z.string(),
+  name: z.string().min(1),
+  source: z.string(), // from MARKETING_SOURCES
+  medium: z.string().optional(), // e.g., "cpc", "organic", "social", "referral"
+  startDate: z.string().optional(),
+  endDate: z.string().optional(),
+  budget: z.number().optional(), // total campaign budget in dollars
+  trackingCode: z.string().optional(), // UTM or tracking phone number
+  isActive: z.boolean().optional(),
+  notes: z.string().optional(),
+  createdBy: z.string(),
+});
+
+export const marketingCampaignSchema = insertMarketingCampaignSchema.extend({
+  id: z.string(),
+  createdAt: z.string().optional(),
+  updatedAt: z.string().optional(),
+});
+
+export type InsertMarketingCampaign = z.infer<typeof insertMarketingCampaignSchema>;
+export type MarketingCampaign = z.infer<typeof marketingCampaignSchema>;
+
+// Attribution record — links a call to its marketing source
+export const insertCallAttributionSchema = z.object({
+  orgId: z.string(),
+  callId: z.string(),
+  source: z.string(), // from MARKETING_SOURCES
+  campaignId: z.string().optional(), // linked campaign
+  medium: z.string().optional(),
+  isNewPatient: z.boolean().optional(),
+  referrerName: z.string().optional(), // for referral sources
+  detectionMethod: z.enum(["manual", "ai_detected", "tracking_number", "utm"]).optional(),
+  confidence: z.number().optional(), // 0-1 for AI-detected
+  notes: z.string().optional(),
+  attributedBy: z.string().optional(),
+});
+
+export const callAttributionSchema = insertCallAttributionSchema.extend({
+  id: z.string(),
+  createdAt: z.string().optional(),
+});
+
+export type InsertCallAttribution = z.infer<typeof insertCallAttributionSchema>;
+export type CallAttribution = z.infer<typeof callAttributionSchema>;
+
+/** Marketing metrics aggregated by source */
+export type MarketingSourceMetrics = {
+  source: string;
+  totalCalls: number;
+  newPatients: number;
+  convertedCalls: number; // calls with revenue
+  totalRevenue: number;
+  avgPerformanceScore: number;
+  costPerLead: number | null; // budget / totalCalls (if campaign has budget)
+  roi: number | null; // (revenue - budget) / budget
+};

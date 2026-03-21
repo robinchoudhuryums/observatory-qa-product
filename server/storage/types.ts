@@ -55,6 +55,10 @@ import {
   type InsertLearningPath,
   type LearningProgress,
   type InsertLearningProgress,
+  type MarketingCampaign,
+  type InsertMarketingCampaign,
+  type CallAttribution,
+  type InsertCallAttribution,
 } from "@shared/schema";
 
 /**
@@ -330,6 +334,19 @@ export interface IStorage {
   createCalibrationEvaluation(orgId: string, evaluation: InsertCalibrationEvaluation): Promise<CalibrationEvaluation>;
   getCalibrationEvaluations(orgId: string, sessionId: string): Promise<CalibrationEvaluation[]>;
   updateCalibrationEvaluation(orgId: string, id: string, updates: Partial<CalibrationEvaluation>): Promise<CalibrationEvaluation | undefined>;
+  // Marketing attribution operations (org-scoped)
+  createMarketingCampaign(orgId: string, campaign: InsertMarketingCampaign): Promise<MarketingCampaign>;
+  getMarketingCampaign(orgId: string, id: string): Promise<MarketingCampaign | undefined>;
+  listMarketingCampaigns(orgId: string, filters?: { source?: string; isActive?: boolean }): Promise<MarketingCampaign[]>;
+  updateMarketingCampaign(orgId: string, id: string, updates: Partial<MarketingCampaign>): Promise<MarketingCampaign | undefined>;
+  deleteMarketingCampaign(orgId: string, id: string): Promise<void>;
+
+  createCallAttribution(orgId: string, attribution: InsertCallAttribution): Promise<CallAttribution>;
+  getCallAttribution(orgId: string, callId: string): Promise<CallAttribution | undefined>;
+  listCallAttributions(orgId: string, filters?: { source?: string; campaignId?: string }): Promise<CallAttribution[]>;
+  updateCallAttribution(orgId: string, callId: string, updates: Partial<CallAttribution>): Promise<CallAttribution | undefined>;
+  deleteCallAttribution(orgId: string, callId: string): Promise<void>;
+
   // LMS: Learning Module operations (org-scoped)
   createLearningModule(orgId: string, module: InsertLearningModule): Promise<LearningModule>;
   getLearningModule(orgId: string, id: string): Promise<LearningModule | undefined>;
