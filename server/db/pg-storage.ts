@@ -11,7 +11,7 @@
  * - Full-text search via PostgreSQL (no need to load all transcripts into memory)
  * - Proper indexing for dashboard metrics
  */
-import { eq, and, desc, sql, ilike, lt } from "drizzle-orm";
+import { eq, and, or, desc, sql, ilike, lt } from "drizzle-orm";
 import { randomUUID } from "crypto";
 import type { Database } from "./index";
 import type { ObjectStorageClient } from "../storage";
@@ -519,22 +519,39 @@ export class PostgresStorage implements IStorage {
       });
   }
 
-  // --- Search (PostgreSQL full-text search!) ---
+  // --- Search (PostgreSQL text search across transcripts, analysis, and topics) ---
   async searchCalls(orgId: string, query: string): Promise<CallWithDetails[]> {
-    // Use PostgreSQL ILIKE for simple text search on transcripts
+    const pattern = `%${query}%`;
+
+    // Search transcripts
     const matchingTranscripts = await this.db.select({ callId: tables.transcripts.callId })
       .from(tables.transcripts)
       .where(and(
         eq(tables.transcripts.orgId, orgId),
-        ilike(tables.transcripts.text, `%${query}%`),
+        ilike(tables.transcripts.text, pattern),
       ));
 
-    if (matchingTranscripts.length === 0) return [];
+    // Search analysis summaries and topics
+    const matchingAnalyses = await this.db.select({ callId: tables.callAnalyses.callId })
+      .from(tables.callAnalyses)
+      .where(and(
+        eq(tables.callAnalyses.orgId, orgId),
+        or(
+          ilike(tables.callAnalyses.summary, pattern),
+          sql`${tables.callAnalyses.topics}::text ILIKE ${pattern}`,
+        ),
+      ));
 
-    const callIds = matchingTranscripts.map((t) => t.callId);
+    const callIds = new Set([
+      ...matchingTranscripts.map(t => t.callId),
+      ...matchingAnalyses.map(a => a.callId),
+    ]);
+
+    if (callIds.size === 0) return [];
+
     // Fetch full details for matching calls
     const all = await this.getCallsWithDetails(orgId);
-    return all.filter((c) => callIds.includes(c.id));
+    return all.filter((c) => callIds.has(c.id));
   }
 
   // --- Audio operations (delegates to blob storage) ---

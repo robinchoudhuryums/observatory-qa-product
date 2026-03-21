@@ -17,7 +17,8 @@ export function toDisplayString(val: unknown): string {
     if (typeof obj.description === "string") return obj.description;
     if (typeof obj.message === "string") return obj.message;
     if (Array.isArray(val)) return val.map(toDisplayString).filter(Boolean).join(", ");
-    return JSON.stringify(val);
+    const json = JSON.stringify(val);
+    return json.length > 500 ? json.slice(0, 497) + "..." : json;
   }
   return String(val);
 }
