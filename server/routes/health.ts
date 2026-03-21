@@ -1,7 +1,7 @@
 import type { Express } from "express";
 import { storage } from "../storage";
 import { aiProvider } from "../services/ai-factory";
-import { getRedis } from "../services/redis";
+import { getRedis, getRedisStatus } from "../services/redis";
 
 export function registerHealthRoutes(app: Express): void {
   // ==================== HEALTH CHECK (unauthenticated) ====================
@@ -50,11 +50,19 @@ export function registerHealthRoutes(app: Express): void {
       detail: `${Math.round(mem.heapUsed / 1024 / 1024)}MB / ${Math.round(mem.heapTotal / 1024 / 1024)}MB heap`,
     };
 
+    // Rate limiting status
+    const redisStatus = getRedisStatus();
+    const rateLimiting = {
+      mode: redisStatus.mode === "distributed" ? "redis" as const : "in-memory" as const,
+      status: redisStatus.mode === "distributed" ? "ok" as const : "degraded" as const,
+    };
+
     res.status(overall ? 200 : 503).json({
       status: overall ? "healthy" : "degraded",
       timestamp: new Date().toISOString(),
       version: process.env.npm_package_version || "unknown",
       checks,
+      rate_limiting: rateLimiting,
       uptime: Math.floor(process.uptime()),
     });
   });

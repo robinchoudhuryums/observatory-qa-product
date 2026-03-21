@@ -312,6 +312,151 @@ export const CLINICAL_NOTE_TEMPLATES: ClinicalNoteTemplate[] = [
     ],
     tags: ["cardiology", "consultation", "cardiac", "heart", "hpi-focused"],
   },
+
+  // ==================== URGENT CARE ====================
+  {
+    id: "urgent-care-visit",
+    name: "General Urgent Care Visit",
+    specialty: "urgent_care",
+    format: "soap",
+    category: "general",
+    description: "General urgent care walk-in evaluation for acute complaints requiring same-day assessment and treatment.",
+    sections: {
+      subjective: "Patient presents as a walk-in to urgent care with {{chief_complaint}}. Onset: {{onset}}. Duration: {{duration}}. Severity: {{severity}}/10. Progression: {{progression}} (worsening/stable/improving). Associated symptoms: {{associated_symptoms}}. Pertinent negatives: {{pertinent_negatives}}. Prior self-treatment: {{self_treatment}}. PCP: {{pcp_name}} (last seen: {{last_pcp_visit}}). PMH: {{past_medical_history}}. Medications: {{medications}}. Allergies: {{allergies}}.",
+      objective: "Vitals: BP {{bp}}, HR {{hr}}, Temp {{temp}}, RR {{rr}}, SpO2 {{spo2}}, Weight {{weight}}. General: {{general_appearance}}. Focused examination: {{focused_exam_findings}}. Point-of-care testing: {{poc_testing}} (rapid strep, flu, COVID, UA, fingerstick glucose). Additional diagnostics: {{additional_diagnostics}} (X-ray, ECG if applicable).",
+      assessment: "Working diagnosis: {{primary_diagnosis}}. Differential diagnosis: {{differential_diagnoses}}. Acuity: {{acuity_level}} (low/moderate/high). Disposition: {{disposition}} (discharge/observation/ED transfer).",
+      plan: "1. Treatment administered in clinic: {{in_clinic_treatment}}\n2. Prescriptions: {{prescriptions}}\n3. Activity restrictions: {{restrictions}}\n4. Follow-up with PCP: {{pcp_follow_up}}\n5. Return precautions: {{return_precautions}} (return immediately if {{warning_signs}})\n6. Work/school note: {{work_school_note}}",
+    },
+    defaultCodes: [
+      { code: "99213", description: "Office visit, established, low complexity" },
+      { code: "99214", description: "Office visit, established, moderate complexity" },
+      { code: "99215", description: "Office visit, established, high complexity" },
+    ],
+    tags: ["urgent-care", "walk-in", "acute", "same-day"],
+  },
+  {
+    id: "laceration-repair",
+    name: "Laceration/Wound Repair",
+    specialty: "urgent_care",
+    format: "procedure_note",
+    category: "general",
+    description: "Procedure note for laceration evaluation, wound preparation, and repair in the urgent care setting.",
+    sections: {
+      indication: "Patient presents with laceration to {{body_location}} sustained via {{mechanism_of_injury}} approximately {{time_since_injury}} ago. Wound description: {{wound_description}} (linear/stellate/irregular). Contamination: {{contamination_status}} (clean/contaminated/grossly contaminated). Tetanus status: {{tetanus_status}} (last booster: {{tetanus_date}}). Neurovascular status distal to wound: {{neurovascular_pre_repair}}.",
+      procedure: "Informed consent obtained. Timeout performed. Anesthesia: {{anesthesia_type}} ({{anesthetic_agent}}, {{anesthetic_volume}} mL). Wound explored under adequate anesthesia — {{exploration_findings}} (no tendon/nerve/vessel involvement, no foreign body / foreign body removed). Irrigation: {{irrigation_volume}} mL {{irrigation_solution}} via {{irrigation_method}}. Debridement: {{debridement_description}}. Closure technique: {{closure_technique}} (simple interrupted / horizontal mattress / deep dermal + superficial / adhesive strips). Suture material: {{suture_material}} ({{suture_size}}). Number of sutures: {{suture_count}}. Layers closed: {{layers}} (subcutaneous / dermal / epidermal). Hemostasis achieved. Wound dressed with {{dressing_type}}. Patient tolerated procedure well.",
+      findings: "Wound dimensions: {{length}} cm x {{width}} cm x {{depth}} cm. Depth involved: {{tissue_layers_involved}} (epidermis/dermis/subcutaneous/fascia). Structures visualized: {{structures_visualized}}. Wound edges: {{edge_quality}} (clean/jagged/devitalized). Foreign body: {{foreign_body_status}}.",
+      complications: "{{complications_or_none}}. Post-repair neurovascular check: {{neurovascular_post_repair}}.",
+    },
+    defaultCodes: [
+      { code: "12001", description: "Simple repair, scalp/neck/trunk, 2.5 cm or less" },
+      { code: "12002", description: "Simple repair, scalp/neck/trunk, 2.6-7.5 cm" },
+      { code: "12011", description: "Simple repair, face/ears/eyelids/nose/lips, 2.5 cm or less" },
+    ],
+    tags: ["urgent-care", "laceration", "wound", "repair", "suture"],
+  },
+
+  // ==================== BEHAVIORAL HEALTH ====================
+  {
+    id: "therapy-progress",
+    name: "Therapy Progress Note",
+    specialty: "behavioral_health",
+    format: "dap",
+    category: "behavioral_health",
+    description: "Individual therapy session progress note using DAP format to document therapeutic interventions and client progress.",
+    sections: {
+      data: "Session #{{session_number}} ({{session_duration}} minutes, {{session_modality}} — in-person/telehealth). Client presented with {{presentation}} affect and {{demeanor}} demeanor. Appearance: {{appearance}}. Topics discussed: {{topics_discussed}}. Client reported: {{client_report}} regarding {{focus_area}}. Interventions utilized: {{interventions}} (CBT, DBT skills, motivational interviewing, psychoeducation, exposure, EMDR, mindfulness). Client's affect during session: {{affect_observed}}. Behavioral observations: {{behavioral_observations}}. Client engagement: {{engagement_level}} (actively engaged/intermittently engaged/minimally engaged). Homework review: {{homework_review}} (completed/partially completed/not completed — {{homework_details}}).",
+      assessment: "Progress toward treatment goals:\n- Goal 1 ({{goal_1}}): {{goal_1_progress}} (met/progressing/minimal progress/regression)\n- Goal 2 ({{goal_2}}): {{goal_2_progress}}\nTreatment effectiveness: {{treatment_effectiveness}}. Barriers to progress: {{barriers}}. Risk assessment: SI: {{si_status}}, HI: {{hi_status}}, SIB: {{sib_status}}. Current GAF/WHODAS: {{functional_score}}. Clinical impression: {{clinical_impression}}.",
+      plan: "1. Homework assigned: {{homework_assigned}}\n2. Skills to practice: {{skills_to_practice}}\n3. Next session focus: {{next_session_focus}}\n4. Frequency: {{session_frequency}} (maintain/increase/decrease — {{frequency_rationale}})\n5. Coordination of care: {{coordination}}\n6. Next appointment: {{next_appointment}}",
+    },
+    defaultCodes: [
+      { code: "90834", description: "Psychotherapy, 45 minutes" },
+      { code: "90837", description: "Psychotherapy, 60 minutes" },
+    ],
+    tags: ["therapy", "progress", "counseling", "session", "dap"],
+  },
+  {
+    id: "crisis-intervention",
+    name: "Crisis Intervention",
+    specialty: "behavioral_health",
+    format: "birp",
+    category: "behavioral_health",
+    description: "Crisis intervention documentation using BIRP format for acute psychiatric emergencies, safety planning, and stabilization.",
+    sections: {
+      behavior: "Presenting crisis: {{presenting_crisis}}. Precipitating event: {{precipitating_event}}. Onset of crisis: {{crisis_onset}}. Current symptoms: {{current_symptoms}} (agitation, panic, dissociation, psychosis, severe depression). Suicidal ideation: {{si_details}} (passive/active, plan: {{plan_status}}, means: {{means_status}}, intent: {{intent_level}}). Homicidal ideation: {{hi_details}}. Self-injurious behavior: {{sib_details}}. Current substance use: {{substance_use}}. Risk factors: {{risk_factors}} (prior attempts, access to means, recent loss, chronic pain, isolation). Protective factors: {{protective_factors}} (social support, children, religious beliefs, future orientation). Safety status: {{safety_status}} (imminent danger/acute risk/elevated risk/baseline). Columbia Suicide Severity Rating: {{cssrs_score}}.",
+      intervention: "De-escalation techniques: {{de_escalation}} (verbal de-escalation, grounding, breathing exercises, validation). Crisis counseling: {{crisis_counseling}} (cognitive restructuring, problem-solving, reality testing). Safety planning: {{safety_plan_steps}} (warning signs, coping strategies, social contacts, professional contacts, means restriction, reasons for living). Resources mobilized: {{resources_mobilized}} (crisis hotline provided, emergency contacts notified, mobile crisis team, psychiatric consultation). Medications: {{prn_medications}} (if applicable). Collateral contact: {{collateral_contacts}} (family member, treatment team, PCP).",
+      response: "Client response to intervention: {{client_response}} (calmed/partially stabilized/remains acutely distressed). Post-intervention affect: {{post_affect}}. Post-intervention safety: {{post_safety_status}}. Safety plan agreed to: {{safety_plan_agreed}} (yes/no — verbalized understanding of plan). Means restriction: {{means_restriction_status}} ({{means_restriction_details}}). Disposition: {{disposition}} (discharged with safety plan/voluntary admission/involuntary hold/ED transfer).",
+      plan: "1. Follow-up contact: {{follow_up_contact}} (within {{follow_up_timeframe}})\n2. Referrals: {{referrals}} (psychiatry, intensive outpatient, partial hospitalization, inpatient)\n3. Safety contacts provided: {{safety_contacts}} (988 Suicide & Crisis Lifeline, Crisis Text Line, local crisis team)\n4. Next session: {{next_appointment}} (increased frequency: {{frequency_change}})\n5. Coordination: {{coordination}} (notification to treatment team, PCP, family with consent)\n6. Documentation of duty to warn (if applicable): {{duty_to_warn_status}}",
+    },
+    defaultCodes: [
+      { code: "90839", description: "Psychotherapy for crisis, first 60 minutes" },
+      { code: "90840", description: "Psychotherapy for crisis, each additional 30 minutes" },
+    ],
+    tags: ["crisis", "intervention", "emergency", "safety", "birp"],
+  },
+  {
+    id: "group-therapy",
+    name: "Group Therapy Note",
+    specialty: "behavioral_health",
+    format: "dap",
+    category: "behavioral_health",
+    description: "Group therapy session documentation using DAP format to capture group dynamics, individual participation, and treatment progress.",
+    sections: {
+      data: "Group session: {{group_name}} ({{group_type}} — process/psychoeducational/skills-based/support). Session #{{session_number}}. Duration: {{session_duration}} minutes. Participants present: {{participant_count}} of {{group_size}} members. Topic: {{session_topic}}. Facilitator(s): {{facilitators}}. Group dynamics: {{group_dynamics}} (cohesive/fragmented/tension present/supportive). Individual participation: {{individual_participation}} (active contributor/engaged listener/withdrawn/disruptive). Client's verbal contributions: {{verbal_contributions}}. Affect observed: {{affect_observed}}. Interaction with peers: {{peer_interactions}}. Skills practiced: {{skills_practiced}}. Group exercises/activities: {{exercises}}.",
+      assessment: "Progress on individual treatment goals within group context:\n- {{treatment_goal}}: {{goal_progress}}\nGroup cohesion: {{cohesion_level}}. Readiness for change (Stages of Change): {{stage_of_change}} (precontemplation/contemplation/preparation/action/maintenance). Therapeutic factors observed: {{therapeutic_factors}} (universality, altruism, instillation of hope, interpersonal learning). Concerns: {{clinical_concerns}}. Risk assessment: {{risk_status}}.",
+      plan: "1. Individual goals for next session: {{individual_goals_next}}\n2. Skills to practice between sessions: {{between_session_practice}}\n3. Group continuity: {{group_continuity}} (continue/transition to individual/step down/step up)\n4. Individual follow-up needed: {{individual_follow_up}}\n5. Next group session: {{next_session_date}}",
+    },
+    defaultCodes: [
+      { code: "90853", description: "Group psychotherapy" },
+    ],
+    tags: ["group", "therapy", "counseling", "session", "dap"],
+  },
+
+  // ==================== VETERINARY ====================
+  {
+    id: "veterinary-wellness",
+    name: "Veterinary Wellness Exam",
+    specialty: "veterinary",
+    format: "soap",
+    category: "preventive",
+    description: "Comprehensive veterinary wellness examination including physical assessment, vaccination review, and preventive care planning.",
+    sections: {
+      subjective: "Species: {{species}}. Breed: {{breed}}. Age: {{age}}. Sex: {{sex}} (intact/spayed/neutered). Weight: {{weight}} {{weight_unit}}. Owner concerns: {{owner_concerns}}. Diet: {{diet}} (brand, type, amount, frequency). Appetite: {{appetite}}. Water intake: {{water_intake}}. Activity level: {{activity_level}}. Environment: {{environment}} (indoor/outdoor/mixed). Other pets in household: {{other_pets}}. Travel history: {{travel_history}}. Vaccination history: {{vaccination_history}}. Parasite prevention: {{parasite_prevention}} (current products, compliance). Last heartworm test: {{last_hw_test}}. Behavioral concerns: {{behavioral_concerns}}.",
+      objective: "Vitals: Temp {{temp}} °F, HR {{hr}} bpm, RR {{rr}} brpm, Weight {{weight}} {{weight_unit}} ({{weight_change}} since last visit). Body condition score: {{bcs}}/9. Muscle condition score: {{mcs}}. General: {{general_appearance}} (BAR — bright, alert, responsive). HEENT: Eyes — {{eyes}} (pupils, discharge, lens clarity). Ears — {{ears}} (pinnae, canals, discharge, odor). Nose — {{nose}}. Oral — {{oral_exam}} (dental grade {{dental_grade}}/4, calculus, gingivitis, fractured teeth, masses). Cardiovascular: {{cardiovascular}} (rate, rhythm, murmur grade if present). Respiratory: {{respiratory}} (auscultation, effort). Abdomen: {{abdominal}} (palpation, organomegaly, pain, masses). Musculoskeletal: {{musculoskeletal}} (gait, joint palpation, ROM, muscle mass). Integumentary: {{integumentary}} (coat quality, parasites, masses, lesions, skin turgor). Lymph nodes: {{lymph_nodes}}. Neurological: {{neurological}} (mentation, proprioception, reflexes).",
+      assessment: "Overall health status: {{health_status}}. Dental grade: {{dental_grade}}/4 — {{dental_recommendation}}. Body condition: {{bcs_assessment}} (underweight/ideal/overweight/obese). Parasite risk: {{parasite_risk}} (low/moderate/high based on lifestyle). Age-related concerns: {{age_concerns}}. Breed-specific considerations: {{breed_concerns}}.",
+      plan: "1. Vaccinations administered: {{vaccines_given}} (due dates updated)\n2. Vaccinations due: {{vaccines_due}}\n3. Parasite prevention: {{parasite_plan}} (heartworm, flea/tick, intestinal)\n4. Dental care: {{dental_plan}} (dental cleaning recommended: {{dental_cleaning_rec}})\n5. Diet recommendations: {{diet_recommendations}}\n6. Lab work: {{lab_recommendations}} (CBC, chemistry, urinalysis, heartworm/tick panel)\n7. Spay/neuter: {{spay_neuter_rec}}\n8. Next wellness visit: {{next_visit}}",
+    },
+    tags: ["veterinary", "wellness", "exam", "preventive", "annual"],
+  },
+  {
+    id: "veterinary-sick-visit",
+    name: "Veterinary Sick Visit",
+    specialty: "veterinary",
+    format: "soap",
+    category: "general",
+    description: "Veterinary sick visit for acute illness or injury evaluation, diagnostics, and treatment planning.",
+    sections: {
+      subjective: "Species: {{species}}. Breed: {{breed}}. Age: {{age}}. Sex: {{sex}}. Weight: {{weight}} {{weight_unit}}. Presenting complaint: {{chief_complaint}}. Duration: {{duration}}. Onset: {{onset}} (acute/gradual). Progression: {{progression}} (worsening/stable/improving). Appetite: {{appetite}} (normal/decreased/absent/increased). Water intake: {{water_intake}}. Vomiting: {{vomiting}} (frequency, content, productive/non-productive). Diarrhea: {{diarrhea}} (frequency, consistency, blood/mucus). Urination: {{urination}} (frequency, straining, color, volume changes). Defecation: {{defecation}} (frequency, consistency, straining). Activity level: {{activity_level}} (normal/lethargic/restless). Coughing/sneezing: {{respiratory_signs}}. Dietary indiscretion: {{dietary_indiscretion}}. Toxin exposure: {{toxin_exposure}}. Trauma: {{trauma_history}}. Current medications: {{medications}}.",
+      objective: "Vitals: Temp {{temp}} °F, HR {{hr}} bpm, RR {{rr}} brpm, Weight {{weight}} {{weight_unit}}. BCS: {{bcs}}/9. Hydration: {{hydration_status}} (skin turgor, CRT {{crt}} sec, mucous membrane color {{mm_color}}). General: {{general_appearance}}. Physical exam findings: {{exam_findings}}. Diagnostics performed: {{diagnostics}} (radiographs, ultrasound, CBC, chemistry, urinalysis, cytology, fecal, SNAP tests). Diagnostic results: {{diagnostic_results}}.",
+      assessment: "Differential diagnoses:\n1. {{differential_1}} (most likely)\n2. {{differential_2}}\n3. {{differential_3}}\nMost likely diagnosis: {{primary_diagnosis}}. Prognosis: {{prognosis}} (good/fair/guarded/poor).",
+      plan: "1. Treatment: {{treatment}} (fluids, medications, supportive care)\n2. Medications prescribed: {{medications_prescribed}} (drug, dose, route, frequency, duration)\n3. Diet: {{diet_instructions}}\n4. Activity: {{activity_restrictions}}\n5. Monitoring at home: {{home_monitoring}} (appetite, hydration, urination, symptoms)\n6. Recheck: {{recheck}} ({{recheck_timeframe}})\n7. Client education: {{client_education}}\n8. Emergency instructions: Return immediately if {{emergency_signs}}",
+    },
+    tags: ["veterinary", "sick", "illness", "acute", "diagnosis"],
+  },
+  {
+    id: "veterinary-surgery",
+    name: "Veterinary Surgical Note",
+    specialty: "veterinary",
+    format: "procedure_note",
+    category: "general",
+    description: "Veterinary surgical procedure documentation including anesthesia protocol, surgical technique, and post-operative planning.",
+    sections: {
+      indication: "Pre-operative diagnosis: {{pre_op_diagnosis}}. Reason for surgery: {{surgical_indication}}. Patient: {{species}}, {{breed}}, {{age}}, {{sex}}, {{weight}} {{weight_unit}}. ASA status: {{asa_class}}. Pre-anesthetic bloodwork: {{bloodwork_results}} (CBC, chemistry — {{abnormalities_or_wnl}}). Pre-op exam: {{pre_op_exam}}. NPO status: {{npo_status}} (last meal: {{last_meal}}). Informed consent: obtained from {{owner_name}}, risks discussed including {{risks_discussed}}.",
+      procedure: "Anesthesia protocol:\n- Premedication: {{premed}} (drug, dose, route)\n- Induction: {{induction}} (drug, dose, IV)\n- Maintenance: {{maintenance}} (isoflurane/sevoflurane, {{maintenance_percentage}}%)\n- Analgesia: {{analgesia}} (drugs, doses, timing)\n- IV fluids: {{iv_fluids}} (type, rate)\nMonitoring: HR {{hr_range}}, RR {{rr_range}}, SpO2 {{spo2_range}}, BP {{bp_range}}, Temp {{temp_range}}, ETCO2 {{etco2_range}}. Anesthesia duration: {{anesthesia_duration}} minutes.\n\nSurgical approach: {{surgical_approach}}. Patient positioned: {{positioning}}. Surgical prep: {{prep}} (clipped, scrubbed). Sterile draping applied. Incision: {{incision_description}}. Procedure: {{procedure_details}}. Closure: {{closure}} (suture material, pattern, layers). Skin closure: {{skin_closure}} (sutures/staples/intradermal). Surgery duration: {{surgery_duration}} minutes.",
+      findings: "Intra-operative findings: {{intra_op_findings}}. Tissue appearance: {{tissue_appearance}}. Pathology submitted: {{pathology}} (yes/no — {{specimen_description}}). Estimated blood loss: {{ebl}}.",
+      complications: "Intra-operative complications: {{intra_op_complications}}. Anesthetic events: {{anesthetic_events}}. Recovery: {{recovery_description}} (smooth/prolonged/complicated). Time to extubation: {{extubation_time}} minutes. Post-operative vitals: Temp {{post_temp}}, HR {{post_hr}}, RR {{post_rr}}. Post-operative pain score: {{pain_score}}/4. Post-operative instructions: {{post_op_instructions}} (e-collar, activity restriction, incision monitoring, medication schedule). Recheck: {{recheck}} (suture removal in {{suture_removal_days}} days).",
+    },
+    tags: ["veterinary", "surgery", "procedure", "anesthesia"],
+  },
 ];
 
 // ─── Helper Functions ─────────────────────────────────────────────────

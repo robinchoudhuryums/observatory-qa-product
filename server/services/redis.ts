@@ -198,6 +198,27 @@ export async function publishMessage(channel: string, message: string): Promise<
 }
 
 /**
+ * Check if Redis is required for the current environment.
+ * Returns true when NODE_ENV=production AND REDIS_URL is set, or when REQUIRE_REDIS=true.
+ */
+export function isRedisRequired(): boolean {
+  if (process.env.REQUIRE_REDIS === "true") return true;
+  return process.env.NODE_ENV === "production" && !!process.env.REDIS_URL;
+}
+
+/**
+ * Get the current Redis status including connection state, mode, and uptime.
+ */
+export function getRedisStatus(): { connected: boolean; mode: "distributed" | "in-memory"; uptime: number } {
+  const connected = redisClient !== null && redisClient.status === "ready";
+  return {
+    connected,
+    mode: connected ? "distributed" : "in-memory",
+    uptime: Math.floor(process.uptime()),
+  };
+}
+
+/**
  * Clean up Redis connections on shutdown.
  */
 export async function closeRedis(): Promise<void> {

@@ -23,6 +23,7 @@ import { registerABTestRoutes } from "./ab-testing";
 import { registerSpendTrackingRoutes } from "./spend-tracking";
 import { registerClinicalRoutes } from "./clinical";
 import { registerEhrRoutes } from "./ehr";
+import { registerSuperAdminRoutes } from "./super-admin";
 
 export async function registerRoutes(app: Express): Promise<Server> {
   // API key auth middleware (before routes, after session middleware)
@@ -57,6 +58,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   registerSpendTrackingRoutes(app);
   registerClinicalRoutes(app);
   registerEhrRoutes(app);
+  registerSuperAdminRoutes(app);
 
   const httpServer = createServer(app);
   return httpServer;
