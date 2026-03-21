@@ -91,15 +91,11 @@ export function normalizeAnalysis(analysis: CallAnalysis | undefined): CallAnaly
     normalized.performanceScore = clamped !== undefined ? String(clamped) : undefined;
   }
   if (normalized.subScores) {
-    const clampToStr = (v: unknown, min: number, max: number): string | undefined => {
-      const n = clamp(v, min, max);
-      return n !== undefined ? String(n) : undefined;
-    };
     normalized.subScores = {
-      compliance: clampToStr(normalized.subScores.compliance, 0, 10),
-      customerExperience: clampToStr(normalized.subScores.customerExperience, 0, 10),
-      communication: clampToStr(normalized.subScores.communication, 0, 10),
-      resolution: clampToStr(normalized.subScores.resolution, 0, 10),
+      compliance: clamp(normalized.subScores.compliance, 0, 10),
+      customerExperience: clamp(normalized.subScores.customerExperience, 0, 10),
+      communication: clamp(normalized.subScores.communication, 0, 10),
+      resolution: clamp(normalized.subScores.resolution, 0, 10),
     };
   }
 
