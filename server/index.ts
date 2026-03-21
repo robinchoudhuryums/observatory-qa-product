@@ -8,6 +8,7 @@ import { logger } from "./services/logger";
 import { initRedis, checkRateLimit, closeRedis } from "./services/redis";
 import { initQueues, enqueueRetention, closeQueues } from "./services/queue";
 import { initEmail, sendEmail, buildQuotaAlertEmail } from "./services/email";
+import { isPhiEncryptionEnabled } from "./services/phi-encryption";
 import { wafMiddleware } from "./middleware/waf";
 import { PLAN_DEFINITIONS, type PlanTier } from "@shared/schema";
 
@@ -15,9 +16,14 @@ const app = express();
 
 // --- In-memory rate limiter (fallback when Redis unavailable) ---
 const rateLimitMap = new Map<string, { count: number; resetTime: number }>();
-function inMemoryRateLimit(windowMs: number, maxRequests: number) {
+function rateLimitKey(req: Request, includeOrg: boolean): string {
+  const orgPart = includeOrg && req.orgId ? `:org:${req.orgId}` : "";
+  return `${req.ip}:${req.path}${orgPart}`;
+}
+
+function inMemoryRateLimit(windowMs: number, maxRequests: number, includeOrg = false) {
   return (req: Request, res: Response, next: NextFunction) => {
-    const key = `${req.ip}:${req.path}`;
+    const key = rateLimitKey(req, includeOrg);
     const now = Date.now();
     const entry = rateLimitMap.get(key);
     if (!entry || now > entry.resetTime) {
@@ -35,14 +41,14 @@ function inMemoryRateLimit(windowMs: number, maxRequests: number) {
 // --- Distributed rate limiter (Redis-backed when available) ---
 let redisAvailable = false;
 
-function distributedRateLimit(windowMs: number, maxRequests: number) {
+function distributedRateLimit(windowMs: number, maxRequests: number, includeOrg = false) {
   return async (req: Request, res: Response, next: NextFunction) => {
     if (!redisAvailable) {
       // Fall back to in-memory
-      return inMemoryRateLimit(windowMs, maxRequests)(req, res, next);
+      return inMemoryRateLimit(windowMs, maxRequests, includeOrg)(req, res, next);
     }
 
-    const key = `${req.ip}:${req.path}`;
+    const key = rateLimitKey(req, includeOrg);
     try {
       const result = await checkRateLimit(key, windowMs, maxRequests);
       if (!result.allowed) {
@@ -146,12 +152,12 @@ app.post("/api/auth/register", distributedRateLimit(60 * 60 * 1000, 3) as any);
 app.post("/api/auth/forgot-password", distributedRateLimit(15 * 60 * 1000, 5) as any);
 app.post("/api/auth/reset-password", distributedRateLimit(15 * 60 * 1000, 5) as any);
 // HIPAA: Read rate limiting to prevent bulk data exfiltration
-// 60 requests/min on data endpoints, 5 requests/min on exports
-app.use("/api/export", distributedRateLimit(60 * 1000, 5) as any);
-app.use("/api/calls", distributedRateLimit(60 * 1000, 60) as any);
-app.use("/api/employees", distributedRateLimit(60 * 1000, 60) as any);
-app.use("/api/clinical", distributedRateLimit(60 * 1000, 60) as any);
-app.use("/api/ehr", distributedRateLimit(60 * 1000, 30) as any);
+// Org-scoped so one tenant's usage doesn't block another on shared IPs
+app.use("/api/export", distributedRateLimit(60 * 1000, 5, true) as any);
+app.use("/api/calls", distributedRateLimit(60 * 1000, 60, true) as any);
+app.use("/api/employees", distributedRateLimit(60 * 1000, 60, true) as any);
+app.use("/api/clinical", distributedRateLimit(60 * 1000, 60, true) as any);
+app.use("/api/ehr", distributedRateLimit(60 * 1000, 30, true) as any);
 
 (async () => {
   // --- Infrastructure initialization ---
@@ -186,6 +192,14 @@ app.use("/api/ehr", distributedRateLimit(60 * 1000, 30) as any);
 
   // 4. Initialize email transport
   initEmail();
+
+  // 5. HIPAA: Validate PHI encryption key — warn if clinical features may store plaintext
+  if (!isPhiEncryptionEnabled()) {
+    logger.warn(
+      "PHI_ENCRYPTION_KEY is not configured — clinical notes and PHI fields will be stored in plaintext. " +
+      "Set PHI_ENCRYPTION_KEY (64 hex chars) for HIPAA-compliant PHI encryption at rest."
+    );
+  }
 
   // Authentication (must come before routes) - async to hash env var passwords on startup
   await setupAuth(app);

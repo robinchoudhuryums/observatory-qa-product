@@ -68,7 +68,7 @@ export const users = pgTable("users", {
   createdAt: timestamp("created_at").defaultNow(),
   lastLoginAt: timestamp("last_login_at"),
 }, (t) => [
-  uniqueIndex("users_username_idx").on(t.username),
+  uniqueIndex("users_org_username_idx").on(t.orgId, t.username),
   index("users_org_id_idx").on(t.orgId),
 ]);
 

@@ -5,9 +5,11 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
+import { Input } from "@/components/ui/input";
 import {
   Stethoscope, ShieldCheck, CheckCircle, AlertTriangle, FileText, Pill,
   Calendar, ClipboardList, Printer, Pencil, Save, X, Activity, MessageSquare,
+  Info, Copy,
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest } from "@/lib/queryClient";
@@ -28,6 +30,7 @@ interface CallWithClinical {
       consentRecordedBy?: string;
       consentRecordedAt?: string;
       editHistory?: Array<{ editedBy: string; editedAt: string; fieldsChanged: string[] }>;
+      validationWarnings?: string[];
     };
   };
   employee?: { name: string };
@@ -152,8 +155,31 @@ export default function ClinicalNotesPage() {
       behavior: (cn as any).behavior || "",
       intervention: (cn as any).intervention || "",
       response: (cn as any).response || "",
+      // Dental fields
+      toothNumbers: cn.toothNumbers || [],
+      quadrants: cn.quadrants || [],
     });
     setEditing(true);
+  };
+
+  const handleToothNumbersChange = (value: string) => {
+    setEditFields(prev => ({
+      ...prev,
+      toothNumbers: value.split(",").map(s => s.trim()).filter(Boolean),
+    }));
+  };
+
+  const handleQuadrantsChange = (value: string) => {
+    setEditFields(prev => ({
+      ...prev,
+      quadrants: value.split(",").map(s => s.trim()).filter(Boolean),
+    }));
+  };
+
+  const copyToClipboard = (text: string) => {
+    navigator.clipboard.writeText(text).then(() => {
+      toast({ title: "Copied", description: text });
+    });
   };
 
   const handleFieldChange = (field: string, value: string) => {
@@ -452,17 +478,56 @@ export default function ClinicalNotesPage() {
         )}
 
         {/* Dental-specific sections */}
-        {isDental && cn.toothNumbers && cn.toothNumbers.length > 0 && (
+        {isDental && ((cn.toothNumbers && cn.toothNumbers.length > 0) || editing) && (
           <Card>
             <CardHeader className="pb-2">
               <CardTitle className="text-base">Teeth Involved</CardTitle>
+              {editing && (
+                <CardDescription className="text-xs">Comma-separated tooth numbers (1-32 permanent, A-T primary)</CardDescription>
+              )}
             </CardHeader>
             <CardContent>
-              <div className="flex flex-wrap gap-2">
-                {cn.toothNumbers.map((tooth, i) => (
-                  <Badge key={i} variant="outline" className="font-mono">#{tooth}</Badge>
-                ))}
-              </div>
+              {editing ? (
+                <Input
+                  value={(editFields.toothNumbers as string[] || []).join(", ")}
+                  onChange={(e) => handleToothNumbersChange(e.target.value)}
+                  placeholder="e.g. 3, 14, 19, 30"
+                  className="font-mono text-sm"
+                />
+              ) : (
+                <div className="flex flex-wrap gap-2">
+                  {cn.toothNumbers?.map((tooth, i) => (
+                    <Badge key={i} variant="outline" className="font-mono">#{tooth}</Badge>
+                  ))}
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        )}
+
+        {isDental && ((cn.quadrants && cn.quadrants.length > 0) || editing) && (
+          <Card>
+            <CardHeader className="pb-2">
+              <CardTitle className="text-base">Quadrants</CardTitle>
+              {editing && (
+                <CardDescription className="text-xs">Comma-separated quadrants (UR, UL, LR, LL)</CardDescription>
+              )}
+            </CardHeader>
+            <CardContent>
+              {editing ? (
+                <Input
+                  value={(editFields.quadrants as string[] || []).join(", ")}
+                  onChange={(e) => handleQuadrantsChange(e.target.value)}
+                  placeholder="e.g. UR, LL"
+                  className="font-mono text-sm"
+                />
+              ) : (
+                <div className="flex flex-wrap gap-2">
+                  {cn.quadrants?.map((q, i) => (
+                    <Badge key={i} variant="outline">{q}</Badge>
+                  ))}
+                </div>
+              )}
             </CardContent>
           </Card>
         )}
@@ -491,8 +556,11 @@ export default function ClinicalNotesPage() {
               <CardContent>
                 <div className="space-y-1">
                   {cn.icd10Codes.map((code, i) => (
-                    <div key={i} className="flex items-center gap-2">
-                      <Badge variant="outline" className="font-mono text-xs">{code.code}</Badge>
+                    <div key={i} className="flex items-center gap-2 group">
+                      <Badge variant="outline" className="font-mono text-xs cursor-pointer hover:bg-muted" onClick={() => copyToClipboard(code.code)} title="Click to copy">
+                        {code.code}
+                        <Copy className="w-3 h-3 ml-1 opacity-0 group-hover:opacity-50" />
+                      </Badge>
                       <span className="text-sm text-muted-foreground">{code.description}</span>
                     </div>
                   ))}
@@ -509,8 +577,11 @@ export default function ClinicalNotesPage() {
               <CardContent>
                 <div className="space-y-1">
                   {cn.cptCodes.map((code, i) => (
-                    <div key={i} className="flex items-center gap-2">
-                      <Badge variant="outline" className="font-mono text-xs">{code.code}</Badge>
+                    <div key={i} className="flex items-center gap-2 group">
+                      <Badge variant="outline" className="font-mono text-xs cursor-pointer hover:bg-muted" onClick={() => copyToClipboard(code.code)} title="Click to copy">
+                        {code.code}
+                        <Copy className="w-3 h-3 ml-1 opacity-0 group-hover:opacity-50" />
+                      </Badge>
                       <span className="text-sm text-muted-foreground">{code.description}</span>
                     </div>
                   ))}
@@ -527,8 +598,11 @@ export default function ClinicalNotesPage() {
               <CardContent>
                 <div className="space-y-1">
                   {cn.cdtCodes.map((code, i) => (
-                    <div key={i} className="flex items-center gap-2">
-                      <Badge variant="outline" className="font-mono text-xs">{code.code}</Badge>
+                    <div key={i} className="flex items-center gap-2 group">
+                      <Badge variant="outline" className="font-mono text-xs cursor-pointer hover:bg-muted" onClick={() => copyToClipboard(code.code)} title="Click to copy">
+                        {code.code}
+                        <Copy className="w-3 h-3 ml-1 opacity-0 group-hover:opacity-50" />
+                      </Badge>
                       <span className="text-sm text-muted-foreground">{code.description}</span>
                     </div>
                   ))}
@@ -573,6 +647,28 @@ export default function ClinicalNotesPage() {
                 <Badge key={i} variant="outline" className="text-amber-600 border-amber-300">{section}</Badge>
               ))}
             </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Validation Warnings (from server-side code/format validation) */}
+      {(cn as any).validationWarnings?.length > 0 && (
+        <Card className="border-blue-200 print:hidden">
+          <CardHeader className="pb-2">
+            <CardTitle className="text-base text-blue-700 dark:text-blue-300 flex items-center gap-2">
+              <Info className="w-4 h-4" />
+              Validation Notes
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <ul className="text-sm space-y-1 text-blue-700 dark:text-blue-300">
+              {((cn as any).validationWarnings as string[]).map((warning, i) => (
+                <li key={i} className="flex items-start gap-2">
+                  <span className="text-blue-400 mt-0.5">&#8226;</span>
+                  {warning}
+                </li>
+              ))}
+            </ul>
           </CardContent>
         </Card>
       )}

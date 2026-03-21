@@ -219,23 +219,31 @@ export function registerMfaRoutes(app: Express): void {
         orgSlug: org?.slug || "default",
       };
 
-      req.login(sessionUser, (loginErr) => {
-        if (loginErr) {
-          logger.error({ err: loginErr }, "Session creation failed after MFA verify");
+      // Regenerate session before login to prevent session fixation
+      req.session.regenerate((regenErr) => {
+        if (regenErr) {
+          logger.error({ err: regenErr }, "Session regeneration failed after MFA verify");
           return res.status(500).json({ message: "Login failed" });
         }
 
-        logPhiAccess({
-          userId: user.id,
-          username: user.username,
-          orgId: user.orgId,
-          event: "mfa_verify_success",
-          resourceType: "auth",
-          detail: "MFA verification completed, session created",
-          ip: (req.headers["x-forwarded-for"] as string)?.split(",")[0]?.trim() || req.socket?.remoteAddress,
-        });
+        req.login(sessionUser, (loginErr) => {
+          if (loginErr) {
+            logger.error({ err: loginErr }, "Session creation failed after MFA verify");
+            return res.status(500).json({ message: "Login failed" });
+          }
 
-        res.json(sessionUser);
+          logPhiAccess({
+            userId: user.id,
+            username: user.username,
+            orgId: user.orgId,
+            event: "mfa_verify_success",
+            resourceType: "auth",
+            detail: "MFA verification completed, session created",
+            ip: (req.headers["x-forwarded-for"] as string)?.split(",")[0]?.trim() || req.socket?.remoteAddress,
+          });
+
+          res.json(sessionUser);
+        });
       });
     } catch (error) {
       logger.error({ err: error }, "MFA verification failed");
@@ -297,22 +305,27 @@ export function registerMfaRoutes(app: Express): void {
         orgSlug: org?.slug || "default",
       };
 
-      req.login(sessionUser, (loginErr) => {
-        if (loginErr) return res.status(500).json({ message: "Login failed" });
+      // Regenerate session before login to prevent session fixation
+      req.session.regenerate((regenErr) => {
+        if (regenErr) return res.status(500).json({ message: "Login failed" });
 
-        logPhiAccess({
-          userId: user.id,
-          username: user.username,
-          orgId: user.orgId,
-          event: "mfa_backup_used",
-          resourceType: "auth",
-          detail: `Backup code used. ${remainingCodes.length} remaining.`,
-          ip: (req.headers["x-forwarded-for"] as string)?.split(",")[0]?.trim() || req.socket?.remoteAddress,
-        });
+        req.login(sessionUser, (loginErr) => {
+          if (loginErr) return res.status(500).json({ message: "Login failed" });
 
-        res.json({
-          ...sessionUser,
-          warning: `Backup code accepted. You have ${remainingCodes.length} backup codes remaining.`,
+          logPhiAccess({
+            userId: user.id,
+            username: user.username,
+            orgId: user.orgId,
+            event: "mfa_backup_used",
+            resourceType: "auth",
+            detail: `Backup code used. ${remainingCodes.length} remaining.`,
+            ip: (req.headers["x-forwarded-for"] as string)?.split(",")[0]?.trim() || req.socket?.remoteAddress,
+          });
+
+          res.json({
+            ...sessionUser,
+            warning: `Backup code accepted. You have ${remainingCodes.length} backup codes remaining.`,
+          });
         });
       });
     } catch (error) {

@@ -85,8 +85,10 @@ export class MemStorage implements IStorage {
   async getUser(id: string): Promise<User | undefined> {
     return this.users.get(id);
   }
-  async getUserByUsername(username: string): Promise<User | undefined> {
-    return Array.from(this.users.values()).find(u => u.username === username);
+  async getUserByUsername(username: string, orgId?: string): Promise<User | undefined> {
+    return Array.from(this.users.values()).find(u =>
+      u.username === username && (!orgId || u.orgId === orgId)
+    );
   }
   async createUser(user: InsertUser): Promise<User> {
     const id = randomUUID();

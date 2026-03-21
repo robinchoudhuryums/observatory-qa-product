@@ -60,14 +60,18 @@ export function registerAuthRoutes(app: Express): void {
     })(req, res, next);
   });
 
-  // Logout
+  // Logout — destroy session to clear server-side session data
   app.post("/api/auth/logout", (req, res) => {
     req.logout((err) => {
       if (err) {
         res.status(500).json({ message: "Failed to logout" });
         return;
       }
-      res.json({ message: "Logged out" });
+      req.session.destroy(() => {
+        // Always clear the cookie regardless of destroy success/failure
+        res.clearCookie("connect.sid");
+        res.json({ message: "Logged out" });
+      });
     });
   });
 

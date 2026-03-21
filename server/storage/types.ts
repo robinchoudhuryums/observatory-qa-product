@@ -64,7 +64,16 @@ export function normalizeAnalysis(analysis: CallAnalysis): CallAnalysis;
 export function normalizeAnalysis(analysis: CallAnalysis | undefined): CallAnalysis | undefined;
 export function normalizeAnalysis(analysis: CallAnalysis | undefined): CallAnalysis | undefined {
   if (!analysis) return undefined;
-  return {
+
+  // Clamp a numeric value to a valid range, handling string/null/undefined
+  const clamp = (v: unknown, min: number, max: number): number | undefined => {
+    if (v === null || v === undefined) return undefined;
+    const n = typeof v === "number" ? v : typeof v === "string" ? parseFloat(v) : NaN;
+    if (isNaN(n)) return undefined;
+    return Math.max(min, Math.min(max, n));
+  };
+
+  const normalized: CallAnalysis = {
     ...analysis,
     topics: Array.isArray(analysis.topics) ? analysis.topics : [],
     actionItems: Array.isArray(analysis.actionItems) ? analysis.actionItems : [],
@@ -74,6 +83,21 @@ export function normalizeAnalysis(analysis: CallAnalysis | undefined): CallAnaly
       : { strengths: [], suggestions: [] },
     summary: typeof analysis.summary === "string" ? analysis.summary : "",
   };
+
+  // Clamp scores to valid ranges when present
+  if (normalized.performanceScore !== undefined) {
+    normalized.performanceScore = clamp(normalized.performanceScore, 0, 10) as any;
+  }
+  if (normalized.subScores) {
+    normalized.subScores = {
+      compliance: clamp(normalized.subScores.compliance, 0, 10),
+      customerExperience: clamp(normalized.subScores.customerExperience, 0, 10),
+      communication: clamp(normalized.subScores.communication, 0, 10),
+      resolution: clamp(normalized.subScores.resolution, 0, 10),
+    } as any;
+  }
+
+  return normalized;
 }
 
 /** Apply standard call filters (status, sentiment, employee) */
@@ -111,7 +135,7 @@ export interface IStorage {
 
   // User operations
   getUser(id: string): Promise<User | undefined>;
-  getUserByUsername(username: string): Promise<User | undefined>;
+  getUserByUsername(username: string, orgId?: string): Promise<User | undefined>;
   createUser(user: InsertUser): Promise<User>;
   listUsersByOrg(orgId: string): Promise<User[]>;
   updateUser(orgId: string, id: string, updates: Partial<User>): Promise<User | undefined>;

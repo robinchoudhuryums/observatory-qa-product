@@ -7,6 +7,7 @@ import { generateRecommendations, saveRecommendations, generateCoachingPlan, cal
 import { getManagerReviewQueue, generateWeeklyDigest } from "../services/proactive-alerts";
 import { sendDigestNotification } from "../services/notifications";
 import { logger } from "../services/logger";
+import { logPhiAccess, auditContext } from "../services/audit-log";
 
 export function registerCoachingRoutes(app: Express): void {
   // ==================== COACHING ROUTES ====================
@@ -20,6 +21,12 @@ export function registerCoachingRoutes(app: Express): void {
         const emp = await storage.getEmployee(req.orgId!, s.employeeId);
         return { ...s, employeeName: emp?.name || "Unknown" };
       }));
+      logPhiAccess({
+        ...auditContext(req),
+        event: "view_coaching_sessions",
+        resourceType: "coaching",
+        detail: `Listed ${enriched.length} coaching sessions`,
+      });
       res.json(enriched.sort((a, b) => new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime()));
     } catch (error) {
       res.status(500).json({ message: "Failed to fetch coaching sessions" });
@@ -30,6 +37,13 @@ export function registerCoachingRoutes(app: Express): void {
   app.get("/api/coaching/employee/:employeeId", requireAuth, injectOrgContext, async (req, res) => {
     try {
       const sessions = await storage.getCoachingSessionsByEmployee(req.orgId!, req.params.employeeId);
+      logPhiAccess({
+        ...auditContext(req),
+        event: "view_employee_coaching",
+        resourceType: "coaching",
+        resourceId: req.params.employeeId,
+        detail: `${sessions.length} sessions for employee`,
+      });
       res.json(sessions.sort((a, b) => new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime()));
     } catch (error) {
       res.status(500).json({ message: "Failed to fetch coaching sessions" });

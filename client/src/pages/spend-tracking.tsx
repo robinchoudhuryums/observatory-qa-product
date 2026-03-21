@@ -81,11 +81,18 @@ function getUserData(records: UsageRecord[]) {
 
 const COLORS = ["#3b82f6", "#10b981", "#f59e0b", "#ef4444", "#8b5cf6", "#ec4899"];
 
+interface UsageResponse {
+  records: UsageRecord[];
+  pagination: { total: number; limit: number; offset: number; hasMore: boolean };
+  summary: { totalEstimatedCost: number; recordCount: number };
+}
+
 export default function SpendTrackingPage() {
-  const { data: records = [], isLoading } = useQuery<UsageRecord[]>({
+  const { data: rawData, isLoading } = useQuery<UsageResponse>({
     queryKey: ["/api/usage"],
     staleTime: 60000,
   });
+  const records = rawData?.records || [];
 
   if (isLoading) {
     return (

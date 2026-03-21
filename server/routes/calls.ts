@@ -13,7 +13,7 @@ import { notifyFlaggedCall } from "../services/notifications";
 import { onCallAnalysisComplete } from "../services/proactive-alerts";
 import { trackUsage } from "../services/queue";
 import { upload, safeFloat, withRetry } from "./helpers";
-import { enforceQuota } from "./billing";
+import { enforceQuota, requireActiveSubscription } from "./billing";
 import { logger } from "../services/logger";
 import { searchRelevantChunks, formatRetrievedContext } from "../services/rag";
 import { PLAN_DEFINITIONS, CALL_CATEGORIES, type PlanTier, type UsageRecord } from "@shared/schema";
@@ -65,7 +65,7 @@ async function cleanupFile(filePath: string) {
 }
 
 // Process audio file with AssemblyAI and archive to cloud storage
-async function processAudioFile(orgId: string, callId: string, filePath: string, audioBuffer: Buffer, originalName: string, mimeType: string, callCategory?: string, userId?: string) {
+async function processAudioFile(orgId: string, callId: string, filePath: string, audioBuffer: Buffer, originalName: string, mimeType: string, callCategory?: string, userId?: string, clinicalSpecialty?: string, noteFormat?: string) {
   logger.info({ callId }, "Starting audio processing");
   broadcastCallUpdate(callId, "uploading", { step: 1, totalSteps: 6, label: "Uploading audio..." }, orgId);
   try {
@@ -76,11 +76,13 @@ async function processAudioFile(orgId: string, callId: string, filePath: string,
 
     // Step 1b: Archive audio to cloud storage
     logger.info({ callId, step: "1b/7" }, "Archiving audio file to cloud storage");
+    let audioArchived = true;
     try {
       await storage.uploadAudio(orgId, callId, originalName, audioBuffer, mimeType);
       logger.info({ callId, step: "1b/7" }, "Audio archived");
     } catch (archiveError) {
-      logger.warn({ callId, err: archiveError }, "Failed to archive audio (continuing)");
+      audioArchived = false;
+      logger.warn({ callId, err: archiveError }, "Failed to archive audio (continuing without playback)");
     }
 
     // Step 2: Start transcription
@@ -104,6 +106,40 @@ async function processAudioFile(orgId: string, callId: string, filePath: string,
     // --- CRITICAL SAFETY CHECK ---
     if (!transcriptResponse || transcriptResponse.status !== 'completed') {
       throw new Error(`Transcription polling failed or did not complete. Final status: ${transcriptResponse?.status}`);
+    }
+    // Validate transcript has actual content — empty transcripts produce junk analysis
+    if (!transcriptResponse.text || transcriptResponse.text.trim().length < 10) {
+      logger.warn({ callId, textLen: transcriptResponse.text?.length || 0 }, "Transcript completed but text is empty or too short");
+      broadcastCallUpdate(callId, "completed", {
+        step: 6, totalSteps: 6, label: "Complete (no speech detected)",
+        warning: "Transcript was empty — audio may be silent, corrupted, or too short",
+      }, orgId);
+      // Still save what we have but skip AI analysis
+      const { transcript, sentiment, analysis } = assemblyAIService.processTranscriptData(transcriptResponse, null, callId);
+      analysis.confidenceScore = "0.10";
+      analysis.confidenceFactors = {
+        transcriptConfidence: 0,
+        wordCount: 0,
+        callDurationSeconds: 0,
+        transcriptLength: 0,
+        aiAnalysisCompleted: false,
+        overallScore: 0.1,
+      };
+      (analysis.flags as string[]) = ["empty_transcript", "low_confidence"];
+      await Promise.all([
+        storage.createTranscript(orgId, transcript),
+        storage.createSentimentAnalysis(orgId, sentiment),
+        storage.createCallAnalysis(orgId, analysis),
+      ]);
+      const earlyTags: string[] = ["empty_transcript"];
+      if (!audioArchived) earlyTags.push("audio_missing");
+      await storage.updateCall(orgId, callId, {
+        status: "completed",
+        duration: 0,
+        tags: earlyTags,
+      });
+      await cleanupFile(filePath);
+      return;
     }
     logger.info({ callId, step: "3/7", status: transcriptResponse.status }, "Polling complete");
 
@@ -130,8 +166,19 @@ async function processAudioFile(orgId: string, callId: string, filePath: string,
       }
     }
 
-    // Inject provider style preferences for clinical encounters
+    // Inject clinical metadata (specialty, format) for clinical encounters
     const clinicalCategories = ["clinical_encounter", "telemedicine", "dental_encounter", "dental_consultation"];
+    if (callCategory && clinicalCategories.includes(callCategory)) {
+      if (!promptTemplate) promptTemplate = {};
+      // Apply user-specified specialty and format from upload form
+      if (clinicalSpecialty) {
+        promptTemplate.clinicalSpecialty = clinicalSpecialty;
+      }
+      if (noteFormat) {
+        if (!promptTemplate.providerStylePreferences) promptTemplate.providerStylePreferences = {};
+        promptTemplate.providerStylePreferences.noteFormat = noteFormat;
+      }
+    }
     if (callCategory && clinicalCategories.includes(callCategory)) {
       try {
         const org = await storage.getOrganization(orgId);
@@ -387,10 +434,14 @@ async function processAudioFile(orgId: string, callId: string, filePath: string,
         const aiMissing = analysis.clinicalNote.missingSections || [];
         analysis.clinicalNote.missingSections = Array.from(new Set([...aiMissing, ...validation.missingSections, ...validation.emptySections]));
       }
-      // Use server-computed completeness if AI didn't provide one or provided 0
-      if (!analysis.clinicalNote.documentationCompleteness || analysis.clinicalNote.documentationCompleteness === 0) {
-        analysis.clinicalNote.documentationCompleteness = validation.computedCompleteness;
-      }
+      // Use the more conservative (lower) of AI and server-computed completeness
+      // AI may overestimate completeness when sections are empty/shallow
+      const aiCompleteness = analysis.clinicalNote.documentationCompleteness || 0;
+      const serverCompleteness = validation.computedCompleteness;
+      analysis.clinicalNote.documentationCompleteness = Math.min(
+        aiCompleteness || serverCompleteness,
+        serverCompleteness || aiCompleteness,
+      ) || serverCompleteness;
       // Store validation warnings for downstream consumers
       if (validation.warnings.length > 0) {
         (analysis.clinicalNote as any).validationWarnings = validation.warnings;
@@ -406,11 +457,19 @@ async function processAudioFile(orgId: string, callId: string, filePath: string,
       if (cn.chiefComplaint) cn.chiefComplaint = encryptField(cn.chiefComplaint);
     }
 
-    if (confidenceScore < 0.7) {
-      const existingFlags = (analysis.flags as string[]) || [];
+    // Server-side flag enforcement — ensure consistency regardless of AI output
+    const existingFlags: string[] = Array.isArray(analysis.flags) ? [...(analysis.flags as string[])] : [];
+    if (confidenceScore < 0.7 && !existingFlags.includes("low_confidence")) {
       existingFlags.push("low_confidence");
-      analysis.flags = existingFlags;
     }
+    const perfScore = safeFloat(analysis.performanceScore);
+    if (perfScore > 0 && perfScore <= 2.0 && !existingFlags.includes("low_score")) {
+      existingFlags.push("low_score");
+    }
+    if (perfScore >= 9.0 && !existingFlags.includes("exceptional_call")) {
+      existingFlags.push("exceptional_call");
+    }
+    analysis.flags = existingFlags;
 
     logger.info({ callId, step: "5/6", confidencePct: (confidenceScore * 100).toFixed(0) }, "Data processing complete");
 
@@ -428,25 +487,44 @@ async function processAudioFile(orgId: string, callId: string, filePath: string,
     let assignedEmployeeId: string | undefined;
     if (!currentCall?.employeeId && aiAnalysis?.detected_agent_name) {
       const detectedName = aiAnalysis.detected_agent_name.toLowerCase().trim();
-      const allEmployees = await storage.getAllEmployees(orgId);
-      const matchedEmployee = allEmployees.find(emp => {
-        const empName = emp.name.toLowerCase();
-        return empName === detectedName ||
-          empName.split(" ")[0] === detectedName ||
-          empName.split(" ").pop() === detectedName;
-      });
-      if (matchedEmployee) {
-        assignedEmployeeId = matchedEmployee.id;
-        logger.info({ callId, employeeId: matchedEmployee.id }, "Auto-assigned to employee");
-      } else {
-        logger.info({ callId }, "Detected agent name but no matching employee found");
+      if (detectedName) {
+        const allEmployees = await storage.getAllEmployees(orgId);
+        // Only match active employees — don't assign calls to inactive/terminated staff
+        const activeEmployees = allEmployees.filter(emp => !emp.status || emp.status === "Active");
+        const matchingEmployees = activeEmployees.filter(emp => {
+          const empName = emp.name.toLowerCase().trim();
+          const nameParts = empName.split(/\s+/);
+          return empName === detectedName ||
+            nameParts[0] === detectedName ||
+            nameParts[nameParts.length - 1] === detectedName;
+        });
+        if (matchingEmployees.length === 1) {
+          assignedEmployeeId = matchingEmployees[0].id;
+          logger.info({ callId, employeeId: matchingEmployees[0].id, detectedName }, "Auto-assigned to employee");
+        } else if (matchingEmployees.length > 1) {
+          // Prefer exact full-name match over partial first/last name match
+          const exactMatch = matchingEmployees.find(emp => emp.name.toLowerCase().trim() === detectedName);
+          if (exactMatch) {
+            assignedEmployeeId = exactMatch.id;
+            logger.info({ callId, employeeId: exactMatch.id, detectedName }, "Auto-assigned to employee (exact match from multiple candidates)");
+          } else {
+            logger.info({ callId, detectedName, candidates: matchingEmployees.length }, "Ambiguous agent name — multiple employees match, skipping auto-assignment");
+          }
+        } else {
+          logger.info({ callId, detectedName }, "Detected agent name but no matching active employee found");
+        }
       }
     }
+
+    // Build tags for the call record
+    const callTags: string[] = [];
+    if (!audioArchived) callTags.push("audio_missing");
 
     await storage.updateCall(orgId, callId, {
       status: "completed",
       duration: Math.floor((transcriptResponse.words?.[transcriptResponse.words.length - 1]?.end || 0) / 1000),
       ...(assignedEmployeeId ? { employeeId: assignedEmployeeId } : {}),
+      ...(callTags.length > 0 ? { tags: callTags } : {}),
     });
     logger.info({ callId, step: "6/6", autoAssigned: !!assignedEmployeeId }, "Done. Status is now 'completed'");
 
@@ -597,14 +675,14 @@ export function registerCallRoutes(app: Express): void {
     }
   });
 
-  app.post("/api/calls/upload", requireAuth, injectOrgContext, enforceQuota("transcription"), upload.single('audioFile'), async (req, res) => {
+  app.post("/api/calls/upload", requireAuth, injectOrgContext, requireActiveSubscription(), enforceQuota("transcription"), upload.single('audioFile'), async (req, res) => {
     try {
       if (!req.file) {
         res.status(400).json({ message: "No audio file provided" });
         return;
       }
 
-      const { employeeId, callCategory } = req.body;
+      const { employeeId, callCategory, clinicalSpecialty, noteFormat } = req.body;
 
       // Validate callCategory against allowed values
       const validCategories = CALL_CATEGORIES.map(c => c.value);
@@ -644,7 +722,7 @@ export function registerCallRoutes(app: Express): void {
       const mimeType = req.file.mimetype || "audio/mpeg";
       const orgId = req.orgId!;
       const uploadUserId = (req as any).user?.id;
-      processAudioFile(orgId, call.id, req.file.path, audioBuffer, originalName, mimeType, callCategory, uploadUserId)
+      processAudioFile(orgId, call.id, req.file.path, audioBuffer, originalName, mimeType, callCategory, uploadUserId, clinicalSpecialty, noteFormat)
         .catch(async (error) => {
           logger.error({ callId: call.id, err: error }, "Failed to process call");
           try {
@@ -745,6 +823,12 @@ export function registerCallRoutes(app: Express): void {
         res.status(404).json({ message: "Sentiment analysis not found" });
         return;
       }
+      logPhiAccess({
+        ...auditContext(req),
+        event: "view_sentiment_analysis",
+        resourceType: "sentiment",
+        resourceId: req.params.id,
+      });
       res.json(sentiment);
     } catch (error) {
       res.status(500).json({ message: "Failed to get sentiment analysis" });
@@ -759,6 +843,12 @@ export function registerCallRoutes(app: Express): void {
         return;
       }
       decryptClinicalNote(analysis as Record<string, unknown>);
+      logPhiAccess({
+        ...auditContext(req),
+        event: "view_call_analysis",
+        resourceType: "analysis",
+        resourceId: req.params.id,
+      });
       res.json(analysis);
     } catch (error) {
       res.status(500).json({ message: "Failed to get call analysis" });

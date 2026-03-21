@@ -215,6 +215,61 @@ describe("insertSubscriptionSchema", () => {
   });
 });
 
+describe("Clinical plan", () => {
+  it("clinical plan tier exists in PLAN_TIERS", () => {
+    assert.ok(PLAN_TIERS.includes("clinical"));
+  });
+
+  it("clinical plan has clinical documentation enabled", () => {
+    assert.strictEqual(PLAN_DEFINITIONS.clinical.limits.clinicalDocumentationEnabled, true);
+  });
+
+  it("clinical plan has RAG enabled", () => {
+    assert.strictEqual(PLAN_DEFINITIONS.clinical.limits.ragEnabled, true);
+  });
+
+  it("clinical plan has reasonable pricing", () => {
+    assert.ok(PLAN_DEFINITIONS.clinical.monthlyPriceUsd > 0);
+    assert.ok(PLAN_DEFINITIONS.clinical.yearlyPriceUsd < PLAN_DEFINITIONS.clinical.monthlyPriceUsd * 12);
+  });
+
+  it("non-clinical paid plans do NOT have clinical documentation", () => {
+    assert.strictEqual(PLAN_DEFINITIONS.free.limits.clinicalDocumentationEnabled, false);
+    assert.strictEqual(PLAN_DEFINITIONS.pro.limits.clinicalDocumentationEnabled, false);
+  });
+
+  it("clinical plan subscription validates correctly", () => {
+    const result = subscriptionSchema.safeParse({
+      id: "sub-clinical",
+      orgId: "org-1",
+      planTier: "clinical",
+      status: "active",
+      billingInterval: "monthly",
+    });
+    assert.ok(result.success);
+    assert.strictEqual(result.data.planTier, "clinical");
+  });
+});
+
+describe("getPriceId", () => {
+  // Import dynamically to test the stripe helper
+  it("returns null for free tier", async () => {
+    const { getPriceId } = await import("../server/services/stripe.js");
+    assert.strictEqual(getPriceId("free", "monthly"), null);
+    assert.strictEqual(getPriceId("free", "yearly"), null);
+  });
+
+  it("returns null when env vars not set for a tier", async () => {
+    const { getPriceId } = await import("../server/services/stripe.js");
+    // Without env vars set, all should return null
+    const result = getPriceId("clinical", "monthly");
+    // If env var not set, returns null
+    if (!process.env.STRIPE_PRICE_CLINICAL_MONTHLY) {
+      assert.strictEqual(result, null);
+    }
+  });
+});
+
 describe("Quota enforcement logic", () => {
   it("allows usage under limit", () => {
     const limit = 50;

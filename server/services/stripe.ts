@@ -40,6 +40,8 @@ export function getPriceId(tier: PlanTier, interval: "monthly" | "yearly"): stri
     "pro_yearly": process.env.STRIPE_PRICE_PRO_YEARLY,
     "enterprise_monthly": process.env.STRIPE_PRICE_ENTERPRISE_MONTHLY,
     "enterprise_yearly": process.env.STRIPE_PRICE_ENTERPRISE_YEARLY,
+    "clinical_monthly": process.env.STRIPE_PRICE_CLINICAL_MONTHLY,
+    "clinical_yearly": process.env.STRIPE_PRICE_CLINICAL_YEARLY,
   };
   return priceMap[`${tier}_${interval}`] || null;
 }

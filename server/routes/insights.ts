@@ -3,6 +3,7 @@ import { storage } from "../storage";
 import { requireAuth, injectOrgContext } from "../auth";
 import { safeFloat } from "./helpers";
 import { logger } from "../services/logger";
+import { logPhiAccess, auditContext } from "../services/audit-log";
 
 export function registerInsightRoutes(app: Express): void {
 
@@ -98,6 +99,13 @@ export function registerInsightRoutes(app: Express): void {
           confidence: safeFloat(c.analysis?.confidenceScore),
           employee: c.employee?.name || "Unassigned",
         }));
+
+      logPhiAccess({
+        ...auditContext(req),
+        event: "view_insights",
+        resourceType: "insights",
+        detail: `${completed.length} calls analyzed`,
+      });
 
       res.json({
         totalAnalyzed: completed.length,

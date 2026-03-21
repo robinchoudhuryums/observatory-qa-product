@@ -7,6 +7,7 @@ import { storage } from "../storage";
 import { requireAuth, requireRole, injectOrgContext, hashPassword } from "../auth";
 import { logger } from "../services/logger";
 import { randomUUID } from "crypto";
+import { enforceUserQuota } from "./billing";
 
 /**
  * Validate password complexity for HIPAA compliance.
@@ -58,11 +59,8 @@ export function registerRegistrationRoutes(app: Express): void {
         return res.status(409).json({ message: "Organization slug already taken" });
       }
 
-      // Check username uniqueness
-      const existingUser = await storage.getUserByUsername(username);
-      if (existingUser) {
-        return res.status(409).json({ message: "Username already taken" });
-      }
+      // Username uniqueness will be enforced per-org by the database constraint.
+      // No need to check globally — this is a new org being created.
 
       // Determine default call categories based on industry
       const dentalCategories = [
@@ -162,7 +160,7 @@ export function registerRegistrationRoutes(app: Express): void {
   });
 
   // Create invitation (admin/manager only)
-  app.post("/api/invitations", requireAuth, requireRole("manager"), injectOrgContext, async (req, res) => {
+  app.post("/api/invitations", requireAuth, requireRole("manager"), injectOrgContext, enforceUserQuota(), async (req, res) => {
     try {
       const { email, role } = req.body;
       if (!email) {
@@ -228,8 +226,8 @@ export function registerRegistrationRoutes(app: Express): void {
         return res.status(400).json({ message: "Invitation has expired" });
       }
 
-      // Check username uniqueness
-      const existingUser = await storage.getUserByUsername(username);
+      // Check username uniqueness within the invitation's org
+      const existingUser = await storage.getUserByUsername(username, invitation.orgId);
       if (existingUser) {
         return res.status(409).json({ message: "Username already taken" });
       }

@@ -172,9 +172,11 @@ export async function searchRelevantChunks(
     };
   });
 
-  // Sort by combined score and return top K
+  // Sort by combined score, filter out low-relevance chunks, and return top K
   results.sort((a, b) => b.score - a.score);
-  return results.slice(0, topK);
+  const MIN_RELEVANCE_SCORE = 0.3;
+  const relevant = results.filter(r => r.score >= MIN_RELEVANCE_SCORE);
+  return relevant.slice(0, topK);
 }
 
 /**

@@ -4,12 +4,13 @@ import { requireAuth, requireRole, injectOrgContext, hashPassword } from "../aut
 import { aiProvider } from "../services/ai-factory";
 import { assemblyAIService } from "../services/assemblyai";
 import { broadcastCallUpdate } from "../services/websocket";
-import { insertPromptTemplateSchema, orgSettingsSchema, type OrgSettings } from "@shared/schema";
+import { insertPromptTemplateSchema, orgSettingsSchema, PLAN_DEFINITIONS, type OrgSettings } from "@shared/schema";
 import { logger } from "../services/logger";
 import { queryAuditLogs, verifyAuditChain } from "../services/audit-log";
 import { safeInt, withRetry } from "./helpers";
 import { enqueueReanalysis } from "../services/queue";
 import { getWafStats, blockIp, unblockIp } from "../middleware/waf";
+import { requirePlanFeature, enforceUserQuota } from "./billing";
 import {
   declareIncident, advanceIncidentPhase, addTimelineEntry, addActionItem,
   updateActionItem, updateIncident, getIncident, listIncidents,
@@ -28,7 +29,7 @@ export function registerAdminRoutes(app: Express): void {
     }
   });
 
-  app.post("/api/prompt-templates", requireAuth, injectOrgContext, requireRole("admin"), async (req, res) => {
+  app.post("/api/prompt-templates", requireAuth, injectOrgContext, requireRole("admin"), requirePlanFeature("customPromptTemplates", "Custom prompt templates require a Pro or Enterprise plan"), async (req, res) => {
     try {
       const parsed = insertPromptTemplateSchema.safeParse(req.body);
       if (!parsed.success) {
@@ -45,7 +46,7 @@ export function registerAdminRoutes(app: Express): void {
     }
   });
 
-  app.patch("/api/prompt-templates/:id", requireAuth, injectOrgContext, requireRole("admin"), async (req, res) => {
+  app.patch("/api/prompt-templates/:id", requireAuth, injectOrgContext, requireRole("admin"), requirePlanFeature("customPromptTemplates", "Custom prompt templates require a Pro or Enterprise plan"), async (req, res) => {
     try {
       // Validate the update: allow only known template fields
       const { updatedBy: _ignore, id: _ignoreId, ...bodyWithoutMeta } = req.body;
@@ -204,7 +205,7 @@ export function registerAdminRoutes(app: Express): void {
   });
 
   // Create a new user (admin only)
-  app.post("/api/users", requireAuth, requireRole("admin"), injectOrgContext, async (req, res) => {
+  app.post("/api/users", requireAuth, requireRole("admin"), injectOrgContext, enforceUserQuota(), async (req, res) => {
     try {
       const { username, password, name, role } = req.body;
       if (!username || !password || !name) {
@@ -214,8 +215,8 @@ export function registerAdminRoutes(app: Express): void {
         return res.status(400).json({ message: "Invalid role" });
       }
 
-      // Check if username already exists
-      const existing = await storage.getUserByUsername(username);
+      // Check if username already exists within this org
+      const existing = await storage.getUserByUsername(username, req.orgId!);
       if (existing) {
         return res.status(409).json({ message: "Username already exists" });
       }
@@ -316,6 +317,25 @@ export function registerAdminRoutes(app: Express): void {
       if (!parsed.success) {
         return res.status(400).json({ message: "Invalid settings", errors: parsed.error.flatten() });
       }
+
+      // Gate SSO configuration to Enterprise plan
+      const ssoFields = ["ssoProvider", "ssoSignOnUrl", "ssoCertificate", "ssoEntityId", "ssoEnforced"] as const;
+      const isSettingSso = ssoFields.some(f => f in parsed.data && (parsed.data as Record<string, unknown>)[f]);
+      if (isSettingSso) {
+        const sub = await storage.getSubscription(req.orgId!);
+        const tier = (sub?.planTier as import("@shared/schema").PlanTier) || "free";
+        const plan = PLAN_DEFINITIONS[tier];
+        if (!plan?.limits.ssoEnabled) {
+          return res.status(403).json({
+            message: "SSO requires an Enterprise plan",
+            code: "PLAN_FEATURE_REQUIRED",
+            feature: "ssoEnabled",
+            currentPlan: tier,
+            upgradeUrl: "/settings?tab=billing",
+          });
+        }
+      }
+
       const updatedSettings = { ...(org.settings || {}), ...parsed.data } as OrgSettings;
       const updated = await storage.updateOrganization(req.orgId!, { settings: updatedSettings });
       logger.info({ org: req.orgId }, "Organization settings updated");

@@ -250,6 +250,12 @@ export function registerEhrRoutes(app: Express): void {
 
       const providerId = req.query.providerId as string | undefined;
       const appointments = await adapter.getTodayAppointments(decryptEhrApiKey(ehrConfig), providerId);
+      logPhiAccess({
+        ...auditContext(req),
+        event: "view_ehr_appointments",
+        resourceType: "ehr_appointment",
+        detail: `today's appointments${providerId ? ` for provider ${providerId}` : ""}`,
+      });
       res.json(appointments);
     } catch (error) {
       logger.error({ err: error }, "Failed to get today's appointments");
@@ -284,6 +290,12 @@ export function registerEhrRoutes(app: Express): void {
         startDate: startDate as string,
         endDate: endDate as string,
         providerId: providerId as string | undefined,
+      });
+      logPhiAccess({
+        ...auditContext(req),
+        event: "view_ehr_appointments",
+        resourceType: "ehr_appointment",
+        detail: `date range ${startDate}–${endDate}${providerId ? ` provider ${providerId}` : ""}`,
       });
       res.json(appointments);
     } catch (error) {

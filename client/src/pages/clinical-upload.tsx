@@ -1,6 +1,7 @@
-import { useState } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { Mic, Upload as UploadIcon, Stethoscope, ShieldCheck } from "lucide-react";
+import { useSearch } from "wouter";
+import { Mic, Upload as UploadIcon, Stethoscope, ShieldCheck, Sparkles } from "lucide-react";
 import FileUpload from "@/components/upload/file-upload";
 import AudioRecorder from "@/components/upload/audio-recorder";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -14,6 +15,25 @@ import type { Employee } from "@shared/schema";
 
 type UploadTab = "file" | "record";
 
+// Specialty → recommended note format mapping (mirrors server-side clinical-validation.ts)
+const SPECIALTY_FORMAT_MAP: Record<string, string> = {
+  primary_care: "soap", internal_medicine: "soap", cardiology: "hpi_focused",
+  dermatology: "soap", orthopedics: "soap", psychiatry: "dap",
+  pediatrics: "soap", ob_gyn: "soap", emergency: "soap", urgent_care: "soap",
+  general_dentistry: "soap", periodontics: "soap", endodontics: "procedure_note",
+  oral_surgery: "procedure_note", orthodontics: "soap", prosthodontics: "procedure_note",
+  pediatric_dentistry: "soap", behavioral_health: "dap", general: "soap",
+};
+
+interface ClinicalTemplate {
+  id: string;
+  name: string;
+  specialty: string;
+  format: string;
+  category: string;
+  description: string;
+}
+
 export default function ClinicalUploadPage() {
   const [tab, setTab] = useState<UploadTab>("record");
   const [specialty, setSpecialty] = useState("");
@@ -22,8 +42,41 @@ export default function ClinicalUploadPage() {
   const [providerId, setProviderId] = useState("");
   const [consentConfirmed, setConsentConfirmed] = useState(false);
   const [isUploading, setIsUploading] = useState(false);
+  const [formatAutoSet, setFormatAutoSet] = useState(false);
   const { toast } = useToast();
   const queryClient = useQueryClient();
+  const searchString = useSearch();
+  const searchParams = useMemo(() => new URLSearchParams(searchString), [searchString]);
+  const templateId = searchParams.get("template");
+
+  // Fetch template if query param is present
+  const { data: selectedTemplate } = useQuery<ClinicalTemplate>({
+    queryKey: ["/api/clinical/templates", templateId],
+    enabled: !!templateId,
+  });
+
+  // Pre-fill form from template
+  useEffect(() => {
+    if (selectedTemplate) {
+      if (selectedTemplate.specialty) setSpecialty(selectedTemplate.specialty);
+      if (selectedTemplate.format) setNoteFormat(selectedTemplate.format);
+    }
+  }, [selectedTemplate]);
+
+  // Auto-map specialty → format (only when user changes specialty, not when template sets it)
+  const handleSpecialtyChange = (value: string) => {
+    setSpecialty(value);
+    const recommended = SPECIALTY_FORMAT_MAP[value];
+    if (recommended) {
+      setNoteFormat(recommended);
+      setFormatAutoSet(true);
+    }
+  };
+
+  const handleFormatChange = (value: string) => {
+    setNoteFormat(value);
+    setFormatAutoSet(false);
+  };
 
   const { data: employees } = useQuery<Employee[]>({
     queryKey: ["/api/employees"],
@@ -41,6 +94,8 @@ export default function ClinicalUploadPage() {
       formData.append("audioFile", file);
       formData.append("callCategory", encounterType);
       if (providerId && providerId !== "__unassigned__") formData.append("employeeId", providerId);
+      if (specialty) formData.append("clinicalSpecialty", specialty);
+      if (noteFormat) formData.append("noteFormat", noteFormat);
 
       const response = await fetch("/api/calls/upload", {
         method: "POST",
@@ -93,6 +148,25 @@ export default function ClinicalUploadPage() {
         </CardContent>
       </Card>
 
+      {/* Template indicator */}
+      {selectedTemplate && (
+        <Card className="border-blue-200 bg-blue-50 dark:bg-blue-950/20 dark:border-blue-800">
+          <CardContent className="pt-4 pb-3">
+            <div className="flex items-center gap-3">
+              <Sparkles className="w-5 h-5 text-blue-600 shrink-0" />
+              <div className="text-sm">
+                <p className="font-medium text-blue-800 dark:text-blue-200">
+                  Using template: {selectedTemplate.name}
+                </p>
+                <p className="text-blue-700 dark:text-blue-300 text-xs mt-0.5">
+                  Specialty and format have been pre-filled. You can adjust them below.
+                </p>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
       {/* Encounter Settings */}
       <Card>
         <CardHeader className="pb-3">
@@ -115,7 +189,7 @@ export default function ClinicalUploadPage() {
 
             <div className="space-y-2">
               <Label>Specialty</Label>
-              <Select value={specialty} onValueChange={setSpecialty}>
+              <Select value={specialty} onValueChange={handleSpecialtyChange}>
                 <SelectTrigger>
                   <SelectValue placeholder="Select specialty..." />
                 </SelectTrigger>
@@ -128,8 +202,15 @@ export default function ClinicalUploadPage() {
             </div>
 
             <div className="space-y-2">
-              <Label>Note Format</Label>
-              <Select value={noteFormat} onValueChange={setNoteFormat}>
+              <div className="flex items-center gap-2">
+                <Label>Note Format</Label>
+                {formatAutoSet && (
+                  <Badge variant="outline" className="text-xs text-blue-600 border-blue-300 gap-1">
+                    <Sparkles className="w-3 h-3" />Auto
+                  </Badge>
+                )}
+              </div>
+              <Select value={noteFormat} onValueChange={handleFormatChange}>
                 <SelectTrigger>
                   <SelectValue />
                 </SelectTrigger>

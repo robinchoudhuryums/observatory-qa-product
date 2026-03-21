@@ -375,6 +375,13 @@ export function registerClinicalRoutes(app: Express): void {
         ? Math.round(totalAttestTime / attestTimeCount / 60000)
         : null;
 
+      logPhiAccess({
+        ...auditContext(req),
+        event: "view_clinical_metrics",
+        resourceType: "clinical_metrics",
+        detail: `${withNotes.length} notes, ${attested.length} attested`,
+      });
+
       res.json({
         totalEncounters: clinicalCalls.length,
         completedEncounters: completed.length,
@@ -453,7 +460,12 @@ export function registerClinicalRoutes(app: Express): void {
         return;
       }
 
-      logger.info({ orgId: req.orgId, userId, noteCount: attestedNotes.length }, "Style learning analysis completed");
+      logPhiAccess({
+        ...auditContext(req),
+        event: "clinical_style_analysis",
+        resourceType: "clinical_note",
+        detail: `Analyzed ${attestedNotes.length} attested notes for style learning`,
+      });
       res.json({ success: true, analysis: result, noteCount: attestedNotes.length });
     } catch (error) {
       logger.error({ err: error }, "Failed to analyze provider style");

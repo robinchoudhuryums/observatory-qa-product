@@ -614,10 +614,71 @@ export function parseJsonResponse(text: string, callId: string): CallAnalysis {
     throw new Error("AI response did not contain valid JSON");
   }
 
+  let raw: Record<string, unknown>;
   try {
-    return JSON.parse(jsonMatch[0]) as CallAnalysis;
+    raw = JSON.parse(jsonMatch[0]);
   } catch (parseError) {
     logger.warn({ callId, err: parseError, responsePreview: text.slice(0, 300) }, "AI response JSON parse failed");
     throw new Error("AI response contained malformed JSON");
   }
+
+  // Validate and normalize with safe defaults for missing/malformed fields
+  const clampScore = (v: unknown, min: number, max: number, fallback: number): number => {
+    const n = typeof v === "number" ? v : typeof v === "string" ? parseFloat(v) : NaN;
+    if (isNaN(n)) return fallback;
+    return Math.max(min, Math.min(max, n));
+  };
+
+  const toStringArray = (v: unknown): string[] => {
+    if (Array.isArray(v)) return v.filter(x => typeof x === "string" || typeof x === "object").map(x => typeof x === "string" ? x : String(x));
+    if (typeof v === "string") return [v];
+    return [];
+  };
+
+  const rawSubScores = (raw.sub_scores && typeof raw.sub_scores === "object" && !Array.isArray(raw.sub_scores))
+    ? raw.sub_scores as Record<string, unknown>
+    : {};
+
+  const rawFeedback = (raw.feedback && typeof raw.feedback === "object" && !Array.isArray(raw.feedback))
+    ? raw.feedback as Record<string, unknown>
+    : {};
+
+  const analysis: CallAnalysis = {
+    summary: typeof raw.summary === "string" ? raw.summary : "",
+    topics: toStringArray(raw.topics),
+    sentiment: typeof raw.sentiment === "string" ? raw.sentiment : "neutral",
+    sentiment_score: clampScore(raw.sentiment_score, 0, 1, 0.5),
+    performance_score: clampScore(raw.performance_score, 0, 10, 5.0),
+    sub_scores: {
+      compliance: clampScore(rawSubScores.compliance, 0, 10, 5.0),
+      customer_experience: clampScore(rawSubScores.customer_experience, 0, 10, 5.0),
+      communication: clampScore(rawSubScores.communication, 0, 10, 5.0),
+      resolution: clampScore(rawSubScores.resolution, 0, 10, 5.0),
+    },
+    action_items: toStringArray(raw.action_items),
+    feedback: {
+      strengths: Array.isArray(rawFeedback.strengths) ? rawFeedback.strengths : [],
+      suggestions: Array.isArray(rawFeedback.suggestions) ? rawFeedback.suggestions : [],
+    },
+    call_party_type: typeof raw.call_party_type === "string" ? raw.call_party_type : "other",
+    flags: toStringArray(raw.flags),
+    detected_agent_name: typeof raw.detected_agent_name === "string" ? raw.detected_agent_name : null,
+  };
+
+  // Carry through clinical_note if present
+  if (raw.clinical_note && typeof raw.clinical_note === "object") {
+    analysis.clinical_note = raw.clinical_note as CallAnalysis["clinical_note"];
+  }
+
+  // Log if we had to fix missing fields
+  const missingFields: string[] = [];
+  if (!raw.summary) missingFields.push("summary");
+  if (!raw.performance_score && raw.performance_score !== 0) missingFields.push("performance_score");
+  if (!raw.sub_scores) missingFields.push("sub_scores");
+  if (!raw.feedback) missingFields.push("feedback");
+  if (missingFields.length > 0) {
+    logger.warn({ callId, missingFields }, "AI response missing fields — defaults applied");
+  }
+
+  return analysis;
 }

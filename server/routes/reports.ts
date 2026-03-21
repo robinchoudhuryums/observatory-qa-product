@@ -5,6 +5,7 @@ import { buildAgentSummaryPrompt } from "../services/ai-provider";
 import { requireAuth, injectOrgContext } from "../auth";
 import { safeFloat } from "./helpers";
 import { logger } from "../services/logger";
+import { logPhiAccess, auditContext } from "../services/audit-log";
 
 function safeJsonParse<T>(val: unknown, fallback: T): T {
   if (typeof val !== 'string') return (val as T) ?? fallback;
@@ -23,6 +24,12 @@ export function registerReportRoutes(app: Express): void {
       }
 
       const results = await storage.searchCalls(req.orgId!, query);
+      logPhiAccess({
+        ...auditContext(req),
+        event: "search_calls",
+        resourceType: "call",
+        detail: `Search returned ${results.length} results`,
+      });
       res.json(results);
     } catch (error) {
       res.status(500).json({ message: "Failed to search calls" });
@@ -416,6 +423,14 @@ export function registerReportRoutes(app: Express): void {
           avgScore: Math.round((data.total / data.count) * 100) / 100,
           calls: data.count,
         }));
+
+      logPhiAccess({
+        ...auditContext(req),
+        event: "view_agent_profile",
+        resourceType: "employee",
+        resourceId: employeeId,
+        detail: `${filtered.length} calls analyzed`,
+      });
 
       res.json({
         employee: { id: employee.id, name: employee.name, role: employee.role, status: employee.status },
