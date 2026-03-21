@@ -38,6 +38,17 @@ import {
   type ClinicalNote,
   type LiveSession,
   type InsertLiveSession,
+  type Feedback,
+  type InsertFeedback,
+  type EmployeeBadge,
+  type InsuranceNarrative,
+  type InsertInsuranceNarrative,
+  type CallRevenue,
+  type InsertCallRevenue,
+  type CalibrationSession,
+  type InsertCalibrationSession,
+  type CalibrationEvaluation,
+  type InsertCalibrationEvaluation,
 } from "@shared/schema";
 
 /**
@@ -274,6 +285,45 @@ export interface IStorage {
   updateLiveSession(orgId: string, id: string, updates: Partial<LiveSession>): Promise<LiveSession | undefined>;
   getActiveLiveSessions(orgId: string): Promise<LiveSession[]>;
   getLiveSessionsByUser(orgId: string, userId: string): Promise<LiveSession[]>;
+
+  // Feedback operations (org-scoped)
+  createFeedback(orgId: string, feedback: InsertFeedback): Promise<Feedback>;
+  getFeedback(orgId: string, id: string): Promise<Feedback | undefined>;
+  listFeedback(orgId: string, filters?: { type?: string; status?: string }): Promise<Feedback[]>;
+  updateFeedback(orgId: string, id: string, updates: Partial<Feedback>): Promise<Feedback | undefined>;
+
+  // Gamification operations (org-scoped)
+  getEmployeeBadges(orgId: string, employeeId: string): Promise<EmployeeBadge[]>;
+  awardBadge(orgId: string, badge: Omit<EmployeeBadge, "id">): Promise<EmployeeBadge>;
+  getGamificationProfile(orgId: string, employeeId: string): Promise<{ totalPoints: number; currentStreak: number; longestStreak: number }>;
+  updateGamificationProfile(orgId: string, employeeId: string, updates: { totalPoints?: number; currentStreak?: number; longestStreak?: number; lastActivityDate?: string }): Promise<void>;
+  getLeaderboard(orgId: string, limit?: number): Promise<Array<{ employeeId: string; totalPoints: number; currentStreak: number; badgeCount: number }>>;
+
+  // Insurance narrative operations (org-scoped)
+  createInsuranceNarrative(orgId: string, narrative: InsertInsuranceNarrative): Promise<InsuranceNarrative>;
+  getInsuranceNarrative(orgId: string, id: string): Promise<InsuranceNarrative | undefined>;
+  listInsuranceNarratives(orgId: string, filters?: { callId?: string; status?: string }): Promise<InsuranceNarrative[]>;
+  updateInsuranceNarrative(orgId: string, id: string, updates: Partial<InsuranceNarrative>): Promise<InsuranceNarrative | undefined>;
+  deleteInsuranceNarrative(orgId: string, id: string): Promise<void>;
+
+  // Call revenue operations (org-scoped)
+  createCallRevenue(orgId: string, revenue: InsertCallRevenue): Promise<CallRevenue>;
+  getCallRevenue(orgId: string, callId: string): Promise<CallRevenue | undefined>;
+  listCallRevenues(orgId: string, filters?: { conversionStatus?: string }): Promise<CallRevenue[]>;
+  updateCallRevenue(orgId: string, callId: string, updates: Partial<CallRevenue>): Promise<CallRevenue | undefined>;
+  getRevenueMetrics(orgId: string): Promise<{ totalEstimated: number; totalActual: number; conversionRate: number; avgDealValue: number }>;
+
+  // Calibration session operations (org-scoped)
+  createCalibrationSession(orgId: string, session: InsertCalibrationSession): Promise<CalibrationSession>;
+  getCalibrationSession(orgId: string, id: string): Promise<CalibrationSession | undefined>;
+  listCalibrationSessions(orgId: string, filters?: { status?: string }): Promise<CalibrationSession[]>;
+  updateCalibrationSession(orgId: string, id: string, updates: Partial<CalibrationSession>): Promise<CalibrationSession | undefined>;
+  deleteCalibrationSession(orgId: string, id: string): Promise<void>;
+
+  // Calibration evaluation operations (org-scoped)
+  createCalibrationEvaluation(orgId: string, evaluation: InsertCalibrationEvaluation): Promise<CalibrationEvaluation>;
+  getCalibrationEvaluations(orgId: string, sessionId: string): Promise<CalibrationEvaluation[]>;
+  updateCalibrationEvaluation(orgId: string, id: string, updates: Partial<CalibrationEvaluation>): Promise<CalibrationEvaluation | undefined>;
 }
 
 export interface UsageSummary {

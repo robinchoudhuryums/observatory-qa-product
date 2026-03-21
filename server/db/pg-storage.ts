@@ -35,6 +35,12 @@ import type {
   ABTest, InsertABTest,
   UsageRecord,
   LiveSession, InsertLiveSession,
+  Feedback, InsertFeedback,
+  EmployeeBadge,
+  InsuranceNarrative, InsertInsuranceNarrative,
+  CallRevenue, InsertCallRevenue,
+  CalibrationSession, InsertCalibrationSession,
+  CalibrationEvaluation, InsertCalibrationEvaluation,
 } from "@shared/schema";
 import * as tables from "./schema";
 import { normalizeAnalysis } from "../storage";
@@ -1623,6 +1629,383 @@ export class PostgresStorage implements IStorage {
       callId: r.callId || undefined,
       startedAt: toISOString(r.startedAt),
       endedAt: toISOString(r.endedAt),
+    };
+  }
+
+  // ===================== FEEDBACK =====================
+
+  async createFeedback(orgId: string, feedback: InsertFeedback): Promise<Feedback> {
+    const id = randomUUID();
+    await this.db.insert(tables.feedbacks).values({
+      id, orgId, userId: feedback.userId, type: feedback.type,
+      context: feedback.context || null, rating: feedback.rating ?? null,
+      comment: feedback.comment || null, metadata: feedback.metadata || null,
+      status: "new",
+    });
+    return { ...feedback, id, orgId, status: "new", createdAt: new Date().toISOString() };
+  }
+
+  async getFeedback(orgId: string, id: string): Promise<Feedback | undefined> {
+    const rows = await this.db.select().from(tables.feedbacks)
+      .where(and(eq(tables.feedbacks.orgId, orgId), eq(tables.feedbacks.id, id)));
+    return rows[0] ? this.mapFeedbackRow(rows[0]) : undefined;
+  }
+
+  async listFeedback(orgId: string, filters?: { type?: string; status?: string }): Promise<Feedback[]> {
+    const conditions = [eq(tables.feedbacks.orgId, orgId)];
+    if (filters?.type) conditions.push(eq(tables.feedbacks.type, filters.type));
+    if (filters?.status) conditions.push(eq(tables.feedbacks.status, filters.status));
+    const rows = await this.db.select().from(tables.feedbacks)
+      .where(and(...conditions))
+      .orderBy(desc(tables.feedbacks.createdAt));
+    return rows.map(r => this.mapFeedbackRow(r));
+  }
+
+  async updateFeedback(orgId: string, id: string, updates: Partial<Feedback>): Promise<Feedback | undefined> {
+    const dbUpdates: Record<string, unknown> = {};
+    if (updates.status !== undefined) dbUpdates.status = updates.status;
+    if (updates.adminResponse !== undefined) dbUpdates.adminResponse = updates.adminResponse;
+    const rows = await this.db.update(tables.feedbacks).set(dbUpdates)
+      .where(and(eq(tables.feedbacks.orgId, orgId), eq(tables.feedbacks.id, id)))
+      .returning();
+    return rows[0] ? this.mapFeedbackRow(rows[0]) : undefined;
+  }
+
+  private mapFeedbackRow(r: typeof tables.feedbacks.$inferSelect): Feedback {
+    return {
+      id: r.id, orgId: r.orgId, userId: r.userId, type: r.type as Feedback["type"],
+      context: r.context as Feedback["context"] ?? undefined, rating: r.rating ?? undefined,
+      comment: r.comment ?? undefined, metadata: r.metadata as Record<string, unknown> ?? undefined,
+      status: r.status as Feedback["status"], adminResponse: r.adminResponse ?? undefined,
+      createdAt: toISOString(r.createdAt),
+    };
+  }
+
+  // ===================== GAMIFICATION =====================
+
+  async getEmployeeBadges(orgId: string, employeeId: string): Promise<EmployeeBadge[]> {
+    const rows = await this.db.select().from(tables.employeeBadges)
+      .where(and(eq(tables.employeeBadges.orgId, orgId), eq(tables.employeeBadges.employeeId, employeeId)));
+    return rows.map(r => ({
+      id: r.id, orgId: r.orgId, employeeId: r.employeeId, badgeId: r.badgeId,
+      awardedAt: toISOString(r.awardedAt) || new Date().toISOString(),
+      awardedFor: r.awardedFor || undefined,
+    }));
+  }
+
+  async awardBadge(orgId: string, badge: Omit<EmployeeBadge, "id">): Promise<EmployeeBadge> {
+    const id = randomUUID();
+    try {
+      await this.db.insert(tables.employeeBadges).values({
+        id, orgId, employeeId: badge.employeeId, badgeId: badge.badgeId,
+        awardedFor: badge.awardedFor || null,
+      });
+    } catch (e: unknown) {
+      // Unique constraint violation — badge already awarded
+      if ((e as { code?: string }).code === "23505") {
+        const existing = await this.db.select().from(tables.employeeBadges)
+          .where(and(
+            eq(tables.employeeBadges.orgId, orgId),
+            eq(tables.employeeBadges.employeeId, badge.employeeId),
+            eq(tables.employeeBadges.badgeId, badge.badgeId),
+          ));
+        if (existing[0]) return { ...badge, id: existing[0].id, awardedAt: toISOString(existing[0].awardedAt) || badge.awardedAt };
+      }
+      throw e;
+    }
+    return { ...badge, id };
+  }
+
+  async getGamificationProfile(orgId: string, employeeId: string) {
+    const rows = await this.db.select().from(tables.gamificationProfiles)
+      .where(and(eq(tables.gamificationProfiles.orgId, orgId), eq(tables.gamificationProfiles.employeeId, employeeId)));
+    if (!rows[0]) return { totalPoints: 0, currentStreak: 0, longestStreak: 0 };
+    return { totalPoints: rows[0].totalPoints, currentStreak: rows[0].currentStreak, longestStreak: rows[0].longestStreak };
+  }
+
+  async updateGamificationProfile(orgId: string, employeeId: string, updates: { totalPoints?: number; currentStreak?: number; longestStreak?: number; lastActivityDate?: string }) {
+    const existing = await this.db.select().from(tables.gamificationProfiles)
+      .where(and(eq(tables.gamificationProfiles.orgId, orgId), eq(tables.gamificationProfiles.employeeId, employeeId)));
+    if (existing[0]) {
+      const dbUpdates: Record<string, unknown> = { updatedAt: new Date() };
+      if (updates.totalPoints !== undefined) dbUpdates.totalPoints = updates.totalPoints;
+      if (updates.currentStreak !== undefined) dbUpdates.currentStreak = updates.currentStreak;
+      if (updates.longestStreak !== undefined) dbUpdates.longestStreak = updates.longestStreak;
+      if (updates.lastActivityDate !== undefined) dbUpdates.lastActivityDate = updates.lastActivityDate;
+      await this.db.update(tables.gamificationProfiles).set(dbUpdates)
+        .where(and(eq(tables.gamificationProfiles.orgId, orgId), eq(tables.gamificationProfiles.employeeId, employeeId)));
+    } else {
+      await this.db.insert(tables.gamificationProfiles).values({
+        orgId, employeeId,
+        totalPoints: updates.totalPoints || 0,
+        currentStreak: updates.currentStreak || 0,
+        longestStreak: updates.longestStreak || 0,
+        lastActivityDate: updates.lastActivityDate || null,
+      });
+    }
+  }
+
+  async getLeaderboard(orgId: string, limit = 20) {
+    const rows = await this.db.select().from(tables.gamificationProfiles)
+      .where(eq(tables.gamificationProfiles.orgId, orgId))
+      .orderBy(desc(tables.gamificationProfiles.totalPoints))
+      .limit(limit);
+    const result = [];
+    for (const r of rows) {
+      const badgeCount = await this.db.select({ count: sql<number>`count(*)` }).from(tables.employeeBadges)
+        .where(and(eq(tables.employeeBadges.orgId, orgId), eq(tables.employeeBadges.employeeId, r.employeeId)));
+      result.push({
+        employeeId: r.employeeId,
+        totalPoints: r.totalPoints,
+        currentStreak: r.currentStreak,
+        badgeCount: Number(badgeCount[0]?.count || 0),
+      });
+    }
+    return result;
+  }
+
+  // ===================== INSURANCE NARRATIVES =====================
+
+  async createInsuranceNarrative(orgId: string, narrative: InsertInsuranceNarrative): Promise<InsuranceNarrative> {
+    const id = randomUUID();
+    const now = new Date();
+    await this.db.insert(tables.insuranceNarratives).values({
+      id, orgId, callId: narrative.callId || null,
+      patientName: narrative.patientName, patientDob: narrative.patientDob || null,
+      memberId: narrative.memberId || null, insurerName: narrative.insurerName,
+      insurerAddress: narrative.insurerAddress || null, letterType: narrative.letterType,
+      diagnosisCodes: narrative.diagnosisCodes || null, procedureCodes: narrative.procedureCodes || null,
+      clinicalJustification: narrative.clinicalJustification || null,
+      priorDenialReference: narrative.priorDenialReference || null,
+      generatedNarrative: narrative.generatedNarrative || null,
+      status: narrative.status || "draft", createdBy: narrative.createdBy,
+      createdAt: now, updatedAt: now,
+    });
+    return { ...narrative, id, orgId, createdAt: now.toISOString(), updatedAt: now.toISOString() };
+  }
+
+  async getInsuranceNarrative(orgId: string, id: string): Promise<InsuranceNarrative | undefined> {
+    const rows = await this.db.select().from(tables.insuranceNarratives)
+      .where(and(eq(tables.insuranceNarratives.orgId, orgId), eq(tables.insuranceNarratives.id, id)));
+    return rows[0] ? this.mapInsuranceNarrativeRow(rows[0]) : undefined;
+  }
+
+  async listInsuranceNarratives(orgId: string, filters?: { callId?: string; status?: string }): Promise<InsuranceNarrative[]> {
+    const conditions = [eq(tables.insuranceNarratives.orgId, orgId)];
+    if (filters?.callId) conditions.push(eq(tables.insuranceNarratives.callId, filters.callId));
+    if (filters?.status) conditions.push(eq(tables.insuranceNarratives.status, filters.status));
+    const rows = await this.db.select().from(tables.insuranceNarratives)
+      .where(and(...conditions)).orderBy(desc(tables.insuranceNarratives.createdAt));
+    return rows.map(r => this.mapInsuranceNarrativeRow(r));
+  }
+
+  async updateInsuranceNarrative(orgId: string, id: string, updates: Partial<InsuranceNarrative>): Promise<InsuranceNarrative | undefined> {
+    const dbUpdates: Record<string, unknown> = { updatedAt: new Date() };
+    if (updates.generatedNarrative !== undefined) dbUpdates.generatedNarrative = updates.generatedNarrative;
+    if (updates.status !== undefined) dbUpdates.status = updates.status;
+    if (updates.clinicalJustification !== undefined) dbUpdates.clinicalJustification = updates.clinicalJustification;
+    if (updates.priorDenialReference !== undefined) dbUpdates.priorDenialReference = updates.priorDenialReference;
+    if (updates.diagnosisCodes !== undefined) dbUpdates.diagnosisCodes = updates.diagnosisCodes;
+    if (updates.procedureCodes !== undefined) dbUpdates.procedureCodes = updates.procedureCodes;
+    const rows = await this.db.update(tables.insuranceNarratives).set(dbUpdates)
+      .where(and(eq(tables.insuranceNarratives.orgId, orgId), eq(tables.insuranceNarratives.id, id)))
+      .returning();
+    return rows[0] ? this.mapInsuranceNarrativeRow(rows[0]) : undefined;
+  }
+
+  async deleteInsuranceNarrative(orgId: string, id: string): Promise<void> {
+    await this.db.delete(tables.insuranceNarratives)
+      .where(and(eq(tables.insuranceNarratives.orgId, orgId), eq(tables.insuranceNarratives.id, id)));
+  }
+
+  private mapInsuranceNarrativeRow(r: typeof tables.insuranceNarratives.$inferSelect): InsuranceNarrative {
+    return {
+      id: r.id, orgId: r.orgId, callId: r.callId || undefined,
+      patientName: r.patientName, patientDob: r.patientDob || undefined,
+      memberId: r.memberId || undefined, insurerName: r.insurerName,
+      insurerAddress: r.insurerAddress || undefined, letterType: r.letterType,
+      diagnosisCodes: r.diagnosisCodes as InsuranceNarrative["diagnosisCodes"],
+      procedureCodes: r.procedureCodes as InsuranceNarrative["procedureCodes"],
+      clinicalJustification: r.clinicalJustification || undefined,
+      priorDenialReference: r.priorDenialReference || undefined,
+      generatedNarrative: r.generatedNarrative || undefined,
+      status: r.status as InsuranceNarrative["status"], createdBy: r.createdBy,
+      createdAt: toISOString(r.createdAt), updatedAt: toISOString(r.updatedAt),
+    };
+  }
+
+  // ===================== CALL REVENUE =====================
+
+  async createCallRevenue(orgId: string, revenue: InsertCallRevenue): Promise<CallRevenue> {
+    const id = randomUUID();
+    const now = new Date();
+    await this.db.insert(tables.callRevenues).values({
+      id, orgId, callId: revenue.callId,
+      estimatedRevenue: revenue.estimatedRevenue ?? null,
+      actualRevenue: revenue.actualRevenue ?? null,
+      revenueType: revenue.revenueType || null,
+      treatmentValue: revenue.treatmentValue ?? null,
+      scheduledProcedures: revenue.scheduledProcedures || null,
+      conversionStatus: revenue.conversionStatus || "unknown",
+      notes: revenue.notes || null,
+      updatedBy: revenue.updatedBy || null,
+      createdAt: now, updatedAt: now,
+    });
+    return { ...revenue, id, orgId, createdAt: now.toISOString(), updatedAt: now.toISOString() };
+  }
+
+  async getCallRevenue(orgId: string, callId: string): Promise<CallRevenue | undefined> {
+    const rows = await this.db.select().from(tables.callRevenues)
+      .where(and(eq(tables.callRevenues.orgId, orgId), eq(tables.callRevenues.callId, callId)));
+    return rows[0] ? this.mapCallRevenueRow(rows[0]) : undefined;
+  }
+
+  async listCallRevenues(orgId: string, filters?: { conversionStatus?: string }): Promise<CallRevenue[]> {
+    const conditions = [eq(tables.callRevenues.orgId, orgId)];
+    if (filters?.conversionStatus) conditions.push(eq(tables.callRevenues.conversionStatus, filters.conversionStatus));
+    const rows = await this.db.select().from(tables.callRevenues)
+      .where(and(...conditions)).orderBy(desc(tables.callRevenues.createdAt));
+    return rows.map(r => this.mapCallRevenueRow(r));
+  }
+
+  async updateCallRevenue(orgId: string, callId: string, updates: Partial<CallRevenue>): Promise<CallRevenue | undefined> {
+    const dbUpdates: Record<string, unknown> = { updatedAt: new Date() };
+    if (updates.estimatedRevenue !== undefined) dbUpdates.estimatedRevenue = updates.estimatedRevenue;
+    if (updates.actualRevenue !== undefined) dbUpdates.actualRevenue = updates.actualRevenue;
+    if (updates.revenueType !== undefined) dbUpdates.revenueType = updates.revenueType;
+    if (updates.treatmentValue !== undefined) dbUpdates.treatmentValue = updates.treatmentValue;
+    if (updates.scheduledProcedures !== undefined) dbUpdates.scheduledProcedures = updates.scheduledProcedures;
+    if (updates.conversionStatus !== undefined) dbUpdates.conversionStatus = updates.conversionStatus;
+    if (updates.notes !== undefined) dbUpdates.notes = updates.notes;
+    if (updates.updatedBy !== undefined) dbUpdates.updatedBy = updates.updatedBy;
+    const rows = await this.db.update(tables.callRevenues).set(dbUpdates)
+      .where(and(eq(tables.callRevenues.orgId, orgId), eq(tables.callRevenues.callId, callId)))
+      .returning();
+    return rows[0] ? this.mapCallRevenueRow(rows[0]) : undefined;
+  }
+
+  async getRevenueMetrics(orgId: string) {
+    const rows = await this.db.select().from(tables.callRevenues)
+      .where(eq(tables.callRevenues.orgId, orgId));
+    const totalEstimated = rows.reduce((sum, r) => sum + (r.estimatedRevenue || 0), 0);
+    const totalActual = rows.reduce((sum, r) => sum + (r.actualRevenue || 0), 0);
+    const tracked = rows.filter(r => r.conversionStatus !== "unknown");
+    const converted = tracked.filter(r => r.conversionStatus === "converted");
+    const conversionRate = tracked.length > 0 ? converted.length / tracked.length : 0;
+    const avgDealValue = converted.length > 0 ? totalActual / converted.length : 0;
+    return { totalEstimated, totalActual, conversionRate, avgDealValue };
+  }
+
+  private mapCallRevenueRow(r: typeof tables.callRevenues.$inferSelect): CallRevenue {
+    return {
+      id: r.id, orgId: r.orgId, callId: r.callId,
+      estimatedRevenue: r.estimatedRevenue ?? undefined,
+      actualRevenue: r.actualRevenue ?? undefined,
+      revenueType: r.revenueType as CallRevenue["revenueType"],
+      treatmentValue: r.treatmentValue ?? undefined,
+      scheduledProcedures: r.scheduledProcedures as CallRevenue["scheduledProcedures"],
+      conversionStatus: r.conversionStatus as CallRevenue["conversionStatus"],
+      notes: r.notes || undefined, updatedBy: r.updatedBy || undefined,
+      createdAt: toISOString(r.createdAt), updatedAt: toISOString(r.updatedAt),
+    };
+  }
+
+  // ===================== CALIBRATION SESSIONS =====================
+
+  async createCalibrationSession(orgId: string, session: InsertCalibrationSession): Promise<CalibrationSession> {
+    const id = randomUUID();
+    const now = new Date();
+    await this.db.insert(tables.calibrationSessions).values({
+      id, orgId, title: session.title, callId: session.callId,
+      facilitatorId: session.facilitatorId, evaluatorIds: session.evaluatorIds,
+      scheduledAt: session.scheduledAt ? new Date(session.scheduledAt) : null,
+      status: session.status || "scheduled",
+      targetScore: session.targetScore ?? null,
+      consensusNotes: session.consensusNotes || null,
+      createdAt: now,
+    });
+    return { ...session, id, orgId, createdAt: now.toISOString() };
+  }
+
+  async getCalibrationSession(orgId: string, id: string): Promise<CalibrationSession | undefined> {
+    const rows = await this.db.select().from(tables.calibrationSessions)
+      .where(and(eq(tables.calibrationSessions.orgId, orgId), eq(tables.calibrationSessions.id, id)));
+    return rows[0] ? this.mapCalibrationSessionRow(rows[0]) : undefined;
+  }
+
+  async listCalibrationSessions(orgId: string, filters?: { status?: string }): Promise<CalibrationSession[]> {
+    const conditions = [eq(tables.calibrationSessions.orgId, orgId)];
+    if (filters?.status) conditions.push(eq(tables.calibrationSessions.status, filters.status));
+    const rows = await this.db.select().from(tables.calibrationSessions)
+      .where(and(...conditions)).orderBy(desc(tables.calibrationSessions.createdAt));
+    return rows.map(r => this.mapCalibrationSessionRow(r));
+  }
+
+  async updateCalibrationSession(orgId: string, id: string, updates: Partial<CalibrationSession>): Promise<CalibrationSession | undefined> {
+    const dbUpdates: Record<string, unknown> = {};
+    if (updates.status !== undefined) dbUpdates.status = updates.status;
+    if (updates.targetScore !== undefined) dbUpdates.targetScore = updates.targetScore;
+    if (updates.consensusNotes !== undefined) dbUpdates.consensusNotes = updates.consensusNotes;
+    if (updates.completedAt !== undefined) dbUpdates.completedAt = new Date(updates.completedAt);
+    const rows = await this.db.update(tables.calibrationSessions).set(dbUpdates)
+      .where(and(eq(tables.calibrationSessions.orgId, orgId), eq(tables.calibrationSessions.id, id)))
+      .returning();
+    return rows[0] ? this.mapCalibrationSessionRow(rows[0]) : undefined;
+  }
+
+  async deleteCalibrationSession(orgId: string, id: string): Promise<void> {
+    // Cascade delete evaluations first
+    await this.db.delete(tables.calibrationEvaluations).where(eq(tables.calibrationEvaluations.sessionId, id));
+    await this.db.delete(tables.calibrationSessions)
+      .where(and(eq(tables.calibrationSessions.orgId, orgId), eq(tables.calibrationSessions.id, id)));
+  }
+
+  async createCalibrationEvaluation(orgId: string, evaluation: InsertCalibrationEvaluation): Promise<CalibrationEvaluation> {
+    const id = randomUUID();
+    await this.db.insert(tables.calibrationEvaluations).values({
+      id, orgId, sessionId: evaluation.sessionId, evaluatorId: evaluation.evaluatorId,
+      performanceScore: evaluation.performanceScore, subScores: evaluation.subScores || null,
+      notes: evaluation.notes || null,
+    });
+    return { ...evaluation, id, orgId, createdAt: new Date().toISOString() };
+  }
+
+  async getCalibrationEvaluations(orgId: string, sessionId: string): Promise<CalibrationEvaluation[]> {
+    const rows = await this.db.select().from(tables.calibrationEvaluations)
+      .where(and(eq(tables.calibrationEvaluations.orgId, orgId), eq(tables.calibrationEvaluations.sessionId, sessionId)));
+    return rows.map(r => ({
+      id: r.id, orgId: r.orgId, sessionId: r.sessionId, evaluatorId: r.evaluatorId,
+      performanceScore: r.performanceScore, subScores: r.subScores as CalibrationEvaluation["subScores"],
+      notes: r.notes || undefined, createdAt: toISOString(r.createdAt),
+    }));
+  }
+
+  async updateCalibrationEvaluation(orgId: string, id: string, updates: Partial<CalibrationEvaluation>): Promise<CalibrationEvaluation | undefined> {
+    const dbUpdates: Record<string, unknown> = {};
+    if (updates.performanceScore !== undefined) dbUpdates.performanceScore = updates.performanceScore;
+    if (updates.subScores !== undefined) dbUpdates.subScores = updates.subScores;
+    if (updates.notes !== undefined) dbUpdates.notes = updates.notes;
+    const rows = await this.db.update(tables.calibrationEvaluations).set(dbUpdates)
+      .where(and(eq(tables.calibrationEvaluations.orgId, orgId), eq(tables.calibrationEvaluations.id, id)))
+      .returning();
+    if (!rows[0]) return undefined;
+    const r = rows[0];
+    return {
+      id: r.id, orgId: r.orgId, sessionId: r.sessionId, evaluatorId: r.evaluatorId,
+      performanceScore: r.performanceScore, subScores: r.subScores as CalibrationEvaluation["subScores"],
+      notes: r.notes || undefined, createdAt: toISOString(r.createdAt),
+    };
+  }
+
+  private mapCalibrationSessionRow(r: typeof tables.calibrationSessions.$inferSelect): CalibrationSession {
+    return {
+      id: r.id, orgId: r.orgId, title: r.title, callId: r.callId,
+      facilitatorId: r.facilitatorId, evaluatorIds: r.evaluatorIds,
+      scheduledAt: toISOString(r.scheduledAt),
+      status: r.status as CalibrationSession["status"],
+      targetScore: r.targetScore ?? undefined,
+      consensusNotes: r.consensusNotes || undefined,
+      createdAt: toISOString(r.createdAt), completedAt: toISOString(r.completedAt),
     };
   }
 }

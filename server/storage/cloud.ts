@@ -37,6 +37,17 @@ import {
   type UsageRecord,
   type LiveSession,
   type InsertLiveSession,
+  type Feedback,
+  type InsertFeedback,
+  type EmployeeBadge,
+  type InsuranceNarrative,
+  type InsertInsuranceNarrative,
+  type CallRevenue,
+  type InsertCallRevenue,
+  type CalibrationSession,
+  type InsertCalibrationSession,
+  type CalibrationEvaluation,
+  type InsertCalibrationEvaluation,
 } from "@shared/schema";
 import { randomUUID } from "crypto";
 import { type IStorage, type ObjectStorageClient, mapConcurrent, normalizeAnalysis, applyCallFilters } from "./types";
@@ -593,4 +604,41 @@ export class CloudStorage implements IStorage {
   async updateLiveSession(_orgId: string, _id: string, _updates: Partial<LiveSession>): Promise<LiveSession | undefined> { return undefined; }
   async getActiveLiveSessions(_orgId: string): Promise<LiveSession[]> { return []; }
   async getLiveSessionsByUser(_orgId: string, _userId: string): Promise<LiveSession[]> { return []; }
+
+  // --- Feedback (not supported in cloud storage) ---
+  async createFeedback(_orgId: string, feedback: InsertFeedback): Promise<Feedback> { return { id: "mock", ...feedback, status: "new" } as Feedback; }
+  async getFeedback(_orgId: string, _id: string): Promise<Feedback | undefined> { return undefined; }
+  async listFeedback(_orgId: string): Promise<Feedback[]> { return []; }
+  async updateFeedback(_orgId: string, _id: string, _updates: Partial<Feedback>): Promise<Feedback | undefined> { return undefined; }
+
+  // --- Gamification (not supported in cloud storage) ---
+  async getEmployeeBadges(_orgId: string, _employeeId: string): Promise<EmployeeBadge[]> { return []; }
+  async awardBadge(_orgId: string, badge: Omit<EmployeeBadge, "id">): Promise<EmployeeBadge> { return { id: "mock", ...badge } as EmployeeBadge; }
+  async getGamificationProfile(_orgId: string, _employeeId: string) { return { totalPoints: 0, currentStreak: 0, longestStreak: 0 }; }
+  async updateGamificationProfile(_orgId: string, _employeeId: string, _updates: Record<string, unknown>) {}
+  async getLeaderboard(_orgId: string, _limit?: number) { return []; }
+
+  // --- Insurance narratives (not supported in cloud storage) ---
+  async createInsuranceNarrative(_orgId: string, narrative: InsertInsuranceNarrative): Promise<InsuranceNarrative> { return { id: "mock", ...narrative } as InsuranceNarrative; }
+  async getInsuranceNarrative(_orgId: string, _id: string): Promise<InsuranceNarrative | undefined> { return undefined; }
+  async listInsuranceNarratives(_orgId: string): Promise<InsuranceNarrative[]> { return []; }
+  async updateInsuranceNarrative(_orgId: string, _id: string, _updates: Partial<InsuranceNarrative>): Promise<InsuranceNarrative | undefined> { return undefined; }
+  async deleteInsuranceNarrative(_orgId: string, _id: string): Promise<void> {}
+
+  // --- Call revenue (not supported in cloud storage) ---
+  async createCallRevenue(_orgId: string, revenue: InsertCallRevenue): Promise<CallRevenue> { return { id: "mock", ...revenue } as CallRevenue; }
+  async getCallRevenue(_orgId: string, _callId: string): Promise<CallRevenue | undefined> { return undefined; }
+  async listCallRevenues(_orgId: string): Promise<CallRevenue[]> { return []; }
+  async updateCallRevenue(_orgId: string, _callId: string, _updates: Partial<CallRevenue>): Promise<CallRevenue | undefined> { return undefined; }
+  async getRevenueMetrics(_orgId: string) { return { totalEstimated: 0, totalActual: 0, conversionRate: 0, avgDealValue: 0 }; }
+
+  // --- Calibration sessions (not supported in cloud storage) ---
+  async createCalibrationSession(_orgId: string, session: InsertCalibrationSession): Promise<CalibrationSession> { return { id: "mock", ...session } as CalibrationSession; }
+  async getCalibrationSession(_orgId: string, _id: string): Promise<CalibrationSession | undefined> { return undefined; }
+  async listCalibrationSessions(_orgId: string): Promise<CalibrationSession[]> { return []; }
+  async updateCalibrationSession(_orgId: string, _id: string, _updates: Partial<CalibrationSession>): Promise<CalibrationSession | undefined> { return undefined; }
+  async deleteCalibrationSession(_orgId: string, _id: string): Promise<void> {}
+  async createCalibrationEvaluation(_orgId: string, evaluation: InsertCalibrationEvaluation): Promise<CalibrationEvaluation> { return { id: "mock", ...evaluation } as CalibrationEvaluation; }
+  async getCalibrationEvaluations(_orgId: string, _sessionId: string): Promise<CalibrationEvaluation[]> { return []; }
+  async updateCalibrationEvaluation(_orgId: string, _id: string, _updates: Partial<CalibrationEvaluation>): Promise<CalibrationEvaluation | undefined> { return undefined; }
 }

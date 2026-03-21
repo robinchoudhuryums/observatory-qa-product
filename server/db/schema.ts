@@ -431,6 +431,134 @@ export const liveSessions = pgTable("live_sessions", {
   index("live_sessions_created_by_idx").on(t.orgId, t.createdBy),
 ]);
 
+// --- USER FEEDBACK ---
+export const feedbacks = pgTable("feedbacks", {
+  id: text("id").primaryKey(),
+  orgId: text("org_id").notNull().references(() => organizations.id),
+  userId: text("user_id").notNull(),
+  type: varchar("type", { length: 30 }).notNull(), // feature_rating, bug_report, suggestion, nps, general
+  context: varchar("context", { length: 50 }), // which page/feature
+  rating: integer("rating"), // 1-10
+  comment: text("comment"),
+  metadata: jsonb("metadata"),
+  status: varchar("status", { length: 20 }).notNull().default("new"),
+  adminResponse: text("admin_response"),
+  createdAt: timestamp("created_at").defaultNow(),
+}, (t) => [
+  index("feedbacks_org_id_idx").on(t.orgId),
+  index("feedbacks_type_idx").on(t.orgId, t.type),
+  index("feedbacks_created_at_idx").on(t.orgId, t.createdAt),
+]);
+
+// --- GAMIFICATION: EMPLOYEE BADGES ---
+export const employeeBadges = pgTable("employee_badges", {
+  id: text("id").primaryKey(),
+  orgId: text("org_id").notNull().references(() => organizations.id),
+  employeeId: text("employee_id").notNull().references(() => employees.id),
+  badgeId: varchar("badge_id", { length: 50 }).notNull(),
+  awardedAt: timestamp("awarded_at").defaultNow(),
+  awardedFor: text("awarded_for"), // callId or event description
+}, (t) => [
+  index("employee_badges_org_idx").on(t.orgId),
+  index("employee_badges_employee_idx").on(t.orgId, t.employeeId),
+  uniqueIndex("employee_badges_unique_idx").on(t.orgId, t.employeeId, t.badgeId),
+]);
+
+// --- GAMIFICATION: POINTS/STREAKS ---
+export const gamificationProfiles = pgTable("gamification_profiles", {
+  orgId: text("org_id").notNull().references(() => organizations.id),
+  employeeId: text("employee_id").notNull().references(() => employees.id),
+  totalPoints: integer("total_points").notNull().default(0),
+  currentStreak: integer("current_streak").notNull().default(0),
+  longestStreak: integer("longest_streak").notNull().default(0),
+  lastActivityDate: varchar("last_activity_date", { length: 10 }), // YYYY-MM-DD
+  updatedAt: timestamp("updated_at").defaultNow(),
+}, (t) => [
+  uniqueIndex("gamification_profiles_pk_idx").on(t.orgId, t.employeeId),
+  index("gamification_profiles_points_idx").on(t.orgId, t.totalPoints),
+]);
+
+// --- INSURANCE NARRATIVES ---
+export const insuranceNarratives = pgTable("insurance_narratives", {
+  id: text("id").primaryKey(),
+  orgId: text("org_id").notNull().references(() => organizations.id),
+  callId: text("call_id").references(() => calls.id),
+  patientName: varchar("patient_name", { length: 255 }).notNull(),
+  patientDob: varchar("patient_dob", { length: 20 }),
+  memberId: varchar("member_id", { length: 100 }),
+  insurerName: varchar("insurer_name", { length: 255 }).notNull(),
+  insurerAddress: text("insurer_address"),
+  letterType: varchar("letter_type", { length: 50 }).notNull(),
+  diagnosisCodes: jsonb("diagnosis_codes"),
+  procedureCodes: jsonb("procedure_codes"),
+  clinicalJustification: text("clinical_justification"),
+  priorDenialReference: text("prior_denial_reference"),
+  generatedNarrative: text("generated_narrative"),
+  status: varchar("status", { length: 20 }).notNull().default("draft"),
+  createdBy: varchar("created_by", { length: 255 }).notNull(),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+}, (t) => [
+  index("insurance_narratives_org_idx").on(t.orgId),
+  index("insurance_narratives_call_idx").on(t.orgId, t.callId),
+  index("insurance_narratives_status_idx").on(t.orgId, t.status),
+]);
+
+// --- CALL REVENUE TRACKING ---
+export const callRevenues = pgTable("call_revenues", {
+  id: text("id").primaryKey(),
+  orgId: text("org_id").notNull().references(() => organizations.id),
+  callId: text("call_id").notNull().references(() => calls.id),
+  estimatedRevenue: real("estimated_revenue"),
+  actualRevenue: real("actual_revenue"),
+  revenueType: varchar("revenue_type", { length: 20 }),
+  treatmentValue: real("treatment_value"),
+  scheduledProcedures: jsonb("scheduled_procedures"),
+  conversionStatus: varchar("conversion_status", { length: 20 }).notNull().default("unknown"),
+  notes: text("notes"),
+  updatedBy: varchar("updated_by", { length: 255 }),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+}, (t) => [
+  index("call_revenues_org_idx").on(t.orgId),
+  uniqueIndex("call_revenues_call_idx").on(t.orgId, t.callId),
+  index("call_revenues_conversion_idx").on(t.orgId, t.conversionStatus),
+]);
+
+// --- CALIBRATION SESSIONS ---
+export const calibrationSessions = pgTable("calibration_sessions", {
+  id: text("id").primaryKey(),
+  orgId: text("org_id").notNull().references(() => organizations.id),
+  title: varchar("title", { length: 500 }).notNull(),
+  callId: text("call_id").notNull().references(() => calls.id),
+  facilitatorId: text("facilitator_id").notNull(),
+  evaluatorIds: jsonb("evaluator_ids").$type<string[]>().notNull(),
+  scheduledAt: timestamp("scheduled_at"),
+  status: varchar("status", { length: 20 }).notNull().default("scheduled"),
+  targetScore: real("target_score"),
+  consensusNotes: text("consensus_notes"),
+  createdAt: timestamp("created_at").defaultNow(),
+  completedAt: timestamp("completed_at"),
+}, (t) => [
+  index("calibration_sessions_org_idx").on(t.orgId),
+  index("calibration_sessions_status_idx").on(t.orgId, t.status),
+]);
+
+// --- CALIBRATION EVALUATIONS ---
+export const calibrationEvaluations = pgTable("calibration_evaluations", {
+  id: text("id").primaryKey(),
+  orgId: text("org_id").notNull().references(() => organizations.id),
+  sessionId: text("session_id").notNull().references(() => calibrationSessions.id, { onDelete: "cascade" }),
+  evaluatorId: text("evaluator_id").notNull(),
+  performanceScore: real("performance_score").notNull(),
+  subScores: jsonb("sub_scores"),
+  notes: text("notes"),
+  createdAt: timestamp("created_at").defaultNow(),
+}, (t) => [
+  index("calibration_evals_session_idx").on(t.sessionId),
+  uniqueIndex("calibration_evals_unique_idx").on(t.sessionId, t.evaluatorId),
+]);
+
 // --- AUDIT LOGS (append-only, tamper-evident, HIPAA compliance) ---
 export const auditLogs = pgTable("audit_logs", {
   id: text("id").primaryKey(),

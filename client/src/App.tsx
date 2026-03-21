@@ -6,6 +6,7 @@ import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import Sidebar from "@/components/layout/sidebar";
+import { FeedbackWidget } from "@/components/feedback-widget";
 import { ErrorBoundary } from "@/components/lib/error-boundary";
 import { BrandingProvider } from "@/components/branding-provider";
 import { AudioWaveform } from "lucide-react";
@@ -60,6 +61,11 @@ const ClinicalUploadPage = lazy(() => import("@/pages/clinical-upload"));
 const ClinicalNotesPage = lazy(() => import("@/pages/clinical-notes"));
 const ClinicalTemplatesPage = lazy(() => import("@/pages/clinical-templates"));
 const ClinicalLivePage = lazy(() => import("@/pages/clinical-live"));
+const FeedbackPage = lazy(() => import("@/pages/feedback"));
+const GamificationPage = lazy(() => import("@/pages/gamification"));
+const InsuranceNarrativesPage = lazy(() => import("@/pages/insurance-narratives"));
+const RevenuePage = lazy(() => import("@/pages/revenue"));
+const CalibrationPage = lazy(() => import("@/pages/calibration"));
 const NotFound = lazy(() => import("@/pages/not-found"));
 
 function PageLoader() {
@@ -179,6 +185,7 @@ function Router() {
       <BrandingProvider />
       <ShortcutsDialog open={showShortcuts} onOpenChange={setShowShortcuts} />
       <Sidebar />
+      <FeedbackWidget />
       <main className="flex-1 overflow-auto pt-14 md:pt-0">
         <Suspense fallback={<PageLoader />}>
           <AnimatePresence mode="wait">
@@ -205,6 +212,11 @@ function Router() {
               <Route path="/clinical/notes/:id">{() => <ErrorBoundary><AnimatedPage><ClinicalNotesPage /></AnimatedPage></ErrorBoundary>}</Route>
               <Route path="/clinical/templates">{() => <ErrorBoundary><AnimatedPage><ClinicalTemplatesPage /></AnimatedPage></ErrorBoundary>}</Route>
               <Route path="/clinical/live">{() => <ErrorBoundary><AnimatedPage><ClinicalLivePage /></AnimatedPage></ErrorBoundary>}</Route>
+              <Route path="/admin/feedback">{() => <ErrorBoundary><AnimatedPage><ProtectedRoute minRole="admin"><FeedbackPage /></ProtectedRoute></AnimatedPage></ErrorBoundary>}</Route>
+              <Route path="/gamification">{() => <ErrorBoundary><AnimatedPage><GamificationPage /></AnimatedPage></ErrorBoundary>}</Route>
+              <Route path="/insurance-narratives">{() => <ErrorBoundary><AnimatedPage><ProtectedRoute minRole="manager"><InsuranceNarrativesPage /></ProtectedRoute></AnimatedPage></ErrorBoundary>}</Route>
+              <Route path="/revenue">{() => <ErrorBoundary><AnimatedPage><RevenuePage /></AnimatedPage></ErrorBoundary>}</Route>
+              <Route path="/calibration">{() => <ErrorBoundary><AnimatedPage><ProtectedRoute minRole="manager"><CalibrationPage /></ProtectedRoute></AnimatedPage></ErrorBoundary>}</Route>
               <Route path="/onboarding">{() => <ErrorBoundary><OnboardingWizard /></ErrorBoundary>}</Route>
               <Route>{() => <AnimatedPage><NotFound /></AnimatedPage>}</Route>
             </Switch>

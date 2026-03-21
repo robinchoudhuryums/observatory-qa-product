@@ -37,6 +37,17 @@ import {
   type UsageRecord,
   type LiveSession,
   type InsertLiveSession,
+  type Feedback,
+  type InsertFeedback,
+  type EmployeeBadge,
+  type InsuranceNarrative,
+  type InsertInsuranceNarrative,
+  type CallRevenue,
+  type InsertCallRevenue,
+  type CalibrationSession,
+  type InsertCalibrationSession,
+  type CalibrationEvaluation,
+  type InsertCalibrationEvaluation,
 } from "@shared/schema";
 import { randomUUID, randomBytes } from "crypto";
 import { type IStorage, applyCallFilters } from "./types";
@@ -677,6 +688,216 @@ export class MemStorage implements IStorage {
     return Array.from(this.liveSessions.values())
       .filter(s => s.orgId === orgId && s.createdBy === userId)
       .sort((a, b) => (b.startedAt || "").localeCompare(a.startedAt || ""));
+  }
+
+  // --- Feedback operations ---
+  private feedbacks = new Map<string, Feedback>();
+
+  async createFeedback(orgId: string, feedback: InsertFeedback): Promise<Feedback> {
+    const id = randomUUID();
+    const f: Feedback = { ...feedback, id, orgId, status: "new", createdAt: new Date().toISOString() };
+    this.feedbacks.set(id, f);
+    return f;
+  }
+
+  async getFeedback(orgId: string, id: string): Promise<Feedback | undefined> {
+    const f = this.feedbacks.get(id);
+    return f?.orgId === orgId ? f : undefined;
+  }
+
+  async listFeedback(orgId: string, filters?: { type?: string; status?: string }): Promise<Feedback[]> {
+    let results = Array.from(this.feedbacks.values()).filter(f => f.orgId === orgId);
+    if (filters?.type) results = results.filter(f => f.type === filters.type);
+    if (filters?.status) results = results.filter(f => f.status === filters.status);
+    return results.sort((a, b) => (b.createdAt || "").localeCompare(a.createdAt || ""));
+  }
+
+  async updateFeedback(orgId: string, id: string, updates: Partial<Feedback>): Promise<Feedback | undefined> {
+    const f = this.feedbacks.get(id);
+    if (!f || f.orgId !== orgId) return undefined;
+    const updated = { ...f, ...updates };
+    this.feedbacks.set(id, updated);
+    return updated;
+  }
+
+  // --- Gamification operations ---
+  private employeeBadgesStore = new Map<string, EmployeeBadge>();
+  private gamificationProfilesStore = new Map<string, { totalPoints: number; currentStreak: number; longestStreak: number; lastActivityDate?: string }>();
+
+  async getEmployeeBadges(orgId: string, employeeId: string): Promise<EmployeeBadge[]> {
+    return Array.from(this.employeeBadgesStore.values()).filter(b => b.orgId === orgId && b.employeeId === employeeId);
+  }
+
+  async awardBadge(orgId: string, badge: Omit<EmployeeBadge, "id">): Promise<EmployeeBadge> {
+    const existing = Array.from(this.employeeBadgesStore.values()).find(
+      b => b.orgId === orgId && b.employeeId === badge.employeeId && b.badgeId === badge.badgeId
+    );
+    if (existing) return existing;
+    const id = randomUUID();
+    const b: EmployeeBadge = { ...badge, id, orgId };
+    this.employeeBadgesStore.set(id, b);
+    return b;
+  }
+
+  async getGamificationProfile(orgId: string, employeeId: string) {
+    const key = `${orgId}:${employeeId}`;
+    return this.gamificationProfilesStore.get(key) || { totalPoints: 0, currentStreak: 0, longestStreak: 0 };
+  }
+
+  async updateGamificationProfile(orgId: string, employeeId: string, updates: { totalPoints?: number; currentStreak?: number; longestStreak?: number; lastActivityDate?: string }) {
+    const key = `${orgId}:${employeeId}`;
+    const existing = this.gamificationProfilesStore.get(key) || { totalPoints: 0, currentStreak: 0, longestStreak: 0 };
+    this.gamificationProfilesStore.set(key, { ...existing, ...updates });
+  }
+
+  async getLeaderboard(orgId: string, limit = 20) {
+    const profiles = Array.from(this.gamificationProfilesStore.entries())
+      .filter(([key]) => key.startsWith(`${orgId}:`))
+      .map(([key, profile]) => ({
+        employeeId: key.split(":")[1],
+        totalPoints: profile.totalPoints,
+        currentStreak: profile.currentStreak,
+        badgeCount: Array.from(this.employeeBadgesStore.values()).filter(b => b.orgId === orgId && b.employeeId === key.split(":")[1]).length,
+      }))
+      .sort((a, b) => b.totalPoints - a.totalPoints)
+      .slice(0, limit);
+    return profiles;
+  }
+
+  // --- Insurance narrative operations ---
+  private insuranceNarrativesStore = new Map<string, InsuranceNarrative>();
+
+  async createInsuranceNarrative(orgId: string, narrative: InsertInsuranceNarrative): Promise<InsuranceNarrative> {
+    const id = randomUUID();
+    const n: InsuranceNarrative = { ...narrative, id, orgId, createdAt: new Date().toISOString() };
+    this.insuranceNarrativesStore.set(id, n);
+    return n;
+  }
+
+  async getInsuranceNarrative(orgId: string, id: string): Promise<InsuranceNarrative | undefined> {
+    const n = this.insuranceNarrativesStore.get(id);
+    return n?.orgId === orgId ? n : undefined;
+  }
+
+  async listInsuranceNarratives(orgId: string, filters?: { callId?: string; status?: string }): Promise<InsuranceNarrative[]> {
+    let results = Array.from(this.insuranceNarrativesStore.values()).filter(n => n.orgId === orgId);
+    if (filters?.callId) results = results.filter(n => n.callId === filters.callId);
+    if (filters?.status) results = results.filter(n => n.status === filters.status);
+    return results.sort((a, b) => (b.createdAt || "").localeCompare(a.createdAt || ""));
+  }
+
+  async updateInsuranceNarrative(orgId: string, id: string, updates: Partial<InsuranceNarrative>): Promise<InsuranceNarrative | undefined> {
+    const n = this.insuranceNarrativesStore.get(id);
+    if (!n || n.orgId !== orgId) return undefined;
+    const updated = { ...n, ...updates, updatedAt: new Date().toISOString() };
+    this.insuranceNarrativesStore.set(id, updated);
+    return updated;
+  }
+
+  async deleteInsuranceNarrative(orgId: string, id: string): Promise<void> {
+    const n = this.insuranceNarrativesStore.get(id);
+    if (n?.orgId === orgId) this.insuranceNarrativesStore.delete(id);
+  }
+
+  // --- Call revenue operations ---
+  private callRevenuesStore = new Map<string, CallRevenue>();
+
+  async createCallRevenue(orgId: string, revenue: InsertCallRevenue): Promise<CallRevenue> {
+    const id = randomUUID();
+    const r: CallRevenue = { ...revenue, id, orgId, createdAt: new Date().toISOString() };
+    this.callRevenuesStore.set(`${orgId}:${revenue.callId}`, r);
+    return r;
+  }
+
+  async getCallRevenue(orgId: string, callId: string): Promise<CallRevenue | undefined> {
+    return this.callRevenuesStore.get(`${orgId}:${callId}`);
+  }
+
+  async listCallRevenues(orgId: string, filters?: { conversionStatus?: string }): Promise<CallRevenue[]> {
+    let results = Array.from(this.callRevenuesStore.values()).filter(r => r.orgId === orgId);
+    if (filters?.conversionStatus) results = results.filter(r => r.conversionStatus === filters.conversionStatus);
+    return results.sort((a, b) => (b.createdAt || "").localeCompare(a.createdAt || ""));
+  }
+
+  async updateCallRevenue(orgId: string, callId: string, updates: Partial<CallRevenue>): Promise<CallRevenue | undefined> {
+    const key = `${orgId}:${callId}`;
+    const r = this.callRevenuesStore.get(key);
+    if (!r) return undefined;
+    const updated = { ...r, ...updates, updatedAt: new Date().toISOString() };
+    this.callRevenuesStore.set(key, updated);
+    return updated;
+  }
+
+  async getRevenueMetrics(orgId: string) {
+    const revenues = Array.from(this.callRevenuesStore.values()).filter(r => r.orgId === orgId);
+    const totalEstimated = revenues.reduce((sum, r) => sum + (r.estimatedRevenue || 0), 0);
+    const totalActual = revenues.reduce((sum, r) => sum + (r.actualRevenue || 0), 0);
+    const converted = revenues.filter(r => r.conversionStatus === "converted").length;
+    const total = revenues.filter(r => r.conversionStatus !== "unknown").length;
+    const conversionRate = total > 0 ? converted / total : 0;
+    const avgDealValue = converted > 0 ? totalActual / converted : 0;
+    return { totalEstimated, totalActual, conversionRate, avgDealValue };
+  }
+
+  // --- Calibration session operations ---
+  private calibrationSessionsStore = new Map<string, CalibrationSession>();
+  private calibrationEvaluationsStore = new Map<string, CalibrationEvaluation>();
+
+  async createCalibrationSession(orgId: string, session: InsertCalibrationSession): Promise<CalibrationSession> {
+    const id = randomUUID();
+    const s: CalibrationSession = { ...session, id, orgId, createdAt: new Date().toISOString() };
+    this.calibrationSessionsStore.set(id, s);
+    return s;
+  }
+
+  async getCalibrationSession(orgId: string, id: string): Promise<CalibrationSession | undefined> {
+    const s = this.calibrationSessionsStore.get(id);
+    return s?.orgId === orgId ? s : undefined;
+  }
+
+  async listCalibrationSessions(orgId: string, filters?: { status?: string }): Promise<CalibrationSession[]> {
+    let results = Array.from(this.calibrationSessionsStore.values()).filter(s => s.orgId === orgId);
+    if (filters?.status) results = results.filter(s => s.status === filters.status);
+    return results.sort((a, b) => (b.createdAt || "").localeCompare(a.createdAt || ""));
+  }
+
+  async updateCalibrationSession(orgId: string, id: string, updates: Partial<CalibrationSession>): Promise<CalibrationSession | undefined> {
+    const s = this.calibrationSessionsStore.get(id);
+    if (!s || s.orgId !== orgId) return undefined;
+    const updated = { ...s, ...updates };
+    this.calibrationSessionsStore.set(id, updated);
+    return updated;
+  }
+
+  async deleteCalibrationSession(orgId: string, id: string): Promise<void> {
+    const s = this.calibrationSessionsStore.get(id);
+    if (s?.orgId === orgId) {
+      this.calibrationSessionsStore.delete(id);
+      // Cascade delete evaluations
+      Array.from(this.calibrationEvaluationsStore.entries()).forEach(([eid, e]) => {
+        if (e.sessionId === id) this.calibrationEvaluationsStore.delete(eid);
+      });
+    }
+  }
+
+  async createCalibrationEvaluation(orgId: string, evaluation: InsertCalibrationEvaluation): Promise<CalibrationEvaluation> {
+    const id = randomUUID();
+    const e: CalibrationEvaluation = { ...evaluation, id, orgId, createdAt: new Date().toISOString() };
+    this.calibrationEvaluationsStore.set(id, e);
+    return e;
+  }
+
+  async getCalibrationEvaluations(orgId: string, sessionId: string): Promise<CalibrationEvaluation[]> {
+    return Array.from(this.calibrationEvaluationsStore.values())
+      .filter(e => e.orgId === orgId && e.sessionId === sessionId);
+  }
+
+  async updateCalibrationEvaluation(orgId: string, id: string, updates: Partial<CalibrationEvaluation>): Promise<CalibrationEvaluation | undefined> {
+    const e = this.calibrationEvaluationsStore.get(id);
+    if (!e || e.orgId !== orgId) return undefined;
+    const updated = { ...e, ...updates };
+    this.calibrationEvaluationsStore.set(id, updated);
+    return updated;
   }
 
   // --- Data retention (org-scoped) ---

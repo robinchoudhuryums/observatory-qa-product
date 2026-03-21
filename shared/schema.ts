@@ -936,3 +936,209 @@ export type AuthUser = {
   orgSlug: string;
   mfaEnabled?: boolean;
 };
+
+// --- USER FEEDBACK SCHEMAS ---
+export const FEEDBACK_TYPES = ["feature_rating", "bug_report", "suggestion", "nps", "general"] as const;
+export type FeedbackType = (typeof FEEDBACK_TYPES)[number];
+
+export const FEEDBACK_CONTEXTS = [
+  "dashboard", "transcripts", "upload", "coaching", "clinical", "search",
+  "reports", "insights", "ab_testing", "spend_tracking", "ehr", "general",
+] as const;
+export type FeedbackContext = (typeof FEEDBACK_CONTEXTS)[number];
+
+export const insertFeedbackSchema = z.object({
+  orgId: z.string(),
+  userId: z.string(),
+  type: z.enum(FEEDBACK_TYPES),
+  context: z.enum(FEEDBACK_CONTEXTS).optional(),
+  rating: z.number().min(1).max(10).optional(), // 1-10 for feature ratings, 0-10 for NPS
+  comment: z.string().max(2000).optional(),
+  metadata: z.record(z.unknown()).optional(), // page, feature name, browser, etc.
+});
+
+export const feedbackSchema = insertFeedbackSchema.extend({
+  id: z.string(),
+  status: z.enum(["new", "reviewed", "actioned", "dismissed"]).default("new"),
+  adminResponse: z.string().optional(),
+  createdAt: z.string().optional(),
+});
+
+export type InsertFeedback = z.infer<typeof insertFeedbackSchema>;
+export type Feedback = z.infer<typeof feedbackSchema>;
+
+// --- GAMIFICATION SCHEMAS ---
+export const BADGE_DEFINITIONS = [
+  // Performance badges
+  { id: "first_call", name: "First Call", description: "Processed your first call", icon: "phone", category: "milestone" },
+  { id: "ten_calls", name: "10 Calls", description: "Processed 10 calls", icon: "phone-forwarded", category: "milestone" },
+  { id: "hundred_calls", name: "Century", description: "Processed 100 calls", icon: "trophy", category: "milestone" },
+  { id: "perfect_score", name: "Perfect 10", description: "Achieved a perfect 10.0 score", icon: "star", category: "performance" },
+  { id: "high_performer", name: "High Performer", description: "5+ calls with score above 9.0", icon: "award", category: "performance" },
+  { id: "consistency_king", name: "Consistency King", description: "10 consecutive calls above 8.0", icon: "target", category: "performance" },
+  // Improvement badges
+  { id: "most_improved", name: "Most Improved", description: "Improved avg score by 2+ points in a month", icon: "trending-up", category: "improvement" },
+  { id: "comeback_kid", name: "Comeback Kid", description: "Recovered from below 5.0 to above 8.0", icon: "refresh-cw", category: "improvement" },
+  // Engagement badges
+  { id: "self_reviewer", name: "Self Reviewer", description: "Completed 5 self-reviews", icon: "clipboard-check", category: "engagement" },
+  { id: "coaching_champion", name: "Coaching Champion", description: "Completed 10 coaching sessions", icon: "book-open", category: "engagement" },
+  { id: "streak_7", name: "Weekly Warrior", description: "7-day activity streak", icon: "flame", category: "streak" },
+  { id: "streak_30", name: "Monthly Maven", description: "30-day activity streak", icon: "zap", category: "streak" },
+] as const;
+
+export type BadgeDefinition = typeof BADGE_DEFINITIONS[number];
+export type BadgeId = typeof BADGE_DEFINITIONS[number]["id"];
+
+export const employeeBadgeSchema = z.object({
+  id: z.string(),
+  orgId: z.string(),
+  employeeId: z.string(),
+  badgeId: z.string(),
+  awardedAt: z.string(),
+  awardedFor: z.string().optional(), // specific call/event that triggered
+});
+
+export type EmployeeBadge = z.infer<typeof employeeBadgeSchema>;
+
+export const gamificationProfileSchema = z.object({
+  employeeId: z.string(),
+  totalPoints: z.number(),
+  currentStreak: z.number(),
+  longestStreak: z.number(),
+  badges: z.array(employeeBadgeSchema),
+  level: z.number(), // computed: points / 100
+  rank: z.number().optional(), // position in org leaderboard
+});
+
+export type GamificationProfile = z.infer<typeof gamificationProfileSchema>;
+
+export const leaderboardEntrySchema = z.object({
+  employeeId: z.string(),
+  employeeName: z.string(),
+  totalPoints: z.number(),
+  currentStreak: z.number(),
+  badgeCount: z.number(),
+  avgPerformanceScore: z.number(),
+  totalCalls: z.number(),
+  rank: z.number(),
+});
+
+export type LeaderboardEntry = z.infer<typeof leaderboardEntrySchema>;
+
+// --- INSURANCE NARRATIVE SCHEMAS ---
+export const INSURANCE_LETTER_TYPES = [
+  { value: "prior_auth", label: "Prior Authorization Request", description: "Request pre-approval for planned treatment" },
+  { value: "appeal", label: "Insurance Appeal", description: "Appeal a denied claim with clinical justification" },
+  { value: "predetermination", label: "Predetermination of Benefits", description: "Estimate insurance coverage before treatment" },
+  { value: "medical_necessity", label: "Medical Necessity Letter", description: "Justify clinical need for specific treatment" },
+  { value: "peer_to_peer", label: "Peer-to-Peer Review Summary", description: "Summary for peer-to-peer review with insurer" },
+] as const;
+
+export type InsuranceLetterType = typeof INSURANCE_LETTER_TYPES[number]["value"];
+
+export const insertInsuranceNarrativeSchema = z.object({
+  orgId: z.string(),
+  callId: z.string().optional(), // linked clinical encounter
+  patientName: z.string(),
+  patientDob: z.string().optional(),
+  memberId: z.string().optional(),
+  insurerName: z.string(),
+  insurerAddress: z.string().optional(),
+  letterType: z.string(),
+  diagnosisCodes: z.array(z.object({ code: z.string(), description: z.string() })).optional(),
+  procedureCodes: z.array(z.object({ code: z.string(), description: z.string() })).optional(),
+  clinicalJustification: z.string().optional(), // pulled from clinical note or manual
+  priorDenialReference: z.string().optional(), // for appeals
+  generatedNarrative: z.string().optional(), // AI-generated letter
+  status: z.enum(["draft", "finalized", "submitted"]).default("draft"),
+  createdBy: z.string(),
+});
+
+export const insuranceNarrativeSchema = insertInsuranceNarrativeSchema.extend({
+  id: z.string(),
+  createdAt: z.string().optional(),
+  updatedAt: z.string().optional(),
+});
+
+export type InsertInsuranceNarrative = z.infer<typeof insertInsuranceNarrativeSchema>;
+export type InsuranceNarrative = z.infer<typeof insuranceNarrativeSchema>;
+
+// --- REVENUE TRACKING SCHEMAS ---
+export const insertCallRevenueSchema = z.object({
+  orgId: z.string(),
+  callId: z.string(),
+  estimatedRevenue: z.number().optional(), // dollar value estimated from call
+  actualRevenue: z.number().optional(), // confirmed revenue (entered manually or from EHR)
+  revenueType: z.enum(["production", "collection", "scheduled", "lost"]).optional(),
+  treatmentValue: z.number().optional(), // total treatment plan value discussed
+  scheduledProcedures: z.array(z.object({
+    code: z.string(),
+    description: z.string(),
+    estimatedValue: z.number(),
+  })).optional(),
+  conversionStatus: z.enum(["converted", "pending", "lost", "unknown"]).default("unknown"),
+  notes: z.string().optional(),
+  updatedBy: z.string().optional(),
+});
+
+export const callRevenueSchema = insertCallRevenueSchema.extend({
+  id: z.string(),
+  createdAt: z.string().optional(),
+  updatedAt: z.string().optional(),
+});
+
+export type InsertCallRevenue = z.infer<typeof insertCallRevenueSchema>;
+export type CallRevenue = z.infer<typeof callRevenueSchema>;
+
+// --- CALIBRATION SESSION SCHEMAS ---
+export const CALIBRATION_STATUSES = ["scheduled", "in_progress", "completed"] as const;
+
+export const insertCalibrationSessionSchema = z.object({
+  orgId: z.string(),
+  title: z.string(),
+  callId: z.string(), // the call being evaluated
+  facilitatorId: z.string(), // user who created/leads the session
+  evaluatorIds: z.array(z.string()), // users participating
+  scheduledAt: z.string().optional(),
+  status: z.enum(CALIBRATION_STATUSES).default("scheduled"),
+  targetScore: z.number().min(0).max(10).optional(), // "correct" score after discussion
+  consensusNotes: z.string().optional(),
+});
+
+export const calibrationSessionSchema = insertCalibrationSessionSchema.extend({
+  id: z.string(),
+  createdAt: z.string().optional(),
+  completedAt: z.string().optional(),
+});
+
+export type InsertCalibrationSession = z.infer<typeof insertCalibrationSessionSchema>;
+export type CalibrationSession = z.infer<typeof calibrationSessionSchema>;
+
+export const insertCalibrationEvaluationSchema = z.object({
+  orgId: z.string(),
+  sessionId: z.string(),
+  evaluatorId: z.string(),
+  performanceScore: z.number().min(0).max(10),
+  subScores: z.object({
+    compliance: z.number().min(0).max(10).optional(),
+    customerExperience: z.number().min(0).max(10).optional(),
+    communication: z.number().min(0).max(10).optional(),
+    resolution: z.number().min(0).max(10).optional(),
+  }).optional(),
+  notes: z.string().optional(),
+});
+
+export const calibrationEvaluationSchema = insertCalibrationEvaluationSchema.extend({
+  id: z.string(),
+  createdAt: z.string().optional(),
+});
+
+export type InsertCalibrationEvaluation = z.infer<typeof insertCalibrationEvaluationSchema>;
+export type CalibrationEvaluation = z.infer<typeof calibrationEvaluationSchema>;
+
+/** Calibration session with evaluations attached */
+export type CalibrationSessionWithEvaluations = CalibrationSession & {
+  evaluations: CalibrationEvaluation[];
+  scoreVariance?: number; // standard deviation of evaluator scores
+  call?: Call;
+};

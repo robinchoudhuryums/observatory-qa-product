@@ -26,6 +26,11 @@ import { registerEhrRoutes } from "./ehr";
 import { registerLiveSessionRoutes } from "./live-session";
 import { registerSuperAdminRoutes } from "./super-admin";
 import { registerCallInsightRoutes } from "./call-insights";
+import { registerFeedbackRoutes } from "./feedback";
+import { registerGamificationRoutes } from "./gamification";
+import { registerInsuranceNarrativeRoutes } from "./insurance-narratives";
+import { registerRevenueRoutes } from "./revenue";
+import { registerCalibrationRoutes } from "./calibration";
 
 const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -77,6 +82,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
   registerLiveSessionRoutes(app);
   registerSuperAdminRoutes(app);
   registerCallInsightRoutes(app);
+  registerFeedbackRoutes(app);
+  registerGamificationRoutes(app);
+  registerInsuranceNarrativeRoutes(app);
+  registerRevenueRoutes(app);
+  registerCalibrationRoutes(app);
 
   const httpServer = createServer(app);
   return httpServer;

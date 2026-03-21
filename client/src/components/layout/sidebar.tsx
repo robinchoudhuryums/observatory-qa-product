@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from "react";
 import { Link, useLocation } from "wouter";
-import { BarChart3, Upload, FileText, Heart, Users, UserPlus, Search, LogOut, User, TrendingUp, Sun, Moon, Shield, Building2, SlidersHorizontal, ClipboardCheck, Palette, ScrollText, Menu, X, FlaskConical, DollarSign, Stethoscope, BookTemplate, Radio } from "lucide-react";
+import { BarChart3, Upload, FileText, Heart, Users, UserPlus, Search, LogOut, User, TrendingUp, Sun, Moon, Shield, Building2, SlidersHorizontal, ClipboardCheck, Palette, ScrollText, Menu, X, FlaskConical, DollarSign, Stethoscope, BookTemplate, Radio, Trophy, Scale, FileCheck, MessageSquare } from "lucide-react";
 import { ObservatoryLogo } from "@/components/observatory-logo";
 import { cn, safeStorage } from "@/lib/utils";
 import { useQuery } from "@tanstack/react-query";
@@ -241,6 +241,13 @@ export default function Sidebar() {
           );
         })}
 
+        {/* Performance & Engagement */}
+        <div className="pt-4 pb-1.5 px-3">
+          <p className="text-[10px] uppercase font-semibold text-muted-foreground/70 tracking-widest">Engagement</p>
+        </div>
+        <AdminLink href="/gamification" icon={Trophy} label="Leaderboard" testId="nav-link-gamification" />
+        <AdminLink href="/revenue" icon={DollarSign} label="Revenue Tracking" testId="nav-link-revenue" />
+
         {/* Clinical Documentation links */}
         <div className="pt-4 pb-1.5 px-3">
           <p className="text-[10px] uppercase font-semibold text-muted-foreground/70 tracking-widest">Clinical</p>
@@ -272,6 +279,9 @@ export default function Sidebar() {
             <AdminLink href="/admin/ab-testing" icon={FlaskConical} label="A/B Testing" testId="nav-link-ab-testing" />
             <AdminLink href="/admin/spend-tracking" icon={DollarSign} label="Spend Tracking" testId="nav-link-spend-tracking" />
             <AdminLink href="/admin/audit-logs" icon={ScrollText} label="Audit Logs" testId="nav-link-audit-logs" />
+            <AdminLink href="/admin/feedback" icon={MessageSquare} label="User Feedback" testId="nav-link-feedback" />
+            <AdminLink href="/calibration" icon={Scale} label="Calibration" testId="nav-link-calibration" />
+            <AdminLink href="/insurance-narratives" icon={FileCheck} label="Insurance Letters" testId="nav-link-insurance" />
           </>
         )}
       </nav>
