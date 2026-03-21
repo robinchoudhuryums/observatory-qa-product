@@ -576,6 +576,72 @@ export const calibrationEvaluations = pgTable("calibration_evaluations", {
   uniqueIndex("calibration_evals_unique_idx").on(t.sessionId, t.evaluatorId),
 ]);
 
+// --- LMS: LEARNING MODULES ---
+export const learningModules = pgTable("learning_modules", {
+  id: text("id").primaryKey(),
+  orgId: text("org_id").notNull().references(() => organizations.id),
+  title: varchar("title", { length: 500 }).notNull(),
+  description: text("description"),
+  contentType: varchar("content_type", { length: 30 }).notNull(),
+  category: varchar("category", { length: 50 }),
+  content: text("content"), // markdown/HTML
+  quizQuestions: jsonb("quiz_questions"),
+  estimatedMinutes: integer("estimated_minutes"),
+  difficulty: varchar("difficulty", { length: 20 }),
+  tags: jsonb("tags").$type<string[]>(),
+  sourceDocumentId: text("source_document_id"),
+  isPublished: boolean("is_published").notNull().default(false),
+  isPlatformContent: boolean("is_platform_content").notNull().default(false),
+  createdBy: varchar("created_by", { length: 255 }).notNull(),
+  sortOrder: integer("sort_order"),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+}, (t) => [
+  index("learning_modules_org_idx").on(t.orgId),
+  index("learning_modules_category_idx").on(t.orgId, t.category),
+  index("learning_modules_published_idx").on(t.orgId, t.isPublished),
+]);
+
+// --- LMS: LEARNING PATHS ---
+export const learningPaths = pgTable("learning_paths", {
+  id: text("id").primaryKey(),
+  orgId: text("org_id").notNull().references(() => organizations.id),
+  title: varchar("title", { length: 500 }).notNull(),
+  description: text("description"),
+  category: varchar("category", { length: 50 }),
+  moduleIds: jsonb("module_ids").$type<string[]>().notNull(),
+  isRequired: boolean("is_required").notNull().default(false),
+  assignedTo: jsonb("assigned_to").$type<string[]>(),
+  estimatedMinutes: integer("estimated_minutes"),
+  createdBy: varchar("created_by", { length: 255 }).notNull(),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+}, (t) => [
+  index("learning_paths_org_idx").on(t.orgId),
+  index("learning_paths_category_idx").on(t.orgId, t.category),
+]);
+
+// --- LMS: EMPLOYEE LEARNING PROGRESS ---
+export const learningProgress = pgTable("learning_progress", {
+  id: text("id").primaryKey(),
+  orgId: text("org_id").notNull().references(() => organizations.id),
+  employeeId: text("employee_id").notNull().references(() => employees.id),
+  moduleId: text("module_id").notNull(),
+  pathId: text("path_id"),
+  status: varchar("status", { length: 20 }).notNull().default("not_started"),
+  quizScore: integer("quiz_score"),
+  quizAttempts: integer("quiz_attempts"),
+  timeSpentMinutes: integer("time_spent_minutes"),
+  completedAt: timestamp("completed_at"),
+  notes: text("notes"),
+  startedAt: timestamp("started_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+}, (t) => [
+  index("learning_progress_org_idx").on(t.orgId),
+  index("learning_progress_employee_idx").on(t.orgId, t.employeeId),
+  uniqueIndex("learning_progress_unique_idx").on(t.orgId, t.employeeId, t.moduleId),
+]);
+
 // --- AUDIT LOGS (append-only, tamper-evident, HIPAA compliance) ---
 export const auditLogs = pgTable("audit_logs", {
   id: text("id").primaryKey(),

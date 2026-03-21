@@ -48,6 +48,12 @@ import {
   type InsertCalibrationSession,
   type CalibrationEvaluation,
   type InsertCalibrationEvaluation,
+  type LearningModule,
+  type InsertLearningModule,
+  type LearningPath,
+  type InsertLearningPath,
+  type LearningProgress,
+  type InsertLearningProgress,
 } from "@shared/schema";
 import { randomUUID, randomBytes } from "crypto";
 import { type IStorage, applyCallFilters } from "./types";
@@ -898,6 +904,104 @@ export class MemStorage implements IStorage {
     const updated = { ...e, ...updates };
     this.calibrationEvaluationsStore.set(id, updated);
     return updated;
+  }
+
+  // --- LMS: Learning Modules ---
+  private learningModulesStore = new Map<string, LearningModule>();
+  private learningPathsStore = new Map<string, LearningPath>();
+  private learningProgressStore = new Map<string, LearningProgress>();
+
+  async createLearningModule(orgId: string, module: InsertLearningModule): Promise<LearningModule> {
+    const id = randomUUID();
+    const m: LearningModule = { ...module, id, orgId, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() };
+    this.learningModulesStore.set(id, m);
+    return m;
+  }
+  async getLearningModule(orgId: string, id: string): Promise<LearningModule | undefined> {
+    const m = this.learningModulesStore.get(id);
+    return m?.orgId === orgId ? m : undefined;
+  }
+  async listLearningModules(orgId: string, filters?: { category?: string; contentType?: string; isPublished?: boolean }): Promise<LearningModule[]> {
+    let results = Array.from(this.learningModulesStore.values()).filter(m => m.orgId === orgId);
+    if (filters?.category) results = results.filter(m => m.category === filters.category);
+    if (filters?.contentType) results = results.filter(m => m.contentType === filters.contentType);
+    if (filters?.isPublished !== undefined) results = results.filter(m => m.isPublished === filters.isPublished);
+    return results.sort((a, b) => (a.sortOrder || 0) - (b.sortOrder || 0));
+  }
+  async updateLearningModule(orgId: string, id: string, updates: Partial<LearningModule>): Promise<LearningModule | undefined> {
+    const m = this.learningModulesStore.get(id);
+    if (!m || m.orgId !== orgId) return undefined;
+    const updated = { ...m, ...updates, updatedAt: new Date().toISOString() };
+    this.learningModulesStore.set(id, updated);
+    return updated;
+  }
+  async deleteLearningModule(orgId: string, id: string): Promise<void> {
+    const m = this.learningModulesStore.get(id);
+    if (m?.orgId === orgId) this.learningModulesStore.delete(id);
+  }
+
+  async createLearningPath(orgId: string, path: InsertLearningPath): Promise<LearningPath> {
+    const id = randomUUID();
+    const p: LearningPath = { ...path, id, orgId, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() };
+    this.learningPathsStore.set(id, p);
+    return p;
+  }
+  async getLearningPath(orgId: string, id: string): Promise<LearningPath | undefined> {
+    const p = this.learningPathsStore.get(id);
+    return p?.orgId === orgId ? p : undefined;
+  }
+  async listLearningPaths(orgId: string): Promise<LearningPath[]> {
+    return Array.from(this.learningPathsStore.values()).filter(p => p.orgId === orgId);
+  }
+  async updateLearningPath(orgId: string, id: string, updates: Partial<LearningPath>): Promise<LearningPath | undefined> {
+    const p = this.learningPathsStore.get(id);
+    if (!p || p.orgId !== orgId) return undefined;
+    const updated = { ...p, ...updates, updatedAt: new Date().toISOString() };
+    this.learningPathsStore.set(id, updated);
+    return updated;
+  }
+  async deleteLearningPath(orgId: string, id: string): Promise<void> {
+    const p = this.learningPathsStore.get(id);
+    if (p?.orgId === orgId) this.learningPathsStore.delete(id);
+  }
+
+  async upsertLearningProgress(orgId: string, progress: InsertLearningProgress): Promise<LearningProgress> {
+    const key = `${orgId}:${progress.employeeId}:${progress.moduleId}`;
+    const existing = Array.from(this.learningProgressStore.values()).find(
+      p => p.orgId === orgId && p.employeeId === progress.employeeId && p.moduleId === progress.moduleId
+    );
+    if (existing) {
+      const updated: LearningProgress = { ...existing, ...progress, updatedAt: new Date().toISOString() };
+      this.learningProgressStore.set(existing.id, updated);
+      return updated;
+    }
+    const id = randomUUID();
+    const p: LearningProgress = { ...progress, id, orgId, startedAt: new Date().toISOString(), updatedAt: new Date().toISOString() };
+    this.learningProgressStore.set(id, p);
+    return p;
+  }
+  async getLearningProgress(orgId: string, employeeId: string, moduleId: string): Promise<LearningProgress | undefined> {
+    return Array.from(this.learningProgressStore.values()).find(
+      p => p.orgId === orgId && p.employeeId === employeeId && p.moduleId === moduleId
+    );
+  }
+  async getEmployeeLearningProgress(orgId: string, employeeId: string): Promise<LearningProgress[]> {
+    return Array.from(this.learningProgressStore.values()).filter(
+      p => p.orgId === orgId && p.employeeId === employeeId
+    );
+  }
+  async getModuleCompletionStats(orgId: string, moduleId: string): Promise<{ total: number; completed: number; inProgress: number; avgScore: number }> {
+    const progress = Array.from(this.learningProgressStore.values()).filter(
+      p => p.orgId === orgId && p.moduleId === moduleId
+    );
+    const completed = progress.filter(p => p.status === "completed");
+    const scores = completed.filter(p => p.quizScore !== undefined && p.quizScore !== null).map(p => p.quizScore!);
+    return {
+      total: progress.length,
+      completed: completed.length,
+      inProgress: progress.filter(p => p.status === "in_progress").length,
+      avgScore: scores.length > 0 ? scores.reduce((a, b) => a + b, 0) / scores.length : 0,
+    };
   }
 
   // --- Data retention (org-scoped) ---

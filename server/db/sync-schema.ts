@@ -616,6 +616,72 @@ export async function syncSchema(db: Database): Promise<void> {
     `);
     await db.execute(sql`CREATE INDEX IF NOT EXISTS calibration_evals_session_idx ON calibration_evaluations (session_id)`);
 
+    // --- LMS: Learning Modules ---
+    await db.execute(sql`
+      CREATE TABLE IF NOT EXISTS learning_modules (
+        id TEXT PRIMARY KEY,
+        org_id TEXT NOT NULL REFERENCES organizations(id),
+        title VARCHAR(500) NOT NULL,
+        description TEXT,
+        content_type VARCHAR(30) NOT NULL,
+        category VARCHAR(50),
+        content TEXT,
+        quiz_questions JSONB,
+        estimated_minutes INTEGER,
+        difficulty VARCHAR(20),
+        tags JSONB,
+        source_document_id TEXT,
+        is_published BOOLEAN NOT NULL DEFAULT false,
+        is_platform_content BOOLEAN NOT NULL DEFAULT false,
+        created_by VARCHAR(255) NOT NULL,
+        sort_order INTEGER,
+        created_at TIMESTAMP DEFAULT NOW(),
+        updated_at TIMESTAMP DEFAULT NOW()
+      )
+    `);
+    await db.execute(sql`CREATE INDEX IF NOT EXISTS learning_modules_org_idx ON learning_modules (org_id)`);
+    await db.execute(sql`CREATE INDEX IF NOT EXISTS learning_modules_category_idx ON learning_modules (org_id, category)`);
+
+    // --- LMS: Learning Paths ---
+    await db.execute(sql`
+      CREATE TABLE IF NOT EXISTS learning_paths (
+        id TEXT PRIMARY KEY,
+        org_id TEXT NOT NULL REFERENCES organizations(id),
+        title VARCHAR(500) NOT NULL,
+        description TEXT,
+        category VARCHAR(50),
+        module_ids JSONB NOT NULL,
+        is_required BOOLEAN NOT NULL DEFAULT false,
+        assigned_to JSONB,
+        estimated_minutes INTEGER,
+        created_by VARCHAR(255) NOT NULL,
+        created_at TIMESTAMP DEFAULT NOW(),
+        updated_at TIMESTAMP DEFAULT NOW()
+      )
+    `);
+    await db.execute(sql`CREATE INDEX IF NOT EXISTS learning_paths_org_idx ON learning_paths (org_id)`);
+
+    // --- LMS: Learning Progress ---
+    await db.execute(sql`
+      CREATE TABLE IF NOT EXISTS learning_progress (
+        id TEXT PRIMARY KEY,
+        org_id TEXT NOT NULL REFERENCES organizations(id),
+        employee_id TEXT NOT NULL REFERENCES employees(id),
+        module_id TEXT NOT NULL,
+        path_id TEXT,
+        status VARCHAR(20) NOT NULL DEFAULT 'not_started',
+        quiz_score INTEGER,
+        quiz_attempts INTEGER,
+        time_spent_minutes INTEGER,
+        completed_at TIMESTAMP,
+        notes TEXT,
+        started_at TIMESTAMP DEFAULT NOW(),
+        updated_at TIMESTAMP DEFAULT NOW()
+      )
+    `);
+    await db.execute(sql`CREATE INDEX IF NOT EXISTS learning_progress_org_idx ON learning_progress (org_id)`);
+    await db.execute(sql`CREATE INDEX IF NOT EXISTS learning_progress_employee_idx ON learning_progress (org_id, employee_id)`);
+
     // --- Audit Logs (tamper-evident) ---
     await db.execute(sql`
       CREATE TABLE IF NOT EXISTS audit_logs (

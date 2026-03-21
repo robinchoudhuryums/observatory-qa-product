@@ -41,6 +41,9 @@ import type {
   CallRevenue, InsertCallRevenue,
   CalibrationSession, InsertCalibrationSession,
   CalibrationEvaluation, InsertCalibrationEvaluation,
+  LearningModule, InsertLearningModule,
+  LearningPath, InsertLearningPath,
+  LearningProgress, InsertLearningProgress,
 } from "@shared/schema";
 import * as tables from "./schema";
 import { normalizeAnalysis } from "../storage";
@@ -2036,6 +2039,197 @@ export class PostgresStorage implements IStorage {
       targetScore: r.targetScore ?? undefined,
       consensusNotes: r.consensusNotes || undefined,
       createdAt: toISOString(r.createdAt), completedAt: toISOString(r.completedAt),
+    };
+  }
+
+  // --- LMS: Learning Modules ---
+  async createLearningModule(orgId: string, module: InsertLearningModule): Promise<LearningModule> {
+    const id = randomUUID();
+    const [row] = await this.db.insert(tables.learningModules).values({
+      id, orgId,
+      title: module.title, description: module.description || null,
+      contentType: module.contentType, category: module.category || null,
+      content: module.content || null, quizQuestions: module.quizQuestions || null,
+      estimatedMinutes: module.estimatedMinutes || null, difficulty: module.difficulty || null,
+      tags: module.tags || null, sourceDocumentId: module.sourceDocumentId || null,
+      isPublished: module.isPublished ?? false, isPlatformContent: module.isPlatformContent ?? false,
+      createdBy: module.createdBy, sortOrder: module.sortOrder || null,
+    }).returning();
+    return this.mapLearningModule(row);
+  }
+
+  async getLearningModule(orgId: string, id: string): Promise<LearningModule | undefined> {
+    const rows = await this.db.select().from(tables.learningModules)
+      .where(and(eq(tables.learningModules.orgId, orgId), eq(tables.learningModules.id, id)));
+    return rows[0] ? this.mapLearningModule(rows[0]) : undefined;
+  }
+
+  async listLearningModules(orgId: string, filters?: { category?: string; contentType?: string; isPublished?: boolean }): Promise<LearningModule[]> {
+    const conditions = [eq(tables.learningModules.orgId, orgId)];
+    if (filters?.category) conditions.push(eq(tables.learningModules.category, filters.category));
+    if (filters?.contentType) conditions.push(eq(tables.learningModules.contentType, filters.contentType));
+    if (filters?.isPublished !== undefined) conditions.push(eq(tables.learningModules.isPublished, filters.isPublished));
+    const rows = await this.db.select().from(tables.learningModules).where(and(...conditions));
+    return rows.map(r => this.mapLearningModule(r));
+  }
+
+  async updateLearningModule(orgId: string, id: string, updates: Partial<LearningModule>): Promise<LearningModule | undefined> {
+    const setClause: Record<string, unknown> = { updatedAt: new Date() };
+    if (updates.title !== undefined) setClause.title = updates.title;
+    if (updates.description !== undefined) setClause.description = updates.description;
+    if (updates.content !== undefined) setClause.content = updates.content;
+    if (updates.category !== undefined) setClause.category = updates.category;
+    if (updates.quizQuestions !== undefined) setClause.quizQuestions = updates.quizQuestions;
+    if (updates.estimatedMinutes !== undefined) setClause.estimatedMinutes = updates.estimatedMinutes;
+    if (updates.difficulty !== undefined) setClause.difficulty = updates.difficulty;
+    if (updates.tags !== undefined) setClause.tags = updates.tags;
+    if (updates.isPublished !== undefined) setClause.isPublished = updates.isPublished;
+    if (updates.sortOrder !== undefined) setClause.sortOrder = updates.sortOrder;
+    const rows = await this.db.update(tables.learningModules).set(setClause)
+      .where(and(eq(tables.learningModules.orgId, orgId), eq(tables.learningModules.id, id))).returning();
+    return rows[0] ? this.mapLearningModule(rows[0]) : undefined;
+  }
+
+  async deleteLearningModule(orgId: string, id: string): Promise<void> {
+    await this.db.delete(tables.learningModules)
+      .where(and(eq(tables.learningModules.orgId, orgId), eq(tables.learningModules.id, id)));
+  }
+
+  // --- LMS: Learning Paths ---
+  async createLearningPath(orgId: string, path: InsertLearningPath): Promise<LearningPath> {
+    const id = randomUUID();
+    const [row] = await this.db.insert(tables.learningPaths).values({
+      id, orgId,
+      title: path.title, description: path.description || null,
+      category: path.category || null, moduleIds: path.moduleIds,
+      isRequired: path.isRequired ?? false, assignedTo: path.assignedTo || null,
+      estimatedMinutes: path.estimatedMinutes || null, createdBy: path.createdBy,
+    }).returning();
+    return this.mapLearningPath(row);
+  }
+
+  async getLearningPath(orgId: string, id: string): Promise<LearningPath | undefined> {
+    const rows = await this.db.select().from(tables.learningPaths)
+      .where(and(eq(tables.learningPaths.orgId, orgId), eq(tables.learningPaths.id, id)));
+    return rows[0] ? this.mapLearningPath(rows[0]) : undefined;
+  }
+
+  async listLearningPaths(orgId: string): Promise<LearningPath[]> {
+    const rows = await this.db.select().from(tables.learningPaths)
+      .where(eq(tables.learningPaths.orgId, orgId));
+    return rows.map(r => this.mapLearningPath(r));
+  }
+
+  async updateLearningPath(orgId: string, id: string, updates: Partial<LearningPath>): Promise<LearningPath | undefined> {
+    const setClause: Record<string, unknown> = { updatedAt: new Date() };
+    if (updates.title !== undefined) setClause.title = updates.title;
+    if (updates.description !== undefined) setClause.description = updates.description;
+    if (updates.moduleIds !== undefined) setClause.moduleIds = updates.moduleIds;
+    if (updates.isRequired !== undefined) setClause.isRequired = updates.isRequired;
+    if (updates.assignedTo !== undefined) setClause.assignedTo = updates.assignedTo;
+    if (updates.estimatedMinutes !== undefined) setClause.estimatedMinutes = updates.estimatedMinutes;
+    const rows = await this.db.update(tables.learningPaths).set(setClause)
+      .where(and(eq(tables.learningPaths.orgId, orgId), eq(tables.learningPaths.id, id))).returning();
+    return rows[0] ? this.mapLearningPath(rows[0]) : undefined;
+  }
+
+  async deleteLearningPath(orgId: string, id: string): Promise<void> {
+    await this.db.delete(tables.learningPaths)
+      .where(and(eq(tables.learningPaths.orgId, orgId), eq(tables.learningPaths.id, id)));
+  }
+
+  // --- LMS: Learning Progress ---
+  async upsertLearningProgress(orgId: string, progress: InsertLearningProgress): Promise<LearningProgress> {
+    // Check if progress exists
+    const existing = await this.db.select().from(tables.learningProgress)
+      .where(and(
+        eq(tables.learningProgress.orgId, orgId),
+        eq(tables.learningProgress.employeeId, progress.employeeId),
+        eq(tables.learningProgress.moduleId, progress.moduleId),
+      ));
+    if (existing[0]) {
+      const setClause: Record<string, unknown> = { updatedAt: new Date() };
+      if (progress.status) setClause.status = progress.status;
+      if (progress.quizScore !== undefined) setClause.quizScore = progress.quizScore;
+      if (progress.quizAttempts !== undefined) setClause.quizAttempts = progress.quizAttempts;
+      if (progress.timeSpentMinutes !== undefined) setClause.timeSpentMinutes = progress.timeSpentMinutes;
+      if (progress.completedAt) setClause.completedAt = new Date(progress.completedAt);
+      if (progress.notes !== undefined) setClause.notes = progress.notes;
+      const [row] = await this.db.update(tables.learningProgress).set(setClause)
+        .where(eq(tables.learningProgress.id, existing[0].id)).returning();
+      return this.mapLearningProgress(row);
+    }
+    const id = randomUUID();
+    const [row] = await this.db.insert(tables.learningProgress).values({
+      id, orgId,
+      employeeId: progress.employeeId, moduleId: progress.moduleId,
+      pathId: progress.pathId || null, status: progress.status || "not_started",
+      quizScore: progress.quizScore || null, quizAttempts: progress.quizAttempts || null,
+      timeSpentMinutes: progress.timeSpentMinutes || null, notes: progress.notes || null,
+    }).returning();
+    return this.mapLearningProgress(row);
+  }
+
+  async getLearningProgress(orgId: string, employeeId: string, moduleId: string): Promise<LearningProgress | undefined> {
+    const rows = await this.db.select().from(tables.learningProgress)
+      .where(and(
+        eq(tables.learningProgress.orgId, orgId),
+        eq(tables.learningProgress.employeeId, employeeId),
+        eq(tables.learningProgress.moduleId, moduleId),
+      ));
+    return rows[0] ? this.mapLearningProgress(rows[0]) : undefined;
+  }
+
+  async getEmployeeLearningProgress(orgId: string, employeeId: string): Promise<LearningProgress[]> {
+    const rows = await this.db.select().from(tables.learningProgress)
+      .where(and(eq(tables.learningProgress.orgId, orgId), eq(tables.learningProgress.employeeId, employeeId)));
+    return rows.map(r => this.mapLearningProgress(r));
+  }
+
+  async getModuleCompletionStats(orgId: string, moduleId: string): Promise<{ total: number; completed: number; inProgress: number; avgScore: number }> {
+    const rows = await this.db.select().from(tables.learningProgress)
+      .where(and(eq(tables.learningProgress.orgId, orgId), eq(tables.learningProgress.moduleId, moduleId)));
+    const completed = rows.filter(r => r.status === "completed");
+    const scores = completed.filter(r => r.quizScore != null).map(r => r.quizScore!);
+    return {
+      total: rows.length,
+      completed: completed.length,
+      inProgress: rows.filter(r => r.status === "in_progress").length,
+      avgScore: scores.length > 0 ? scores.reduce((a, b) => a + b, 0) / scores.length : 0,
+    };
+  }
+
+  private mapLearningModule(r: any): LearningModule {
+    return {
+      id: r.id, orgId: r.orgId, title: r.title, description: r.description || undefined,
+      contentType: r.contentType, category: r.category || undefined,
+      content: r.content || undefined, quizQuestions: r.quizQuestions as LearningModule["quizQuestions"],
+      estimatedMinutes: r.estimatedMinutes || undefined, difficulty: r.difficulty || undefined,
+      tags: r.tags as string[] || undefined, sourceDocumentId: r.sourceDocumentId || undefined,
+      isPublished: r.isPublished, isPlatformContent: r.isPlatformContent,
+      createdBy: r.createdBy, sortOrder: r.sortOrder || undefined,
+      createdAt: toISOString(r.createdAt), updatedAt: toISOString(r.updatedAt),
+    };
+  }
+
+  private mapLearningPath(r: any): LearningPath {
+    return {
+      id: r.id, orgId: r.orgId, title: r.title, description: r.description || undefined,
+      category: r.category || undefined, moduleIds: r.moduleIds as string[],
+      isRequired: r.isRequired, assignedTo: r.assignedTo as string[] || undefined,
+      estimatedMinutes: r.estimatedMinutes || undefined, createdBy: r.createdBy,
+      createdAt: toISOString(r.createdAt), updatedAt: toISOString(r.updatedAt),
+    };
+  }
+
+  private mapLearningProgress(r: any): LearningProgress {
+    return {
+      id: r.id, orgId: r.orgId, employeeId: r.employeeId, moduleId: r.moduleId,
+      pathId: r.pathId || undefined, status: r.status,
+      quizScore: r.quizScore || undefined, quizAttempts: r.quizAttempts || undefined,
+      timeSpentMinutes: r.timeSpentMinutes || undefined,
+      completedAt: toISOString(r.completedAt), notes: r.notes || undefined,
+      startedAt: toISOString(r.startedAt), updatedAt: toISOString(r.updatedAt),
     };
   }
 }

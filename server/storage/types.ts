@@ -49,6 +49,12 @@ import {
   type InsertCalibrationSession,
   type CalibrationEvaluation,
   type InsertCalibrationEvaluation,
+  type LearningModule,
+  type InsertLearningModule,
+  type LearningPath,
+  type InsertLearningPath,
+  type LearningProgress,
+  type InsertLearningProgress,
 } from "@shared/schema";
 
 /**
@@ -324,6 +330,25 @@ export interface IStorage {
   createCalibrationEvaluation(orgId: string, evaluation: InsertCalibrationEvaluation): Promise<CalibrationEvaluation>;
   getCalibrationEvaluations(orgId: string, sessionId: string): Promise<CalibrationEvaluation[]>;
   updateCalibrationEvaluation(orgId: string, id: string, updates: Partial<CalibrationEvaluation>): Promise<CalibrationEvaluation | undefined>;
+  // LMS: Learning Module operations (org-scoped)
+  createLearningModule(orgId: string, module: InsertLearningModule): Promise<LearningModule>;
+  getLearningModule(orgId: string, id: string): Promise<LearningModule | undefined>;
+  listLearningModules(orgId: string, filters?: { category?: string; contentType?: string; isPublished?: boolean }): Promise<LearningModule[]>;
+  updateLearningModule(orgId: string, id: string, updates: Partial<LearningModule>): Promise<LearningModule | undefined>;
+  deleteLearningModule(orgId: string, id: string): Promise<void>;
+
+  // LMS: Learning Path operations (org-scoped)
+  createLearningPath(orgId: string, path: InsertLearningPath): Promise<LearningPath>;
+  getLearningPath(orgId: string, id: string): Promise<LearningPath | undefined>;
+  listLearningPaths(orgId: string): Promise<LearningPath[]>;
+  updateLearningPath(orgId: string, id: string, updates: Partial<LearningPath>): Promise<LearningPath | undefined>;
+  deleteLearningPath(orgId: string, id: string): Promise<void>;
+
+  // LMS: Learning Progress operations (org-scoped)
+  upsertLearningProgress(orgId: string, progress: InsertLearningProgress): Promise<LearningProgress>;
+  getLearningProgress(orgId: string, employeeId: string, moduleId: string): Promise<LearningProgress | undefined>;
+  getEmployeeLearningProgress(orgId: string, employeeId: string): Promise<LearningProgress[]>;
+  getModuleCompletionStats(orgId: string, moduleId: string): Promise<{ total: number; completed: number; inProgress: number; avgScore: number }>;
 }
 
 export interface UsageSummary {

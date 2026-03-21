@@ -48,6 +48,12 @@ import {
   type InsertCalibrationSession,
   type CalibrationEvaluation,
   type InsertCalibrationEvaluation,
+  type LearningModule,
+  type InsertLearningModule,
+  type LearningPath,
+  type InsertLearningPath,
+  type LearningProgress,
+  type InsertLearningProgress,
 } from "@shared/schema";
 import { randomUUID } from "crypto";
 import { type IStorage, type ObjectStorageClient, mapConcurrent, normalizeAnalysis, applyCallFilters } from "./types";
@@ -641,4 +647,20 @@ export class CloudStorage implements IStorage {
   async createCalibrationEvaluation(_orgId: string, evaluation: InsertCalibrationEvaluation): Promise<CalibrationEvaluation> { return { id: "mock", ...evaluation } as CalibrationEvaluation; }
   async getCalibrationEvaluations(_orgId: string, _sessionId: string): Promise<CalibrationEvaluation[]> { return []; }
   async updateCalibrationEvaluation(_orgId: string, _id: string, _updates: Partial<CalibrationEvaluation>): Promise<CalibrationEvaluation | undefined> { return undefined; }
+
+  // --- LMS (not supported in cloud storage) ---
+  async createLearningModule(_orgId: string, module: InsertLearningModule): Promise<LearningModule> { return { id: "mock", ...module } as LearningModule; }
+  async getLearningModule(_orgId: string, _id: string): Promise<LearningModule | undefined> { return undefined; }
+  async listLearningModules(_orgId: string): Promise<LearningModule[]> { return []; }
+  async updateLearningModule(_orgId: string, _id: string, _updates: Partial<LearningModule>): Promise<LearningModule | undefined> { return undefined; }
+  async deleteLearningModule(_orgId: string, _id: string): Promise<void> {}
+  async createLearningPath(_orgId: string, path: InsertLearningPath): Promise<LearningPath> { return { id: "mock", ...path } as LearningPath; }
+  async getLearningPath(_orgId: string, _id: string): Promise<LearningPath | undefined> { return undefined; }
+  async listLearningPaths(_orgId: string): Promise<LearningPath[]> { return []; }
+  async updateLearningPath(_orgId: string, _id: string, _updates: Partial<LearningPath>): Promise<LearningPath | undefined> { return undefined; }
+  async deleteLearningPath(_orgId: string, _id: string): Promise<void> {}
+  async upsertLearningProgress(_orgId: string, progress: InsertLearningProgress): Promise<LearningProgress> { return { id: "mock", ...progress } as LearningProgress; }
+  async getLearningProgress(_orgId: string, _employeeId: string, _moduleId: string): Promise<LearningProgress | undefined> { return undefined; }
+  async getEmployeeLearningProgress(_orgId: string, _employeeId: string): Promise<LearningProgress[]> { return []; }
+  async getModuleCompletionStats(_orgId: string, _moduleId: string) { return { total: 0, completed: 0, inProgress: 0, avgScore: 0 }; }
 }

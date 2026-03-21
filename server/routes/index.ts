@@ -32,6 +32,7 @@ import { registerInsuranceNarrativeRoutes } from "./insurance-narratives";
 import { registerRevenueRoutes } from "./revenue";
 import { registerCalibrationRoutes } from "./calibration";
 import { registerEmailRoutes } from "./emails";
+import { registerLmsRoutes } from "./lms";
 
 const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -89,6 +90,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   registerRevenueRoutes(app);
   registerCalibrationRoutes(app);
   registerEmailRoutes(app);
+  registerLmsRoutes(app);
 
   const httpServer = createServer(app);
   return httpServer;

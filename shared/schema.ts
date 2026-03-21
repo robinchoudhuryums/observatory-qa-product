@@ -1178,3 +1178,121 @@ export type CalibrationSessionWithEvaluations = CalibrationSession & {
   scoreVariance?: number; // standard deviation of evaluator scores
   call?: Call;
 };
+
+// --- LMS (LEARNING MANAGEMENT SYSTEM) SCHEMAS ---
+
+export const LMS_CONTENT_TYPES = [
+  { value: "article", label: "Article", description: "Text-based learning content" },
+  { value: "quiz", label: "Quiz", description: "Knowledge assessment" },
+  { value: "video", label: "Video", description: "Video learning content" },
+  { value: "document", label: "Document", description: "Uploaded reference document" },
+  { value: "ai_generated", label: "AI-Generated Module", description: "Auto-generated from reference docs" },
+] as const;
+
+export type LmsContentType = typeof LMS_CONTENT_TYPES[number]["value"];
+
+export const LMS_CATEGORIES = [
+  { value: "onboarding", label: "New Hire Onboarding" },
+  { value: "compliance", label: "Compliance & HIPAA" },
+  { value: "product_knowledge", label: "Product Knowledge" },
+  { value: "call_handling", label: "Call Handling & Scripts" },
+  { value: "insurance_basics", label: "Insurance Fundamentals" },
+  { value: "clinical_terminology", label: "Clinical Terminology" },
+  { value: "dental_codes", label: "Dental Codes & Procedures" },
+  { value: "customer_service", label: "Customer Service Skills" },
+  { value: "software_training", label: "Software & Tools Training" },
+  { value: "leadership", label: "Leadership & Coaching" },
+  { value: "general", label: "General Knowledge" },
+] as const;
+
+export type LmsCategory = typeof LMS_CATEGORIES[number]["value"];
+
+// --- Learning Module (the content unit) ---
+export const insertLearningModuleSchema = z.object({
+  orgId: z.string(),
+  title: z.string().min(1),
+  description: z.string().optional(),
+  contentType: z.string(), // article, quiz, video, document, ai_generated
+  category: z.string().optional(),
+  content: z.string().optional(), // markdown/HTML body for articles
+  quizQuestions: z.array(z.object({
+    question: z.string(),
+    options: z.array(z.string()),
+    correctIndex: z.number(),
+    explanation: z.string().optional(),
+  })).optional(),
+  estimatedMinutes: z.number().optional(),
+  difficulty: z.enum(["beginner", "intermediate", "advanced"]).optional(),
+  tags: z.array(z.string()).optional(),
+  sourceDocumentId: z.string().optional(), // reference doc this was generated from
+  isPublished: z.boolean().optional(),
+  isPlatformContent: z.boolean().optional(), // true = Observatory-curated content
+  createdBy: z.string(),
+  sortOrder: z.number().optional(),
+});
+
+export const learningModuleSchema = insertLearningModuleSchema.extend({
+  id: z.string(),
+  createdAt: z.string().optional(),
+  updatedAt: z.string().optional(),
+});
+
+export type InsertLearningModule = z.infer<typeof insertLearningModuleSchema>;
+export type LearningModule = z.infer<typeof learningModuleSchema>;
+
+// --- Learning Path (ordered sequence of modules) ---
+export const insertLearningPathSchema = z.object({
+  orgId: z.string(),
+  title: z.string().min(1),
+  description: z.string().optional(),
+  category: z.string().optional(),
+  moduleIds: z.array(z.string()), // ordered list of module IDs
+  isRequired: z.boolean().optional(), // required for all employees
+  assignedTo: z.array(z.string()).optional(), // specific employee IDs (empty = all)
+  estimatedMinutes: z.number().optional(), // total estimated time
+  createdBy: z.string(),
+});
+
+export const learningPathSchema = insertLearningPathSchema.extend({
+  id: z.string(),
+  createdAt: z.string().optional(),
+  updatedAt: z.string().optional(),
+});
+
+export type InsertLearningPath = z.infer<typeof insertLearningPathSchema>;
+export type LearningPath = z.infer<typeof learningPathSchema>;
+
+// --- Employee Learning Progress ---
+export const insertLearningProgressSchema = z.object({
+  orgId: z.string(),
+  employeeId: z.string(),
+  moduleId: z.string(),
+  pathId: z.string().optional(), // which learning path this is part of
+  status: z.enum(["not_started", "in_progress", "completed"]).default("not_started"),
+  quizScore: z.number().optional(), // 0-100 for quiz modules
+  quizAttempts: z.number().optional(),
+  timeSpentMinutes: z.number().optional(),
+  completedAt: z.string().optional(),
+  notes: z.string().optional(), // employee notes/reflections
+});
+
+export const learningProgressSchema = insertLearningProgressSchema.extend({
+  id: z.string(),
+  startedAt: z.string().optional(),
+  updatedAt: z.string().optional(),
+});
+
+export type InsertLearningProgress = z.infer<typeof insertLearningProgressSchema>;
+export type LearningProgress = z.infer<typeof learningProgressSchema>;
+
+/** Learning module with progress for a specific employee */
+export type LearningModuleWithProgress = LearningModule & {
+  progress?: LearningProgress;
+};
+
+/** Learning path with all modules and their progress */
+export type LearningPathWithModules = LearningPath & {
+  modules: LearningModuleWithProgress[];
+  completedCount: number;
+  totalModules: number;
+};

@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from "react";
 import { Link, useLocation } from "wouter";
-import { BarChart3, Upload, FileText, Heart, Users, UserPlus, Search, LogOut, User, TrendingUp, Sun, Moon, Shield, Building2, SlidersHorizontal, ClipboardCheck, Palette, ScrollText, Menu, X, FlaskConical, DollarSign, Stethoscope, BookTemplate, Radio, Trophy, Scale, FileCheck, MessageSquare, Mail } from "lucide-react";
+import { BarChart3, Upload, FileText, Heart, Users, UserPlus, Search, LogOut, User, TrendingUp, Sun, Moon, Shield, Building2, SlidersHorizontal, ClipboardCheck, Palette, ScrollText, Menu, X, FlaskConical, DollarSign, Stethoscope, BookTemplate, Radio, Trophy, Scale, FileCheck, MessageSquare, Mail, GraduationCap } from "lucide-react";
 import { ObservatoryLogo } from "@/components/observatory-logo";
 import { cn, safeStorage } from "@/lib/utils";
 import { useQuery } from "@tanstack/react-query";
@@ -246,6 +246,7 @@ export default function Sidebar() {
           <p className="text-[10px] uppercase font-semibold text-muted-foreground/70 tracking-widest">Channels</p>
         </div>
         <AdminLink href="/emails" icon={Mail} label="Email QA" testId="nav-link-emails" />
+        <AdminLink href="/learning" icon={GraduationCap} label="Learning Center" testId="nav-link-learning" />
 
         {/* Performance & Engagement */}
         <div className="pt-4 pb-1.5 px-3">
