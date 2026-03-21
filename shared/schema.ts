@@ -711,6 +711,38 @@ export const usageRecordSchema = z.object({
 
 export type UsageRecord = z.infer<typeof usageRecordSchema>;
 
+// --- LIVE SESSION SCHEMAS (real-time clinical recording) ---
+export const LIVE_SESSION_STATUSES = ["active", "paused", "completed", "failed"] as const;
+export type LiveSessionStatus = typeof LIVE_SESSION_STATUSES[number];
+
+export const insertLiveSessionSchema = z.object({
+  orgId: z.string(),
+  createdBy: z.string(),
+  specialty: z.string().optional(),
+  noteFormat: z.string().optional(),
+  encounterType: z.string().optional(),
+  status: z.enum(LIVE_SESSION_STATUSES).optional(),
+  /** Accumulated final transcript segments */
+  transcriptText: z.string().optional(),
+  /** Latest draft clinical note (regenerated periodically) */
+  draftClinicalNote: clinicalNoteSchema.optional(),
+  /** Duration in seconds of accumulated audio */
+  durationSeconds: z.number().optional(),
+  /** Patient consent for recording */
+  consentObtained: z.boolean().optional(),
+  /** Associated call ID (created on session end for permanent storage) */
+  callId: z.string().optional(),
+});
+
+export const liveSessionSchema = insertLiveSessionSchema.extend({
+  id: z.string(),
+  startedAt: z.string().optional(),
+  endedAt: z.string().optional(),
+});
+
+export type InsertLiveSession = z.infer<typeof insertLiveSessionSchema>;
+export type LiveSession = z.infer<typeof liveSessionSchema>;
+
 // --- ROLE DEFINITIONS ---
 // Role hierarchy: super_admin (4) > admin (3) > manager (2) > viewer (1)
 // super_admin is a platform-level role configured via the SUPER_ADMIN_USERS env var

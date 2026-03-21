@@ -36,6 +36,8 @@ import {
   type InsertABTest,
   type UsageRecord,
   type ClinicalNote,
+  type LiveSession,
+  type InsertLiveSession,
 } from "@shared/schema";
 
 /**
@@ -264,6 +266,13 @@ export interface IStorage {
   // Spend tracking / usage records (org-scoped)
   createUsageRecord(orgId: string, record: UsageRecord): Promise<void>;
   getUsageRecords(orgId: string): Promise<UsageRecord[]>;
+
+  // Live session operations (org-scoped, real-time clinical recording)
+  createLiveSession(orgId: string, session: InsertLiveSession): Promise<LiveSession>;
+  getLiveSession(orgId: string, id: string): Promise<LiveSession | undefined>;
+  updateLiveSession(orgId: string, id: string, updates: Partial<LiveSession>): Promise<LiveSession | undefined>;
+  getActiveLiveSessions(orgId: string): Promise<LiveSession[]>;
+  getLiveSessionsByUser(orgId: string, userId: string): Promise<LiveSession[]>;
 }
 
 export interface UsageSummary {

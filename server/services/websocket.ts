@@ -90,6 +90,31 @@ export function broadcastCallUpdate(callId: string, status: string, extra: Recor
 }
 
 /**
+ * Broadcast a live transcription event to all connected clients in the same organization.
+ * Used for real-time clinical recording: streams partial/final transcripts and draft notes.
+ */
+export function broadcastLiveTranscript(
+  sessionId: string,
+  eventType: "partial" | "final" | "draft_note" | "session_end" | "error",
+  data: Record<string, unknown>,
+  orgId: string,
+) {
+  if (!wss) return;
+  const message = JSON.stringify({ type: "live_transcript", sessionId, eventType, ...data });
+  wss.clients.forEach((client) => {
+    if (client.readyState === WebSocket.OPEN) {
+      const clientOrg = clientOrgMap.get(client);
+      if (clientOrg && clientOrg !== orgId) return;
+      try {
+        client.send(message);
+      } catch (err) {
+        logger.error({ err }, "Failed to send live transcript WebSocket message");
+      }
+    }
+  });
+}
+
+/**
  * Gracefully close the WebSocket server.
  */
 export function closeWebSocket(): Promise<void> {

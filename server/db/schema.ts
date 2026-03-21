@@ -403,6 +403,28 @@ export const spendRecords = pgTable("spend_records", {
   index("spend_records_timestamp_idx").on(t.orgId, t.timestamp),
 ]);
 
+// --- LIVE SESSIONS (real-time clinical recording) ---
+export const liveSessions = pgTable("live_sessions", {
+  id: text("id").primaryKey(),
+  orgId: text("org_id").notNull().references(() => organizations.id),
+  createdBy: varchar("created_by", { length: 255 }).notNull(),
+  specialty: varchar("specialty", { length: 100 }),
+  noteFormat: varchar("note_format", { length: 50 }).notNull().default("soap"),
+  encounterType: varchar("encounter_type", { length: 50 }).notNull().default("clinical_encounter"),
+  status: varchar("status", { length: 20 }).notNull().default("active"),
+  transcriptText: text("transcript_text").default(""),
+  draftClinicalNote: jsonb("draft_clinical_note"),
+  durationSeconds: integer("duration_seconds").notNull().default(0),
+  consentObtained: boolean("consent_obtained").notNull().default(false),
+  callId: text("call_id").references(() => calls.id),
+  startedAt: timestamp("started_at").defaultNow(),
+  endedAt: timestamp("ended_at"),
+}, (t) => [
+  index("live_sessions_org_id_idx").on(t.orgId),
+  index("live_sessions_status_idx").on(t.orgId, t.status),
+  index("live_sessions_created_by_idx").on(t.orgId, t.createdBy),
+]);
+
 // --- AUDIT LOGS (append-only, tamper-evident, HIPAA compliance) ---
 export const auditLogs = pgTable("audit_logs", {
   id: text("id").primaryKey(),

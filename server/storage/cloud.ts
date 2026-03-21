@@ -35,6 +35,8 @@ import {
   type ABTest,
   type InsertABTest,
   type UsageRecord,
+  type LiveSession,
+  type InsertLiveSession,
 } from "@shared/schema";
 import { randomUUID } from "crypto";
 import { type IStorage, type ObjectStorageClient, mapConcurrent, normalizeAnalysis, applyCallFilters } from "./types";
@@ -574,4 +576,13 @@ export class CloudStorage implements IStorage {
   // --- Spend tracking (not supported in cloud storage) ---
   async createUsageRecord(_orgId: string, _record: UsageRecord): Promise<void> {}
   async getUsageRecords(_orgId: string): Promise<UsageRecord[]> { return []; }
+
+  // --- Live sessions (not supported in cloud storage) ---
+  async createLiveSession(_orgId: string, _session: InsertLiveSession): Promise<LiveSession> {
+    throw new Error("Live sessions require PostgreSQL storage");
+  }
+  async getLiveSession(_orgId: string, _id: string): Promise<LiveSession | undefined> { return undefined; }
+  async updateLiveSession(_orgId: string, _id: string, _updates: Partial<LiveSession>): Promise<LiveSession | undefined> { return undefined; }
+  async getActiveLiveSessions(_orgId: string): Promise<LiveSession[]> { return []; }
+  async getLiveSessionsByUser(_orgId: string, _userId: string): Promise<LiveSession[]> { return []; }
 }

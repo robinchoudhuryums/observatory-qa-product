@@ -35,6 +35,8 @@ import {
   type ABTest,
   type InsertABTest,
   type UsageRecord,
+  type LiveSession,
+  type InsertLiveSession,
 } from "@shared/schema";
 import { randomUUID, randomBytes } from "crypto";
 import { type IStorage, applyCallFilters } from "./types";
@@ -635,6 +637,39 @@ export class MemStorage implements IStorage {
     return this.usageRecords
       .filter(r => r.orgId === orgId)
       .sort((a, b) => b.timestamp.localeCompare(a.timestamp));
+  }
+
+  // --- Live sessions (real-time clinical recording) ---
+  private liveSessions = new Map<string, LiveSession>();
+
+  async createLiveSession(orgId: string, session: InsertLiveSession): Promise<LiveSession> {
+    const id = randomUUID();
+    const liveSession: LiveSession = { ...session, id, orgId, startedAt: new Date().toISOString() };
+    this.liveSessions.set(id, liveSession);
+    return liveSession;
+  }
+
+  async getLiveSession(orgId: string, id: string): Promise<LiveSession | undefined> {
+    const session = this.liveSessions.get(id);
+    return session?.orgId === orgId ? session : undefined;
+  }
+
+  async updateLiveSession(orgId: string, id: string, updates: Partial<LiveSession>): Promise<LiveSession | undefined> {
+    const session = this.liveSessions.get(id);
+    if (!session || session.orgId !== orgId) return undefined;
+    const updated = { ...session, ...updates };
+    this.liveSessions.set(id, updated);
+    return updated;
+  }
+
+  async getActiveLiveSessions(orgId: string): Promise<LiveSession[]> {
+    return Array.from(this.liveSessions.values()).filter(s => s.orgId === orgId && s.status === "active");
+  }
+
+  async getLiveSessionsByUser(orgId: string, userId: string): Promise<LiveSession[]> {
+    return Array.from(this.liveSessions.values())
+      .filter(s => s.orgId === orgId && s.createdBy === userId)
+      .sort((a, b) => (b.startedAt || "").localeCompare(a.startedAt || ""));
   }
 
   // --- Data retention (org-scoped) ---

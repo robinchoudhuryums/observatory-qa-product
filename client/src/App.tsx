@@ -59,6 +59,7 @@ const ClinicalDashboardPage = lazy(() => import("@/pages/clinical-dashboard"));
 const ClinicalUploadPage = lazy(() => import("@/pages/clinical-upload"));
 const ClinicalNotesPage = lazy(() => import("@/pages/clinical-notes"));
 const ClinicalTemplatesPage = lazy(() => import("@/pages/clinical-templates"));
+const ClinicalLivePage = lazy(() => import("@/pages/clinical-live"));
 const NotFound = lazy(() => import("@/pages/not-found"));
 
 function PageLoader() {
@@ -203,6 +204,7 @@ function Router() {
               <Route path="/clinical/upload">{() => <ErrorBoundary><AnimatedPage><ClinicalUploadPage /></AnimatedPage></ErrorBoundary>}</Route>
               <Route path="/clinical/notes/:id">{() => <ErrorBoundary><AnimatedPage><ClinicalNotesPage /></AnimatedPage></ErrorBoundary>}</Route>
               <Route path="/clinical/templates">{() => <ErrorBoundary><AnimatedPage><ClinicalTemplatesPage /></AnimatedPage></ErrorBoundary>}</Route>
+              <Route path="/clinical/live">{() => <ErrorBoundary><AnimatedPage><ClinicalLivePage /></AnimatedPage></ErrorBoundary>}</Route>
               <Route path="/onboarding">{() => <ErrorBoundary><OnboardingWizard /></ErrorBoundary>}</Route>
               <Route>{() => <AnimatedPage><NotFound /></AnimatedPage>}</Route>
             </Switch>

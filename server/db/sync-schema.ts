@@ -438,6 +438,29 @@ export async function syncSchema(db: Database): Promise<void> {
     await db.execute(sql`CREATE INDEX IF NOT EXISTS spend_records_org_id_idx ON spend_records (org_id)`);
     await db.execute(sql`CREATE INDEX IF NOT EXISTS spend_records_timestamp_idx ON spend_records (org_id, timestamp)`);
 
+    // --- Live Sessions (real-time clinical recording) ---
+    await db.execute(sql`
+      CREATE TABLE IF NOT EXISTS live_sessions (
+        id TEXT PRIMARY KEY,
+        org_id TEXT NOT NULL REFERENCES organizations(id),
+        created_by VARCHAR(255) NOT NULL,
+        specialty VARCHAR(100),
+        note_format VARCHAR(50) NOT NULL DEFAULT 'soap',
+        encounter_type VARCHAR(50) NOT NULL DEFAULT 'clinical_encounter',
+        status VARCHAR(20) NOT NULL DEFAULT 'active',
+        transcript_text TEXT DEFAULT '',
+        draft_clinical_note JSONB,
+        duration_seconds INTEGER NOT NULL DEFAULT 0,
+        consent_obtained BOOLEAN NOT NULL DEFAULT false,
+        call_id TEXT REFERENCES calls(id),
+        started_at TIMESTAMP DEFAULT NOW(),
+        ended_at TIMESTAMP
+      )
+    `);
+    await db.execute(sql`CREATE INDEX IF NOT EXISTS live_sessions_org_id_idx ON live_sessions (org_id)`);
+    await db.execute(sql`CREATE INDEX IF NOT EXISTS live_sessions_status_idx ON live_sessions (org_id, status)`);
+    await db.execute(sql`CREATE INDEX IF NOT EXISTS live_sessions_created_by_idx ON live_sessions (org_id, created_by)`);
+
     // --- Audit Logs (tamper-evident) ---
     await db.execute(sql`
       CREATE TABLE IF NOT EXISTS audit_logs (
