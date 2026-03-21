@@ -231,6 +231,18 @@ export class PostgresStorage implements IStorage {
       assemblyAiId: call.assemblyAiId,
       callCategory: call.callCategory,
       tags: call.tags || null,
+      channel: call.channel || "voice",
+      emailSubject: call.emailSubject,
+      emailFrom: call.emailFrom,
+      emailTo: call.emailTo,
+      emailCc: call.emailCc,
+      emailBody: call.emailBody,
+      emailBodyHtml: call.emailBodyHtml,
+      emailMessageId: call.emailMessageId,
+      emailThreadId: call.emailThreadId,
+      emailReceivedAt: call.emailReceivedAt ? new Date(call.emailReceivedAt) : undefined,
+      chatPlatform: call.chatPlatform,
+      messageCount: call.messageCount,
     }).returning();
     return this.mapCall(row);
   }
@@ -245,6 +257,12 @@ export class PostgresStorage implements IStorage {
     if (updates.assemblyAiId !== undefined) setClause.assemblyAiId = updates.assemblyAiId;
     if (updates.callCategory !== undefined) setClause.callCategory = updates.callCategory;
     if (updates.tags !== undefined) setClause.tags = updates.tags;
+    if (updates.channel !== undefined) setClause.channel = updates.channel;
+    if (updates.emailSubject !== undefined) setClause.emailSubject = updates.emailSubject;
+    if (updates.emailFrom !== undefined) setClause.emailFrom = updates.emailFrom;
+    if (updates.emailTo !== undefined) setClause.emailTo = updates.emailTo;
+    if (updates.emailBody !== undefined) setClause.emailBody = updates.emailBody;
+    if (updates.emailThreadId !== undefined) setClause.emailThreadId = updates.emailThreadId;
 
     const [row] = await this.db.update(tables.calls)
       .set(setClause)
@@ -1117,6 +1135,18 @@ export class PostgresStorage implements IStorage {
       callCategory: row.callCategory,
       tags: row.tags as string[],
       uploadedAt: toISOString(row.uploadedAt),
+      channel: row.channel || "voice",
+      emailSubject: row.emailSubject,
+      emailFrom: row.emailFrom,
+      emailTo: row.emailTo,
+      emailCc: row.emailCc,
+      emailBody: row.emailBody,
+      emailBodyHtml: row.emailBodyHtml,
+      emailMessageId: row.emailMessageId,
+      emailThreadId: row.emailThreadId,
+      emailReceivedAt: toISOString(row.emailReceivedAt),
+      chatPlatform: row.chatPlatform,
+      messageCount: row.messageCount,
     };
   }
 

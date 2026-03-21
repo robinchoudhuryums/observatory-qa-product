@@ -88,7 +88,7 @@ export const employees = pgTable("employees", {
   uniqueIndex("employees_org_email_idx").on(t.orgId, t.email),
 ]);
 
-// --- CALLS ---
+// --- CALLS (universal interaction entity: voice, email, chat, SMS) ---
 export const calls = pgTable("calls", {
   id: text("id").primaryKey(),
   orgId: text("org_id").notNull().references(() => organizations.id),
@@ -102,12 +102,29 @@ export const calls = pgTable("calls", {
   tags: jsonb("tags").$type<string[]>(),
   fileHash: varchar("file_hash", { length: 64 }),
   uploadedAt: timestamp("uploaded_at").defaultNow(),
+  // Multi-channel support
+  channel: varchar("channel", { length: 20 }).notNull().default("voice"),
+  // Email-specific fields
+  emailSubject: varchar("email_subject", { length: 1000 }),
+  emailFrom: varchar("email_from", { length: 500 }),
+  emailTo: varchar("email_to", { length: 500 }),
+  emailCc: text("email_cc"),
+  emailBody: text("email_body"),
+  emailBodyHtml: text("email_body_html"),
+  emailMessageId: varchar("email_message_id", { length: 500 }),
+  emailThreadId: varchar("email_thread_id", { length: 500 }),
+  emailReceivedAt: timestamp("email_received_at"),
+  // Chat/SMS fields (future)
+  chatPlatform: varchar("chat_platform", { length: 50 }),
+  messageCount: integer("message_count"),
 }, (t) => [
   index("calls_org_id_idx").on(t.orgId),
   index("calls_org_status_idx").on(t.orgId, t.status),
   index("calls_employee_id_idx").on(t.employeeId),
   index("calls_uploaded_at_idx").on(t.uploadedAt),
   index("calls_org_file_hash_idx").on(t.orgId, t.fileHash),
+  index("calls_channel_idx").on(t.orgId, t.channel),
+  index("calls_email_thread_idx").on(t.orgId, t.emailThreadId),
 ]);
 
 // --- TRANSCRIPTS ---

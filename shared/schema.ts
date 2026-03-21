@@ -133,6 +133,16 @@ export const DEFAULT_SUBTEAMS: Record<string, readonly string[]> = {
 /** @deprecated Use org settings subTeams instead. Kept for backward compatibility. */
 export const POWER_MOBILITY_SUBTEAMS = DEFAULT_SUBTEAMS["Intake - Power Mobility"]!;
 
+// --- COMMUNICATION CHANNELS ---
+export const COMMUNICATION_CHANNELS = [
+  { value: "voice", label: "Voice Call", description: "Audio call recording (transcribed by AssemblyAI)" },
+  { value: "email", label: "Email", description: "Email message (text analyzed directly, no transcription cost)" },
+  { value: "chat", label: "Chat", description: "Live chat or messaging conversation" },
+  { value: "sms", label: "SMS", description: "Text message conversation" },
+] as const;
+
+export type CommunicationChannel = typeof COMMUNICATION_CHANNELS[number]["value"];
+
 // --- CALL CATEGORY ---
 export const CALL_CATEGORIES = [
   { value: "inbound", label: "Inbound Call", description: "Customer/patient calling into the company" },
@@ -149,6 +159,15 @@ export const CALL_CATEGORIES = [
   { value: "dental_emergency", label: "Dental Emergency Triage", description: "Emergency triage call — toothache, trauma, swelling" },
   { value: "dental_encounter", label: "Dental Clinical Encounter", description: "In-office dental visit or procedure recording" },
   { value: "dental_consultation", label: "Dental Consultation", description: "New patient consultation or second opinion" },
+  // Email categories
+  { value: "email_support", label: "Support Email", description: "Customer support or help request email" },
+  { value: "email_billing", label: "Billing Email", description: "Billing inquiry, payment, or invoice-related email" },
+  { value: "email_complaint", label: "Complaint Email", description: "Customer complaint or escalation email" },
+  { value: "email_appointment", label: "Appointment Email", description: "Appointment request, confirmation, or scheduling email" },
+  { value: "email_insurance", label: "Insurance Email", description: "Insurance inquiry, authorization, or claims email" },
+  { value: "email_referral", label: "Referral Email", description: "Patient or customer referral communication" },
+  { value: "email_followup", label: "Follow-up Email", description: "Post-service or post-appointment follow-up" },
+  { value: "email_general", label: "General Email", description: "General inquiry or miscellaneous email" },
 ] as const;
 
 // --- CLINICAL NOTE SCHEMAS ---
@@ -255,6 +274,8 @@ export type ClinicalNote = z.infer<typeof clinicalNoteSchema>;
 export type CallCategory = typeof CALL_CATEGORIES[number]["value"];
 
 // --- CALL SCHEMAS ---
+// "Call" is the universal interaction entity — supports voice calls, emails, chat, and SMS.
+// Channel defaults to "voice" for backward compatibility. Email/chat/SMS skip transcription.
 export const insertCallSchema = z.object({
   orgId: z.string(),
   employeeId: z.string().optional(),
@@ -266,6 +287,21 @@ export const insertCallSchema = z.object({
   assemblyAiId: z.string().optional(),
   callCategory: z.string().optional(),
   tags: z.array(z.string()).optional(),
+  // Multi-channel support (defaults to "voice" in storage layer for backward compatibility)
+  channel: z.enum(["voice", "email", "chat", "sms"]).optional(),
+  // Email-specific fields (populated when channel="email")
+  emailSubject: z.string().optional(),
+  emailFrom: z.string().optional(),
+  emailTo: z.string().optional(),
+  emailCc: z.string().optional(),
+  emailBody: z.string().optional(),      // plain text body
+  emailBodyHtml: z.string().optional(),  // HTML body (for display)
+  emailMessageId: z.string().optional(), // external message ID (Gmail, Outlook, etc.)
+  emailThreadId: z.string().optional(),  // thread/conversation grouping
+  emailReceivedAt: z.string().optional(),
+  // Chat/SMS fields (for future use)
+  chatPlatform: z.string().optional(),   // "intercom", "zendesk", "twilio", etc.
+  messageCount: z.number().optional(),   // number of messages in conversation
 });
 
 export const callSchema = insertCallSchema.extend({

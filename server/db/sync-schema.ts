@@ -120,6 +120,22 @@ export async function syncSchema(db: Database): Promise<void> {
     await db.execute(sql`CREATE INDEX IF NOT EXISTS calls_uploaded_at_idx ON calls (uploaded_at)`);
     await db.execute(sql`CREATE INDEX IF NOT EXISTS calls_org_file_hash_idx ON calls (org_id, file_hash)`);
 
+    // Multi-channel support columns
+    await addColumnIfNotExists(db, "calls", "channel", "VARCHAR(20) NOT NULL DEFAULT 'voice'");
+    await addColumnIfNotExists(db, "calls", "email_subject", "VARCHAR(1000)");
+    await addColumnIfNotExists(db, "calls", "email_from", "VARCHAR(500)");
+    await addColumnIfNotExists(db, "calls", "email_to", "VARCHAR(500)");
+    await addColumnIfNotExists(db, "calls", "email_cc", "TEXT");
+    await addColumnIfNotExists(db, "calls", "email_body", "TEXT");
+    await addColumnIfNotExists(db, "calls", "email_body_html", "TEXT");
+    await addColumnIfNotExists(db, "calls", "email_message_id", "VARCHAR(500)");
+    await addColumnIfNotExists(db, "calls", "email_thread_id", "VARCHAR(500)");
+    await addColumnIfNotExists(db, "calls", "email_received_at", "TIMESTAMP");
+    await addColumnIfNotExists(db, "calls", "chat_platform", "VARCHAR(50)");
+    await addColumnIfNotExists(db, "calls", "message_count", "INTEGER");
+    await db.execute(sql`CREATE INDEX IF NOT EXISTS calls_channel_idx ON calls (org_id, channel)`);
+    await db.execute(sql`CREATE INDEX IF NOT EXISTS calls_email_thread_idx ON calls (org_id, email_thread_id)`);
+
     // --- Transcripts ---
     await db.execute(sql`
       CREATE TABLE IF NOT EXISTS transcripts (

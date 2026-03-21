@@ -129,6 +129,15 @@ const CATEGORY_CONTEXT: Record<string, string> = {
   // Dental clinical documentation categories
   dental_encounter: "This is a DENTAL CLINICAL ENCOUNTER — a dentist, hygienist, or dental specialist treating a patient in the office. Focus on clinical documentation accuracy, procedure details, and dental-specific terminology. Use CDT (Current Dental Terminology) codes instead of CPT codes.",
   dental_consultation: "This is a DENTAL CONSULTATION — a new patient evaluation or second-opinion visit. Focus on comprehensive examination findings, treatment planning, and patient education. Use CDT codes for any procedures discussed or performed.",
+  // Email channel categories
+  email_support: "This is a SUPPORT EMAIL — a customer or patient wrote in requesting help. Evaluate response quality: thoroughness, empathy, accuracy, resolution, and follow-up. The 'transcript' is the email text.",
+  email_billing: "This is a BILLING EMAIL — regarding payments, invoices, or financial matters. Evaluate accuracy of financial information, clarity of explanation, and resolution.",
+  email_complaint: "This is a COMPLAINT EMAIL — a customer is expressing dissatisfaction. Evaluate empathy, acknowledgment, resolution offered, and de-escalation approach.",
+  email_appointment: "This is an APPOINTMENT EMAIL — regarding scheduling, confirmation, or rescheduling. Evaluate responsiveness, clarity of instructions, and ease of scheduling.",
+  email_insurance: "This is an INSURANCE EMAIL — regarding coverage, authorization, or claims. Evaluate accuracy of insurance information, completeness, and patient guidance.",
+  email_referral: "This is a REFERRAL EMAIL — a patient or customer referral communication. Evaluate professionalism, completeness of information, and follow-up actions.",
+  email_followup: "This is a FOLLOW-UP EMAIL — a post-service or post-appointment communication. Evaluate timeliness, personalization, and quality of care continuity.",
+  email_general: "This is a GENERAL EMAIL — a miscellaneous inquiry or communication. Evaluate professionalism, response completeness, and clarity.",
 };
 
 export interface PromptTemplateConfig {
@@ -602,6 +611,70 @@ export function buildAnalysisPrompt(transcriptText: string, callCategory?: strin
   const system = buildSystemPrompt(callCategory, template);
   const user = buildUserMessage(transcriptText, callCategory);
   return `${system}\n\n${user}`;
+}
+
+/**
+ * Build system prompt specifically for email analysis.
+ * Emails don't have timestamps, speakers, or talk speed — focus on written communication quality.
+ */
+export function buildEmailSystemPrompt(emailCategory?: string, template?: PromptTemplateConfig): string {
+  const categoryContext = emailCategory && CATEGORY_CONTEXT[emailCategory]
+    ? `\nEMAIL CONTEXT:\n${CATEGORY_CONTEXT[emailCategory]}\n`
+    : "";
+
+  let evaluationCriteria: string;
+  if (template?.evaluationCriteria) {
+    evaluationCriteria = `- EVALUATION CRITERIA:\n${template.evaluationCriteria}`;
+  } else {
+    evaluationCriteria = "- Evaluate on: professionalism, accuracy, completeness, empathy, clarity, resolution, and response timeliness";
+  }
+
+  let scoringSection = "";
+  if (template?.scoringWeights) {
+    const w = template.scoringWeights;
+    scoringSection = `\n- SCORING WEIGHTS: Compliance (${w.compliance}%), Customer Experience (${w.customerExperience}%), Communication (${w.communication}%), Resolution (${w.resolution}%). Weight your performance_score accordingly.`;
+  }
+
+  let phrasesSection = "";
+  if (template?.requiredPhrases && template.requiredPhrases.length > 0) {
+    const required = template.requiredPhrases.filter(p => p.severity === "required");
+    const recommended = template.requiredPhrases.filter(p => p.severity === "recommended");
+    if (required.length > 0) {
+      phrasesSection += `\n- REQUIRED ELEMENTS: The email MUST include something equivalent to the following. Flag "missing_required_phrase:<label>" for each missing element:\n`;
+      phrasesSection += required.map(p => `  * "${p.phrase}" (${p.label})`).join("\n");
+    }
+    if (recommended.length > 0) {
+      phrasesSection += `\n- RECOMMENDED ELEMENTS: The email SHOULD include these. Note in suggestions if missing:\n`;
+      phrasesSection += recommended.map(p => `  * "${p.phrase}" (${p.label})`).join("\n");
+    }
+  }
+
+  let referenceSection = "";
+  if (template?.referenceDocuments && template.referenceDocuments.length > 0) {
+    const ragText = template.referenceDocuments.map(d => d.text).join("\n\n");
+    referenceSection = `\n- COMPANY KNOWLEDGE BASE: Use the following excerpts to evaluate accuracy and compliance:\n${ragText}`;
+  }
+
+  let additionalSection = "";
+  if (template?.additionalInstructions) {
+    additionalSection = `\n- ADDITIONAL INSTRUCTIONS:\n${template.additionalInstructions}`;
+  }
+
+  return `You are analyzing an email communication for quality assurance. This is a TEXT-BASED communication (not a phone call) — do NOT reference audio, voice quality, or tone of voice. Focus on written communication quality.
+${categoryContext}
+Respond with ONLY valid JSON (no markdown, no code fences):
+{"summary":"...","topics":["..."],"sentiment":"positive|neutral|negative","sentiment_score":0.0,"performance_score":0.0,"sub_scores":{"compliance":0.0,"customer_experience":0.0,"communication":0.0,"resolution":0.0},"action_items":["..."],"feedback":{"strengths":["..."],"suggestions":["..."]},"call_party_type":"customer|insurance|medical_facility|vendor|internal|other","flags":[],"detected_agent_name":null}
+
+Guidelines:
+- sentiment_score: 0.0-1.0 (1.0 = most positive)
+- performance_score: 0.0-10.0 (overall weighted score)
+- sub_scores (each 0.0-10.0): compliance (policies, accuracy), customer_experience (empathy, helpfulness, tone), communication (clarity, grammar, completeness, formatting), resolution (issue resolution, next steps, follow-up)
+${evaluationCriteria}${scoringSection}${phrasesSection}${referenceSection}${additionalSection}
+- For strengths/suggestions, do NOT include timestamps (this is email, not audio)
+- 2-4 concrete, actionable action items
+- Topics: specific (e.g. "insurance inquiry", "appointment request"), not generic
+- detected_agent_name: Employee's name if present in the email signature or greeting. Return null if uncertain.
+- flags: "low_score" if performance ≤2.0, "exceptional_call" if ≥9.0, "urgent" if email requires immediate attention, "escalation_needed" if the issue should be escalated`;
 }
 
 /**
