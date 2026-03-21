@@ -105,3 +105,21 @@ export function encryptMfaSecret(secret: string): string {
 export function decryptMfaSecret(encrypted: string): string {
   return decryptField(encrypted);
 }
+
+/**
+ * Decrypt PHI fields in a clinical note object.
+ * Safe to call on already-decrypted or null data — no-ops gracefully.
+ * Modifies the object in-place for efficiency.
+ */
+const PHI_FIELDS = ["subjective", "objective", "assessment", "hpiNarrative", "chiefComplaint"] as const;
+
+export function decryptClinicalNotePhi(analysis: Record<string, unknown> | null | undefined): void {
+  if (!analysis) return;
+  const cn = analysis.clinicalNote as Record<string, unknown> | undefined;
+  if (!cn) return;
+  for (const field of PHI_FIELDS) {
+    if (typeof cn[field] === "string") {
+      cn[field] = decryptField(cn[field] as string);
+    }
+  }
+}

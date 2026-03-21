@@ -130,7 +130,7 @@ export function registerEmployeeRoutes(app: Express): void {
           if (existing) {
             results.push({ name, action: "skipped (exists)" });
           } else {
-            await storage.createEmployee(req.orgId!, { name, email, role: department, initials, status });
+            await storage.createEmployee(req.orgId!, { orgId: req.orgId!, name, email, role: department, initials, status });
             results.push({ name, action: "created" });
           }
         } catch (err) {

@@ -155,9 +155,9 @@ export interface IStorage {
   deleteCall(orgId: string, id: string): Promise<void>;
   getCallByFileHash(orgId: string, fileHash: string): Promise<Call | undefined>;
   getAllCalls(orgId: string): Promise<Call[]>;
-  getCallsWithDetails(orgId: string, filters?: { status?: string; sentiment?: string; employee?: string }): Promise<CallWithDetails[]>;
+  getCallsWithDetails(orgId: string, filters?: { status?: string; sentiment?: string; employee?: string; limit?: number; offset?: number }): Promise<CallWithDetails[]>;
   /** Lightweight version of getCallsWithDetails — excludes transcript text/words for reporting */
-  getCallSummaries(orgId: string, filters?: { status?: string; sentiment?: string; employee?: string }): Promise<CallSummary[]>;
+  getCallSummaries(orgId: string, filters?: { status?: string; sentiment?: string; employee?: string; limit?: number; offset?: number }): Promise<CallSummary[]>;
 
   // Transcript operations (org-scoped)
   getTranscript(orgId: string, callId: string): Promise<Transcript | undefined>;
@@ -178,6 +178,17 @@ export interface IStorage {
 
   // Search and filtering (org-scoped)
   searchCalls(orgId: string, query: string): Promise<CallWithDetails[]>;
+
+  // Clinical metrics (PostgreSQL-optimized, optional — returns undefined for non-PG backends)
+  getClinicalCallMetrics?(orgId: string, clinicalCategories: string[]): Promise<{
+    totalEncounters: number;
+    completed: number;
+    notesWithData: Array<{ clinicalNote: any; uploadedAt: string | null }>;
+  }>;
+  getAttestedClinicalNotes?(orgId: string, clinicalCategories: string[]): Promise<Array<{
+    clinicalNote: any;
+    uploadedAt: string | null;
+  }>>;
 
   // Audio file operations (org-scoped)
   uploadAudio(orgId: string, callId: string, fileName: string, buffer: Buffer, contentType: string): Promise<void>;

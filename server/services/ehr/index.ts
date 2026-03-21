@@ -12,10 +12,12 @@
 import type { IEhrAdapter, EhrConnectionConfig } from "./types.js";
 import { OpenDentalAdapter } from "./open-dental.js";
 import { EaglesoftAdapter } from "./eaglesoft.js";
+import { MockEhrAdapter } from "./mock.js";
 
 const adapters: Record<string, IEhrAdapter> = {
   open_dental: new OpenDentalAdapter(),
   eaglesoft: new EaglesoftAdapter(),
+  mock: new MockEhrAdapter(),
 };
 
 /**
@@ -34,6 +36,7 @@ export function getSupportedEhrSystems(): Array<{ system: string; label: string;
     { system: "open_dental", label: "Open Dental", status: "available" },
     { system: "eaglesoft", label: "Eaglesoft (Patterson)", status: "available" },
     { system: "dentrix", label: "Dentrix (Henry Schein)", status: "planned" },
+    { system: "mock", label: "Mock (Development/Demo)", status: "available" },
   ];
 }
 

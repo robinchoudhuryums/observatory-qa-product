@@ -3,7 +3,7 @@ import { requireAuth, requireRole, injectOrgContext } from "../auth";
 import { storage } from "../storage";
 import { logger } from "../services/logger";
 import { logPhiAccess, auditContext } from "../services/audit-log";
-import { decryptField, encryptField } from "../services/phi-encryption";
+import { decryptField, encryptField, decryptClinicalNotePhi } from "../services/phi-encryption";
 import { PLAN_DEFINITIONS, type PlanTier } from "@shared/schema";
 import { analyzeProviderStyle, type ClinicalNote as StyleClinicalNote } from "../services/style-learning";
 import {
@@ -20,7 +20,10 @@ import {
 function requireClinicalPlan() {
   return async (req: any, res: any, next: any) => {
     const orgId = req.orgId;
-    if (!orgId) return next();
+    if (!orgId) {
+      res.status(403).json({ message: "Organization context required", code: "OBS-AUTH-001" });
+      return;
+    }
 
     try {
       const sub = await storage.getSubscription(orgId);
@@ -65,12 +68,8 @@ export function registerClinicalRoutes(app: Express): void {
         resourceId: req.params.callId,
       });
 
-      // Decrypt PHI fields
-      if (typeof cn.subjective === "string") cn.subjective = decryptField(cn.subjective);
-      if (typeof cn.objective === "string") cn.objective = decryptField(cn.objective);
-      if (typeof cn.assessment === "string") cn.assessment = decryptField(cn.assessment);
-      if (typeof cn.hpiNarrative === "string") cn.hpiNarrative = decryptField(cn.hpiNarrative);
-      if (typeof cn.chiefComplaint === "string") cn.chiefComplaint = decryptField(cn.chiefComplaint);
+      // Decrypt PHI fields before sending to client
+      decryptClinicalNotePhi(analysis as Record<string, unknown>);
 
       res.json(cn);
     } catch (error) {
@@ -91,8 +90,8 @@ export function registerClinicalRoutes(app: Express): void {
       // Verify the attesting user is the provider who should attest this note.
       // Admins can attest on behalf of others (override); managers must be the
       // provider associated with the encounter or the one who last edited it.
-      const currentUserName = (req as any).user?.name || (req as any).user?.username;
-      const currentUserRole = (req as any).user?.role;
+      const currentUserName = req.user?.name || req.user?.username;
+      const currentUserRole = req.user?.role;
       const noteCreator = analysis.clinicalNote.attestedBy // previously attested by
         || analysis.clinicalNote.editHistory?.at(-1)?.editedBy; // or last editor
 
@@ -106,7 +105,12 @@ export function registerClinicalRoutes(app: Express): void {
 
       analysis.clinicalNote.providerAttested = true;
       analysis.clinicalNote.attestedBy = currentUserName;
+      analysis.clinicalNote.attestedById = req.user?.id;
       analysis.clinicalNote.attestedAt = new Date().toISOString();
+      // Record NPI if provided in the request (for HIPAA compliance)
+      if (req.body.npiNumber) {
+        analysis.clinicalNote.attestedNpi = req.body.npiNumber;
+      }
 
       await storage.createCallAnalysis(req.orgId!, analysis);
 
@@ -137,7 +141,7 @@ export function registerClinicalRoutes(app: Express): void {
       }
 
       analysis.clinicalNote.patientConsentObtained = !!consentObtained;
-      analysis.clinicalNote.consentRecordedBy = (req as any).user?.name || (req as any).user?.username;
+      analysis.clinicalNote.consentRecordedBy = req.user?.name || req.user?.username;
       analysis.clinicalNote.consentRecordedAt = new Date().toISOString();
 
       await storage.createCallAnalysis(req.orgId!, analysis);
@@ -165,6 +169,20 @@ export function registerClinicalRoutes(app: Express): void {
         res.status(404).json({ message: "No clinical note found for this encounter" });
         return;
       }
+
+      // Optimistic locking: reject if version doesn't match (concurrent edit)
+      const currentVersion = analysis.clinicalNote.version || 0;
+      if (req.body.version !== undefined && req.body.version !== currentVersion) {
+        res.status(409).json({
+          message: "Clinical note has been modified by another user. Please refresh and try again.",
+          code: "OBS-CLINICAL-CONFLICT",
+          currentVersion,
+        });
+        return;
+      }
+
+      // Increment version on every edit
+      analysis.clinicalNote.version = currentVersion + 1;
 
       // Don't allow editing attested notes without re-attestation
       if (analysis.clinicalNote.providerAttested) {
@@ -223,7 +241,7 @@ export function registerClinicalRoutes(app: Express): void {
         analysis.clinicalNote.editHistory = [];
       }
       analysis.clinicalNote.editHistory.push({
-        editedBy: (req as any).user?.name || (req as any).user?.username,
+        editedBy: req.user?.name || req.user?.username,
         editedAt: new Date().toISOString(),
         fieldsChanged: allEditedFields,
       });
@@ -250,7 +268,7 @@ export function registerClinicalRoutes(app: Express): void {
   app.get("/api/clinical/provider-preferences", requireAuth, injectOrgContext, requireClinicalPlan(), async (req, res) => {
     try {
       const org = await storage.getOrganization(req.orgId!);
-      const userId = (req as any).user?.id || "unknown";
+      const userId = req.user?.id || "unknown";
       const prefs = (org?.settings as any)?.providerStylePreferences?.[userId] || {};
       res.json(prefs);
     } catch (error) {
@@ -267,7 +285,7 @@ export function registerClinicalRoutes(app: Express): void {
         return;
       }
 
-      const userId = (req as any).user?.id || "unknown";
+      const userId = req.user?.id || "unknown";
       const allowedPrefFields = [
         "noteFormat", "sectionOrder", "abbreviationLevel",
         "includeNegativePertinents", "defaultSpecialty",
@@ -300,80 +318,85 @@ export function registerClinicalRoutes(app: Express): void {
   // Get clinical dashboard metrics (enhanced)
   app.get("/api/clinical/metrics", requireAuth, injectOrgContext, requireClinicalPlan(), async (req, res) => {
     try {
-      const calls = await storage.getCallsWithDetails(req.orgId!, {});
+      const orgId = req.orgId!;
       const clinicalCategories = [
         "clinical_encounter", "telemedicine",
         "dental_encounter", "dental_consultation",
       ];
-      const clinicalCalls = calls.filter((c: any) =>
-        clinicalCategories.includes(c.callCategory)
-      );
 
-      const completed = clinicalCalls.filter((c: any) => c.status === "completed");
-      const withNotes = completed.filter((c: any) => c.analysis?.clinicalNote);
-      const attested = withNotes.filter((c: any) => c.analysis?.clinicalNote?.providerAttested);
+      // Query only clinical calls with their analyses (not all calls + all related data)
+      const clinicalRows = await storage.getClinicalCallMetrics?.(orgId, clinicalCategories);
+
+      // Fallback for non-postgres storage backends
+      if (!clinicalRows) {
+        res.json({
+          totalEncounters: 0, completedEncounters: 0, notesGenerated: 0,
+          notesAttested: 0, pendingAttestation: 0, avgDocumentationCompleteness: 0,
+          avgClinicalAccuracy: 0, attestationRate: 0, avgAttestationTimeMinutes: null,
+          formatDistribution: {}, specialtyDistribution: {},
+          attestationTrend: [], completenessDistribution: [],
+        });
+        return;
+      }
+
+      const { totalEncounters, completed, notesWithData } = clinicalRows;
+
+      const withNotes = notesWithData.filter(n => n.clinicalNote);
+      const attested = withNotes.filter(n => n.clinicalNote?.providerAttested);
 
       const avgCompleteness = withNotes.length > 0
-        ? withNotes.reduce((sum: number, c: any) => sum + (c.analysis?.clinicalNote?.documentationCompleteness || 0), 0) / withNotes.length
+        ? withNotes.reduce((sum: number, n) => sum + (n.clinicalNote?.documentationCompleteness || 0), 0) / withNotes.length
         : 0;
 
       const avgAccuracy = withNotes.length > 0
-        ? withNotes.reduce((sum: number, c: any) => sum + (c.analysis?.clinicalNote?.clinicalAccuracy || 0), 0) / withNotes.length
+        ? withNotes.reduce((sum: number, n) => sum + (n.clinicalNote?.clinicalAccuracy || 0), 0) / withNotes.length
         : 0;
 
-      // Enhanced: format distribution
       const formatDist: Record<string, number> = {};
-      for (const c of withNotes) {
-        const fmt = (c as any).analysis?.clinicalNote?.format || "soap";
+      for (const n of withNotes) {
+        const fmt = n.clinicalNote?.format || "soap";
         formatDist[fmt] = (formatDist[fmt] || 0) + 1;
       }
 
-      // Enhanced: specialty distribution
       const specialtyDist: Record<string, number> = {};
-      for (const c of withNotes) {
-        const sp = (c as any).analysis?.clinicalNote?.specialty || "unspecified";
+      for (const n of withNotes) {
+        const sp = n.clinicalNote?.specialty || "unspecified";
         specialtyDist[sp] = (specialtyDist[sp] || 0) + 1;
       }
 
-      // Enhanced: attestation trend (last 7 days)
+      // Attestation trend (last 7 days)
       const now = new Date();
       const attestationTrend: Array<{ date: string; attested: number; total: number }> = [];
       for (let d = 6; d >= 0; d--) {
         const day = new Date(now);
         day.setDate(day.getDate() - d);
         const dayStr = day.toISOString().split("T")[0];
-        const dayNotes = withNotes.filter((c: any) => {
-          const uploaded = c.uploadedAt ? new Date(c.uploadedAt).toISOString().split("T")[0] : "";
+        const dayNotes = withNotes.filter(n => {
+          const uploaded = n.uploadedAt ? new Date(n.uploadedAt).toISOString().split("T")[0] : "";
           return uploaded === dayStr;
         });
-        const dayAttested = dayNotes.filter((c: any) => c.analysis?.clinicalNote?.providerAttested);
+        const dayAttested = dayNotes.filter(n => n.clinicalNote?.providerAttested);
         attestationTrend.push({ date: dayStr, attested: dayAttested.length, total: dayNotes.length });
       }
 
-      // Enhanced: completeness distribution (buckets 0-2, 2-4, 4-6, 6-8, 8-10)
       const completenessDist = [0, 0, 0, 0, 0];
-      for (const c of withNotes) {
-        const score = (c as any).analysis?.clinicalNote?.documentationCompleteness || 0;
+      for (const n of withNotes) {
+        const score = n.clinicalNote?.documentationCompleteness || 0;
         const bucket = Math.min(4, Math.floor(score / 2));
         completenessDist[bucket]++;
       }
 
-      // Enhanced: avg time to attestation
       let totalAttestTime = 0;
       let attestTimeCount = 0;
-      for (const c of attested) {
-        const cn = (c as any).analysis?.clinicalNote;
-        if (cn?.attestedAt && (c as any).uploadedAt) {
-          const diff = new Date(cn.attestedAt).getTime() - new Date((c as any).uploadedAt).getTime();
-          if (diff > 0) {
-            totalAttestTime += diff;
-            attestTimeCount++;
-          }
+      for (const n of attested) {
+        const cn = n.clinicalNote;
+        if (cn?.attestedAt && n.uploadedAt) {
+          const diff = new Date(cn.attestedAt).getTime() - new Date(n.uploadedAt).getTime();
+          if (diff > 0) { totalAttestTime += diff; attestTimeCount++; }
         }
       }
       const avgAttestationTimeMinutes = attestTimeCount > 0
-        ? Math.round(totalAttestTime / attestTimeCount / 60000)
-        : null;
+        ? Math.round(totalAttestTime / attestTimeCount / 60000) : null;
 
       logPhiAccess({
         ...auditContext(req),
@@ -383,8 +406,8 @@ export function registerClinicalRoutes(app: Express): void {
       });
 
       res.json({
-        totalEncounters: clinicalCalls.length,
-        completedEncounters: completed.length,
+        totalEncounters,
+        completedEncounters: completed,
         notesGenerated: withNotes.length,
         notesAttested: attested.length,
         pendingAttestation: withNotes.length - attested.length,
@@ -396,8 +419,7 @@ export function registerClinicalRoutes(app: Express): void {
         specialtyDistribution: specialtyDist,
         attestationTrend,
         completenessDistribution: completenessDist.map((count, i) => ({
-          range: `${i * 2}-${i * 2 + 2}`,
-          count,
+          range: `${i * 2}-${i * 2 + 2}`, count,
         })),
       });
     } catch (error) {
@@ -411,25 +433,25 @@ export function registerClinicalRoutes(app: Express): void {
   // Analyze provider's past notes and suggest style preferences
   app.post("/api/clinical/style-learning/analyze", requireAuth, injectOrgContext, requireClinicalPlan(), async (req, res) => {
     try {
-      const userId = (req as any).user?.id || "unknown";
-      const calls = await storage.getCallsWithDetails(req.orgId!, {});
+      const userId = req.user?.id || "unknown";
       const clinicalCategories = [
         "clinical_encounter", "telemedicine",
         "dental_encounter", "dental_consultation",
       ];
 
+      // Query only attested clinical notes (not all calls)
+      const noteRows = await storage.getAttestedClinicalNotes?.(req.orgId!, clinicalCategories);
+
       // Gather attested notes for this provider
       const attestedNotes: StyleClinicalNote[] = [];
-      for (const call of calls) {
-        const cn = (call as any).analysis?.clinicalNote;
+      const userName = req.user?.name || req.user?.username;
+
+      for (const row of noteRows || []) {
+        const cn = row.clinicalNote as any;
         if (!cn?.providerAttested) continue;
-        if (!clinicalCategories.includes((call as any).callCategory)) continue;
 
         // Only include notes attested by this user (if tracked)
-        if (cn.attestedBy) {
-          const userName = (req as any).user?.name || (req as any).user?.username;
-          if (cn.attestedBy !== userName) continue;
-        }
+        if (cn.attestedBy && cn.attestedBy !== userName) continue;
 
         const sections: Record<string, string> = {};
         if (cn.subjective) sections.subjective = decryptField(cn.subjective);
@@ -443,7 +465,7 @@ export function registerClinicalRoutes(app: Express): void {
         if (cn.response) sections.response = cn.response;
 
         attestedNotes.push({
-          attestedAt: cn.attestedAt || (call as any).uploadedAt || new Date().toISOString(),
+          attestedAt: cn.attestedAt || row.uploadedAt || new Date().toISOString(),
           specialty: cn.specialty,
           sections,
         });
@@ -488,7 +510,7 @@ export function registerClinicalRoutes(app: Express): void {
         return;
       }
 
-      const userId = (req as any).user?.id || "unknown";
+      const userId = req.user?.id || "unknown";
       const settings = org.settings || {};
       const allPrefs = (settings as any).providerStylePreferences || {};
       allPrefs[userId] = { ...allPrefs[userId], ...preferences, learnedAt: new Date().toISOString() };
@@ -560,11 +582,8 @@ export function registerClinicalRoutes(app: Express): void {
 
       // Decrypt PHI fields for validation
       const decrypted = { ...cn };
-      if (typeof decrypted.subjective === "string") decrypted.subjective = decryptField(decrypted.subjective);
-      if (typeof decrypted.objective === "string") decrypted.objective = decryptField(decrypted.objective);
-      if (typeof decrypted.assessment === "string") decrypted.assessment = decryptField(decrypted.assessment);
-      if (typeof decrypted.hpiNarrative === "string") decrypted.hpiNarrative = decryptField(decrypted.hpiNarrative);
-      if (typeof decrypted.chiefComplaint === "string") decrypted.chiefComplaint = decryptField(decrypted.chiefComplaint);
+      const wrapper = { clinicalNote: decrypted } as Record<string, unknown>;
+      decryptClinicalNotePhi(wrapper);
 
       const result = validateClinicalNote(decrypted);
       res.json(result);

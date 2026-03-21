@@ -126,6 +126,7 @@ export function registerApiKeyRoutes(app: Express): void {
         : undefined;
 
       const apiKey = await storage.createApiKey(req.orgId!, {
+        orgId: req.orgId!,
         name,
         keyHash,
         keyPrefix,

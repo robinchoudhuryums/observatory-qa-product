@@ -132,7 +132,10 @@ function scanRequest(req: Request): { reason: string; points: number } | null {
   const url = decodeURIComponent(req.originalUrl || req.url);
   const body = typeof req.body === "string" ? req.body : JSON.stringify(req.body || {});
   const query = JSON.stringify(req.query || {});
-  const combined = `${url} ${query} ${body}`;
+
+  // Skip regex scanning on large payloads to prevent ReDoS (legitimate uploads are large)
+  const MAX_SCAN_LENGTH = 100_000; // 100KB
+  const combined = `${url} ${query} ${body}`.slice(0, MAX_SCAN_LENGTH);
 
   // Path traversal (high severity)
   if (checkPatterns(url, PATH_TRAVERSAL_PATTERNS)) {

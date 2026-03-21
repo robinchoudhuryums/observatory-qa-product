@@ -466,9 +466,12 @@ async function addColumnIfNotExists(
   column: string,
   definition: string,
 ): Promise<void> {
+  // Quote identifiers to prevent SQL injection
+  const safeTable = `"${table.replace(/"/g, '""')}"`;
+  const safeColumn = `"${column.replace(/"/g, '""')}"`;
   await db.execute(sql.raw(`
     DO $$ BEGIN
-      ALTER TABLE ${table} ADD COLUMN ${column} ${definition};
+      ALTER TABLE ${safeTable} ADD COLUMN ${safeColumn} ${definition};
     EXCEPTION
       WHEN duplicate_column THEN NULL;
     END $$;

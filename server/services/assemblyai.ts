@@ -158,10 +158,12 @@ Evaluate the agent on: professionalism, product knowledge, empathy, problem reso
   processTranscriptData(
     transcriptResponse: AssemblyAIResponse,
     aiAnalysis: CallAnalysis | null,
-    callId: string
+    callId: string,
+    orgId: string
   ): { transcript: InsertTranscript; sentiment: InsertSentimentAnalysis; analysis: InsertCallAnalysis } {
     // Build transcript record
     const transcript: InsertTranscript = {
+      orgId,
       callId,
       text: transcriptResponse.text || '',
       confidence: transcriptResponse.confidence?.toString(),
@@ -190,9 +192,18 @@ Evaluate the agent on: professionalism, product knowledge, empathy, problem reso
       overallScore = Math.round(avgConfidence * 100) / 100;
     }
 
+    // Validate overallSentiment to match the enum type
+    const validSentiments = ["positive", "neutral", "negative"] as const;
+    const normalizedSentiment = typeof overallSentiment === "string" ? overallSentiment.toLowerCase() : "neutral";
+    const validatedSentiment: "positive" | "neutral" | "negative" =
+      validSentiments.includes(normalizedSentiment as any)
+        ? (normalizedSentiment as "positive" | "neutral" | "negative")
+        : "neutral";
+
     const sentiment: InsertSentimentAnalysis = {
+      orgId,
       callId,
-      overallSentiment,
+      overallSentiment: validatedSentiment,
       overallScore: overallScore.toString(),
       segments: transcriptResponse.sentiment_analysis_results || [],
     };
@@ -223,6 +234,7 @@ Evaluate the agent on: professionalism, product knowledge, empathy, problem reso
     }
 
     const analysis: InsertCallAnalysis = {
+      orgId,
       callId,
       performanceScore: performanceScore.toString(),
       talkTimeRatio: talkTimeRatio.toString(),

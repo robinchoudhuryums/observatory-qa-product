@@ -108,13 +108,61 @@ app.use((req, res, next) => {
   res.setHeader('Permissions-Policy', 'camera=(), microphone=(self), geolocation=()');
   // CSP: restrict resource loading to same-origin and trusted CDNs
   res.setHeader('Content-Security-Policy',
-    "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data: blob:; media-src 'self' blob:; connect-src 'self' wss:; frame-ancestors 'none';"
+    "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data: blob:; media-src 'self' blob:; connect-src 'self' wss:; frame-ancestors 'none';"
   );
   // Only set no-cache on API routes — static assets need caching for performance
   if (req.path.startsWith("/api")) {
     res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
     res.setHeader('Pragma', 'no-cache');
   }
+  next();
+});
+
+// CSRF protection: double-submit cookie pattern
+// State-changing API requests must include X-CSRF-Token header matching the csrf cookie
+import { randomBytes } from "crypto";
+
+function parseCookie(req: Request, name: string): string | undefined {
+  const header = req.headers.cookie || "";
+  const match = header.split(";").map(s => s.trim()).find(s => s.startsWith(`${name}=`));
+  return match ? match.slice(name.length + 1) : undefined;
+}
+
+app.use((req, res, next) => {
+  // Set CSRF cookie on all responses if not already present
+  if (!parseCookie(req, "csrf-token")) {
+    const token = randomBytes(32).toString("hex");
+    res.cookie("csrf-token", token, {
+      httpOnly: false, // Must be readable by JS to send in header
+      sameSite: "strict",
+      secure: process.env.NODE_ENV === "production",
+      path: "/",
+    });
+  }
+
+  // Skip CSRF checks for safe methods and non-API routes
+  if (["GET", "HEAD", "OPTIONS"].includes(req.method) || !req.path.startsWith("/api")) {
+    return next();
+  }
+
+  // Skip CSRF for Stripe webhooks (uses its own signature verification)
+  if (req.path === "/api/billing/webhook") return next();
+
+  // Skip CSRF for API key authenticated requests (no browser session)
+  if (req.headers["x-api-key"]) return next();
+
+  // Skip CSRF for login/register/forgot-password (pre-auth, no session yet)
+  const csrfExemptPaths = ["/api/auth/login", "/api/auth/register", "/api/auth/forgot-password", "/api/auth/reset-password"];
+  if (csrfExemptPaths.includes(req.path)) return next();
+
+  // Verify CSRF token
+  const cookieToken = parseCookie(req, "csrf-token");
+  const headerToken = req.headers["x-csrf-token"] as string | undefined;
+  if (!cookieToken || !headerToken || cookieToken !== headerToken) {
+    res.status(403).json({ message: "Invalid or missing CSRF token", code: "OBS-AUTH-CSRF" });
+    return;
+  }
+
   next();
 });
 
@@ -167,6 +215,12 @@ app.use("/api/ehr", distributedRateLimit(60 * 1000, 30, true) as any);
   redisAvailable = redis !== null;
   if (redisAvailable) {
     logger.info("Redis available — using distributed sessions, rate limiting, and job queues");
+  } else if (process.env.NODE_ENV === "production") {
+    logger.error(
+      "REDIS_URL not configured in production. In-memory sessions will be lost on restart " +
+      "and rate limiting will not work across instances. Set REDIS_URL to continue."
+    );
+    process.exit(1);
   }
 
   // 2. Initialize PostgreSQL storage if configured

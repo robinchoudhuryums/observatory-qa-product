@@ -34,8 +34,19 @@ declare module "multer" {
 }
 
 declare namespace Express {
+  interface User {
+    id: string;
+    username: string;
+    name: string;
+    role: string;
+    orgId: string;
+    orgSlug?: string;
+  }
+
   interface Request {
     file?: import("multer").File;
     files?: import("multer").File[];
+    user?: User;
+    orgId?: string;
   }
 }

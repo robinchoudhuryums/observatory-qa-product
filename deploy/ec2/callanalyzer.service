@@ -1,4 +1,4 @@
-# CallAnalyzer — systemd service unit
+# Observatory QA — systemd service unit
 # Install to: /etc/systemd/system/callanalyzer.service
 #
 # Commands:
@@ -8,9 +8,11 @@
 #   sudo journalctl -u callanalyzer -f   # Tail logs
 
 [Unit]
-Description=CallAnalyzer - AI-Powered Call Quality Analysis
+Description=Observatory QA - AI-Powered Call Quality Analysis
 After=network.target
 Wants=network-online.target
+StartLimitIntervalSec=60
+StartLimitBurst=3
 
 [Service]
 Type=simple
@@ -32,13 +34,14 @@ ProtectSystem=strict
 ProtectHome=true
 ReadWritePaths=/opt/callanalyzer
 PrivateTmp=true
+PrivateDevices=true
 ProtectKernelTunables=true
 ProtectKernelModules=true
 ProtectControlGroups=true
 
 # Resource limits
 LimitNOFILE=65535
-MemoryMax=512M
+MemoryMax=1G
 
 # Logging (goes to journald → accessible via journalctl)
 StandardOutput=journal

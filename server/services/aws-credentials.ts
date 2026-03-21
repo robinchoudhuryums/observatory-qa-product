@@ -13,6 +13,7 @@
  *   const creds = await getAwsCredentials();
  *   if (creds) { // use creds.accessKeyId, creds.secretAccessKey, etc. }
  */
+import { createHash, createHmac } from "crypto";
 import { logger } from "./logger";
 
 export interface AwsCredentials {
@@ -201,4 +202,25 @@ export async function getAwsCredentials(): Promise<AwsCredentials | null> {
 export async function refreshAwsCredentials(): Promise<AwsCredentials | null> {
   cachedCredentials = null;
   return getAwsCredentials();
+}
+
+// --- Shared SigV4 crypto helpers (used by s3.ts, bedrock.ts, embeddings.ts) ---
+
+export function sha256Hex(data: string): string {
+  return createHash("sha256").update(data, "utf8").digest("hex");
+}
+
+export function hmac(key: Buffer | string, data: string): Buffer {
+  return createHmac("sha256", key).update(data, "utf8").digest();
+}
+
+export function hmacHex(key: Buffer | string, data: string): string {
+  return createHmac("sha256", key).update(data, "utf8").digest("hex");
+}
+
+export function getSignatureKey(key: string, dateStamp: string, region: string, service: string): Buffer {
+  const kDate = hmac(`AWS4${key}`, dateStamp);
+  const kRegion = hmac(kDate, region);
+  const kService = hmac(kRegion, service);
+  return hmac(kService, "aws4_request");
 }

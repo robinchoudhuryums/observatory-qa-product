@@ -8,7 +8,8 @@
  *
  * HIPAA: S3 is HIPAA-eligible under the AWS BAA.
  */
-import { createHmac, createHash } from "crypto";
+import { createHash } from "crypto";
+import { hmac, hmacHex, getSignatureKey } from "./aws-credentials";
 import { logger } from "./logger";
 
 interface AwsCredentials {
@@ -293,7 +294,7 @@ export class S3Client {
     ].join("\n");
 
     const signingKey = getSignatureKey(creds.secretAccessKey, dateStamp, this.region, "s3");
-    const signature = createHmac("sha256", signingKey).update(stringToSign, "utf8").digest("hex");
+    const signature = hmacHex(signingKey, stringToSign);
 
     const authHeader =
       `AWS4-HMAC-SHA256 Credential=${creds.accessKeyId}/${credentialScope}, ` +
@@ -314,15 +315,4 @@ export class S3Client {
   }
 }
 
-// --- Crypto helpers ---
-
-function hmac(key: Buffer | string, data: string): Buffer {
-  return createHmac("sha256", key).update(data, "utf8").digest();
-}
-
-function getSignatureKey(key: string, dateStamp: string, region: string, service: string): Buffer {
-  const kDate = hmac(`AWS4${key}`, dateStamp);
-  const kRegion = hmac(kDate, region);
-  const kService = hmac(kRegion, service);
-  return hmac(kService, "aws4_request");
-}
+// Crypto helpers (hmac, hmacHex, getSignatureKey) imported from aws-credentials.ts

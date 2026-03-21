@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback } from "react";
 import { Link, useLocation } from "wouter";
 import { BarChart3, Upload, FileText, Heart, Users, UserPlus, Search, LogOut, User, TrendingUp, Sun, Moon, Shield, Building2, SlidersHorizontal, ClipboardCheck, Palette, ScrollText, Menu, X, FlaskConical, DollarSign, Stethoscope, BookTemplate } from "lucide-react";
 import { ObservatoryLogo } from "@/components/observatory-logo";
-import { cn } from "@/lib/utils";
+import { cn, safeStorage } from "@/lib/utils";
 import { useQuery } from "@tanstack/react-query";
 import { apiRequest, queryClient, getQueryFn } from "@/lib/queryClient";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -38,12 +38,12 @@ export default function Sidebar() {
     const next = !isDark;
     setIsDark(next);
     document.documentElement.classList.toggle("dark", next);
-    localStorage.setItem("theme", next ? "dark" : "light");
+    safeStorage.setItem("theme", next ? "dark" : "light");
   };
 
   // Initialize dark mode from localStorage or system preference on mount
   useEffect(() => {
-    const saved = localStorage.getItem("theme");
+    const saved = safeStorage.getItem("theme");
     if (saved) {
       const isDarkMode = saved === "dark";
       document.documentElement.classList.toggle("dark", isDarkMode);

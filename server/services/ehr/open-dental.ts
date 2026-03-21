@@ -27,6 +27,7 @@ import type {
   EhrTreatmentPlan,
   EhrSyncResult,
 } from "./types.js";
+import { ehrRequest } from "./request.js";
 
 export class OpenDentalAdapter implements IEhrAdapter {
   readonly system = "open_dental" as const;
@@ -40,20 +41,11 @@ export class OpenDentalAdapter implements IEhrAdapter {
 
   private async request<T>(config: EhrConnectionConfig, method: string, path: string, body?: unknown): Promise<T> {
     const url = `${config.baseUrl.replace(/\/$/, "")}${path}`;
-    const headers = this.buildHeaders(config);
-
-    const response = await fetch(url, {
-      method,
-      headers,
-      body: body ? JSON.stringify(body) : undefined,
+    return ehrRequest<T>({
+      method, url, body,
+      headers: this.buildHeaders(config),
+      systemLabel: "Open Dental",
     });
-
-    if (!response.ok) {
-      const errorText = await response.text().catch(() => "Unknown error");
-      throw new Error(`Open Dental API error ${response.status}: ${errorText}`);
-    }
-
-    return response.json() as Promise<T>;
   }
 
   async testConnection(config: EhrConnectionConfig): Promise<{ connected: boolean; version?: string; error?: string }> {

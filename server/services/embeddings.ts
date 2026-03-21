@@ -8,7 +8,8 @@
  * Dimensions: 1024 (normalized)
  * Max input: 8,192 tokens (~8,000 characters with safety margin)
  */
-import { createHmac, createHash } from "crypto";
+import { createHash } from "crypto";
+import { hmac, hmacHex, getSignatureKey, sha256Hex } from "./aws-credentials";
 import { logger } from "./logger";
 
 const EMBED_MODEL = "amazon.titan-embed-text-v2:0";
@@ -215,21 +216,5 @@ function signRequest(
   return headers;
 }
 
-function sha256(data: string): string {
-  return createHash("sha256").update(data, "utf8").digest("hex");
-}
-
-function hmac(key: Buffer | string, data: string): Buffer {
-  return createHmac("sha256", key).update(data, "utf8").digest();
-}
-
-function hmacHex(key: Buffer | string, data: string): string {
-  return createHmac("sha256", key).update(data, "utf8").digest("hex");
-}
-
-function getSignatureKey(key: string, dateStamp: string, region: string, service: string): Buffer {
-  const kDate = hmac(`AWS4${key}`, dateStamp);
-  const kRegion = hmac(kDate, region);
-  const kService = hmac(kRegion, service);
-  return hmac(kService, "aws4_request");
-}
+// Crypto helpers (sha256Hex, hmac, hmacHex, getSignatureKey) imported from aws-credentials.ts
+const sha256 = sha256Hex; // Local alias for existing usage

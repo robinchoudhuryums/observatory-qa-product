@@ -10,7 +10,7 @@ import { ErrorBoundary } from "@/components/lib/error-boundary";
 import { BrandingProvider } from "@/components/branding-provider";
 import { AudioWaveform } from "lucide-react";
 import { useWebSocket } from "@/hooks/use-websocket";
-import { AnimatePresence, motion } from "framer-motion";
+import { AnimatePresence, motion, MotionConfig } from "framer-motion";
 import type { AuthUser } from "@shared/schema";
 import { useToast } from "@/hooks/use-toast";
 
@@ -285,12 +285,14 @@ function AuthenticatedApp() {
 
 function App() {
   return (
-    <QueryClientProvider client={queryClient}>
-      <TooltipProvider>
-        <Toaster />
-        <AuthenticatedApp />
-      </TooltipProvider>
-    </QueryClientProvider>
+    <MotionConfig reducedMotion="user">
+      <QueryClientProvider client={queryClient}>
+        <TooltipProvider>
+          <Toaster />
+          <AuthenticatedApp />
+        </TooltipProvider>
+      </QueryClientProvider>
+    </MotionConfig>
   );
 }
 

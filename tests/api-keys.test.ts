@@ -10,6 +10,7 @@ import { insertApiKeySchema, apiKeySchema } from "../shared/schema.js";
 describe("insertApiKeySchema", () => {
   it("accepts valid API key data", () => {
     const result = insertApiKeySchema.safeParse({
+      orgId: "test-org",
       name: "Production API",
       keyHash: createHash("sha256").update("test-key").digest("hex"),
       keyPrefix: "obs_k_test",
@@ -22,6 +23,7 @@ describe("insertApiKeySchema", () => {
 
   it("defaults permissions to ['read']", () => {
     const result = insertApiKeySchema.safeParse({
+      orgId: "test-org",
       name: "Read-only Key",
       keyHash: createHash("sha256").update("test").digest("hex"),
       keyPrefix: "obs_k_ro",
@@ -33,6 +35,7 @@ describe("insertApiKeySchema", () => {
 
   it("rejects missing name", () => {
     const result = insertApiKeySchema.safeParse({
+      orgId: "test-org",
       keyHash: "abc123",
       keyPrefix: "obs_k_",
       createdBy: "admin",
@@ -42,6 +45,7 @@ describe("insertApiKeySchema", () => {
 
   it("rejects empty name", () => {
     const result = insertApiKeySchema.safeParse({
+      orgId: "test-org",
       name: "",
       keyHash: "abc123",
       keyPrefix: "obs_k_",
@@ -52,6 +56,7 @@ describe("insertApiKeySchema", () => {
 
   it("accepts optional expiresAt", () => {
     const result = insertApiKeySchema.safeParse({
+      orgId: "test-org",
       name: "Expiring Key",
       keyHash: createHash("sha256").update("key").digest("hex"),
       keyPrefix: "obs_k_exp",

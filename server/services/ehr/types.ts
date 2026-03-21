@@ -80,7 +80,7 @@ export interface EhrTreatmentPlan {
 
 export interface EhrConnectionConfig {
   /** EHR system type */
-  system: "open_dental" | "eaglesoft" | "dentrix";
+  system: "open_dental" | "eaglesoft" | "dentrix" | "mock";
   /** API base URL or server address */
   baseUrl: string;
   /** API key, token, or credentials */

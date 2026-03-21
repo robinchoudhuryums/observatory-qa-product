@@ -18,7 +18,7 @@ import { logger } from "../services/logger";
 import { searchRelevantChunks, formatRetrievedContext } from "../services/rag";
 import { PLAN_DEFINITIONS, CALL_CATEGORIES, type PlanTier, type UsageRecord } from "@shared/schema";
 import { estimateBedrockCost, estimateAssemblyAICost } from "./ab-testing";
-import { encryptField, decryptField } from "../services/phi-encryption";
+import { encryptField, decryptField, decryptClinicalNotePhi } from "../services/phi-encryption";
 import { calibrateAnalysis } from "../services/scoring-calibration";
 import { validateClinicalNote, sanitizeStylePreferences } from "../services/clinical-validation";
 
@@ -115,7 +115,7 @@ async function processAudioFile(orgId: string, callId: string, filePath: string,
         warning: "Transcript was empty — audio may be silent, corrupted, or too short",
       }, orgId);
       // Still save what we have but skip AI analysis
-      const { transcript, sentiment, analysis } = assemblyAIService.processTranscriptData(transcriptResponse, null, callId);
+      const { transcript, sentiment, analysis } = assemblyAIService.processTranscriptData(transcriptResponse, null, callId, orgId);
       analysis.confidenceScore = "0.10";
       analysis.confidenceFactors = {
         transcriptConfidence: 0,
@@ -309,7 +309,7 @@ async function processAudioFile(orgId: string, callId: string, filePath: string,
     // Step 5: Process combined results
     broadcastCallUpdate(callId, "processing", { step: 5, totalSteps: 6, label: "Processing results..." }, orgId);
     logger.info({ callId, step: "5/6" }, "Processing combined transcript and analysis data");
-    const { transcript, sentiment, analysis } = assemblyAIService.processTranscriptData(transcriptResponse, aiAnalysis, callId);
+    const { transcript, sentiment, analysis } = assemblyAIService.processTranscriptData(transcriptResponse, aiAnalysis, callId, orgId);
 
     // Compute confidence score based on transcript quality and analysis completeness
     const transcriptConfidence = transcriptResponse.confidence || 0;
@@ -422,7 +422,8 @@ async function processAudioFile(orgId: string, callId: string, filePath: string,
       };
 
       // Validate clinical note completeness (before encryption)
-      const validation = validateClinicalNote(analysis.clinicalNote as any);
+      const cn = analysis.clinicalNote!;
+      const validation = validateClinicalNote(cn as any);
       if (!validation.valid) {
         logger.warn({
           callId,
@@ -431,25 +432,24 @@ async function processAudioFile(orgId: string, callId: string, filePath: string,
           emptySections: validation.emptySections,
         }, "Clinical note has missing or empty required sections");
         // Merge server-detected missing sections with AI-reported ones
-        const aiMissing = analysis.clinicalNote.missingSections || [];
-        analysis.clinicalNote.missingSections = Array.from(new Set([...aiMissing, ...validation.missingSections, ...validation.emptySections]));
+        const aiMissing = cn.missingSections || [];
+        cn.missingSections = Array.from(new Set([...aiMissing, ...validation.missingSections, ...validation.emptySections]));
       }
       // Use the more conservative (lower) of AI and server-computed completeness
       // AI may overestimate completeness when sections are empty/shallow
-      const aiCompleteness = analysis.clinicalNote.documentationCompleteness || 0;
+      const aiCompleteness = cn.documentationCompleteness || 0;
       const serverCompleteness = validation.computedCompleteness;
-      analysis.clinicalNote.documentationCompleteness = Math.min(
+      cn.documentationCompleteness = Math.min(
         aiCompleteness || serverCompleteness,
         serverCompleteness || aiCompleteness,
       ) || serverCompleteness;
       // Store validation warnings for downstream consumers
       if (validation.warnings.length > 0) {
-        (analysis.clinicalNote as any).validationWarnings = validation.warnings;
+        (cn as any).validationWarnings = validation.warnings;
         logger.info({ callId, warnings: validation.warnings }, "Clinical note validation warnings");
       }
 
       // Encrypt PHI fields in clinical notes
-      const cn = analysis.clinicalNote;
       if (cn.subjective) cn.subjective = encryptField(cn.subjective);
       if (cn.objective) cn.objective = encryptField(cn.objective);
       if (cn.assessment) cn.assessment = encryptField(cn.assessment);
@@ -599,36 +599,27 @@ async function processAudioFile(orgId: string, callId: string, filePath: string,
   }
 }
 
-/** Decrypt PHI fields in clinical notes for display */
-function decryptClinicalNote(analysis: Record<string, unknown> | null | undefined): void {
-  if (!analysis) return;
-  const cn = analysis.clinicalNote as Record<string, unknown> | undefined;
-  if (!cn) return;
-  if (typeof cn.subjective === "string") cn.subjective = decryptField(cn.subjective);
-  if (typeof cn.objective === "string") cn.objective = decryptField(cn.objective);
-  if (typeof cn.assessment === "string") cn.assessment = decryptField(cn.assessment);
-  if (typeof cn.hpiNarrative === "string") cn.hpiNarrative = decryptField(cn.hpiNarrative);
-  if (typeof cn.chiefComplaint === "string") cn.chiefComplaint = decryptField(cn.chiefComplaint);
-}
+/** @deprecated Use decryptClinicalNotePhi from phi-encryption.ts */
+const decryptClinicalNote = decryptClinicalNotePhi;
 
 export function registerCallRoutes(app: Express): void {
 
   app.get("/api/calls", requireAuth, injectOrgContext, async (req, res) => {
     try {
       const { status, sentiment, employee, limit, offset } = req.query;
+      const parsedLimit = limit ? Math.min(Math.max(1, parseInt(limit as string, 10) || 100), 500) : undefined;
+      const parsedOffset = Math.max(0, parseInt(offset as string, 10) || 0);
+
       const calls = await storage.getCallsWithDetails(req.orgId!, {
         status: status as string,
         sentiment: sentiment as string,
-        employee: employee as string
+        employee: employee as string,
+        limit: parsedLimit,
+        offset: parsedOffset,
       });
 
-      // Support server-side pagination via limit/offset
-      const parsedLimit = limit ? Math.max(0, parseInt(limit as string, 10) || 0) : undefined;
-      const parsedOffset = Math.max(0, parseInt(offset as string, 10) || 0);
-
       if (parsedLimit && parsedLimit > 0) {
-        const paged = calls.slice(parsedOffset, parsedOffset + parsedLimit);
-        res.json({ data: paged, total: calls.length });
+        res.json({ data: calls, total: calls.length, limit: parsedLimit, offset: parsedOffset });
       } else {
         // Backwards compatible — return raw array when no limit specified
         res.json(calls);
@@ -711,6 +702,7 @@ export function registerCallRoutes(app: Express): void {
       }
 
       const call = await storage.createCall(req.orgId!, {
+        orgId: req.orgId!,
         employeeId: employeeId || undefined,
         fileName: req.file.originalname,
         filePath: req.file.path,
@@ -721,7 +713,7 @@ export function registerCallRoutes(app: Express): void {
       const originalName = req.file.originalname;
       const mimeType = req.file.mimetype || "audio/mpeg";
       const orgId = req.orgId!;
-      const uploadUserId = (req as any).user?.id;
+      const uploadUserId = req.user?.id;
       processAudioFile(orgId, call.id, req.file.path, audioBuffer, originalName, mimeType, callCategory, uploadUserId, clinicalSpecialty, noteFormat)
         .catch(async (error) => {
           logger.error({ callId: call.id, err: error }, "Failed to process call");
@@ -894,7 +886,7 @@ export function registerCallRoutes(app: Express): void {
         return;
       }
 
-      const user = (req as any).user;
+      const user = req.user;
       const editedBy = user?.name || user?.username || "Unknown User";
 
       const previousEdits = Array.isArray(existing.manualEdits) ? existing.manualEdits : [];

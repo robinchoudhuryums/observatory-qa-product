@@ -11,7 +11,7 @@
  * - Full-text search via PostgreSQL (no need to load all transcripts into memory)
  * - Proper indexing for dashboard metrics
  */
-import { eq, and, or, desc, sql, ilike, lt } from "drizzle-orm";
+import { eq, and, or, desc, sql, ilike, lt, inArray } from "drizzle-orm";
 import { randomUUID } from "crypto";
 import type { Database } from "./index";
 import type { ObjectStorageClient } from "../storage";
@@ -280,27 +280,40 @@ export class PostgresStorage implements IStorage {
 
   async getCallsWithDetails(
     orgId: string,
-    filters: { status?: string; sentiment?: string; employee?: string } = {},
+    filters: { status?: string; sentiment?: string; employee?: string; limit?: number; offset?: number } = {},
   ): Promise<CallWithDetails[]> {
     // Build dynamic where conditions
     const conditions = [eq(tables.calls.orgId, orgId)];
     if (filters.status) conditions.push(eq(tables.calls.status, filters.status));
     if (filters.employee) conditions.push(eq(tables.calls.employeeId, filters.employee));
 
-    const callRows = await this.db.select().from(tables.calls)
+    let query = this.db.select().from(tables.calls)
       .where(and(...conditions))
       .orderBy(desc(tables.calls.uploadedAt));
+
+    // Apply SQL-level pagination when no sentiment filter (sentiment requires post-join filtering)
+    if (!filters.sentiment && filters.limit && filters.limit > 0) {
+      query = query.limit(filters.limit) as any;
+      if (filters.offset) query = query.offset(filters.offset) as any;
+    }
+
+    const callRows = await query;
 
     if (callRows.length === 0) return [];
 
     const callIds = callRows.map((c) => c.id);
 
-    // Batch-load related data
+    // Collect unique employee IDs to fetch only needed employees
+    const empIdsNeeded = Array.from(new Set(callRows.map((c) => c.employeeId).filter(Boolean))) as string[];
+
+    // Batch-load related data scoped to matched call IDs (not entire org)
     const [empRows, txRows, sentRows, analysisRows] = await Promise.all([
-      this.db.select().from(tables.employees).where(eq(tables.employees.orgId, orgId)),
-      this.db.select().from(tables.transcripts).where(eq(tables.transcripts.orgId, orgId)),
-      this.db.select().from(tables.sentimentAnalyses).where(eq(tables.sentimentAnalyses.orgId, orgId)),
-      this.db.select().from(tables.callAnalyses).where(eq(tables.callAnalyses.orgId, orgId)),
+      empIdsNeeded.length > 0
+        ? this.db.select().from(tables.employees).where(inArray(tables.employees.id, empIdsNeeded))
+        : Promise.resolve([]),
+      this.db.select().from(tables.transcripts).where(inArray(tables.transcripts.callId, callIds)),
+      this.db.select().from(tables.sentimentAnalyses).where(inArray(tables.sentimentAnalyses.callId, callIds)),
+      this.db.select().from(tables.callAnalyses).where(inArray(tables.callAnalyses.callId, callIds)),
     ]);
 
     const empMap = new Map(empRows.map((e) => [e.id, this.mapEmployee(e)]));
@@ -342,11 +355,16 @@ export class PostgresStorage implements IStorage {
 
     if (callRows.length === 0) return [];
 
-    // Batch-load related data (NO transcripts)
+    const callIds = callRows.map((c) => c.id);
+    const empIdsNeeded = Array.from(new Set(callRows.map((c) => c.employeeId).filter(Boolean))) as string[];
+
+    // Batch-load related data scoped to matched calls (NO transcripts)
     const [empRows, sentRows, analysisRows] = await Promise.all([
-      this.db.select().from(tables.employees).where(eq(tables.employees.orgId, orgId)),
-      this.db.select().from(tables.sentimentAnalyses).where(eq(tables.sentimentAnalyses.orgId, orgId)),
-      this.db.select().from(tables.callAnalyses).where(eq(tables.callAnalyses.orgId, orgId)),
+      empIdsNeeded.length > 0
+        ? this.db.select().from(tables.employees).where(inArray(tables.employees.id, empIdsNeeded))
+        : Promise.resolve([]),
+      this.db.select().from(tables.sentimentAnalyses).where(inArray(tables.sentimentAnalyses.callId, callIds)),
+      this.db.select().from(tables.callAnalyses).where(inArray(tables.callAnalyses.callId, callIds)),
     ]);
 
     const empMap = new Map(empRows.map((e) => [e.id, this.mapEmployee(e)]));
@@ -486,39 +504,114 @@ export class PostgresStorage implements IStorage {
   }
 
   async getTopPerformers(orgId: string, limit = 3): Promise<TopPerformer[]> {
+    // Single query: JOIN calls → analyses → employees, aggregate in SQL
     const rows = await this.db.select({
       employeeId: tables.calls.employeeId,
+      employeeName: tables.employees.name,
+      employeeRole: tables.employees.role,
       avgScore: sql<number>`avg(cast(${tables.callAnalyses.performanceScore} as float))`,
       totalCalls: sql<number>`count(*)::int`,
     }).from(tables.calls)
       .innerJoin(tables.callAnalyses, eq(tables.calls.id, tables.callAnalyses.callId))
+      .innerJoin(tables.employees, eq(tables.calls.employeeId, tables.employees.id))
       .where(and(
         eq(tables.calls.orgId, orgId),
         sql`${tables.calls.employeeId} is not null`,
       ))
-      .groupBy(tables.calls.employeeId)
+      .groupBy(tables.calls.employeeId, tables.employees.id, tables.employees.name, tables.employees.role)
       .orderBy(sql`avg(cast(${tables.callAnalyses.performanceScore} as float)) desc`)
       .limit(limit);
 
-    const empIds = rows.map((r) => r.employeeId!).filter(Boolean);
-    if (empIds.length === 0) return [];
+    return rows.map((r) => ({
+      id: r.employeeId!,
+      name: r.employeeName,
+      role: r.employeeRole || undefined,
+      avgPerformanceScore: r.avgScore ? Math.round(r.avgScore * 100) / 100 : null,
+      totalCalls: r.totalCalls,
+    }));
+  }
 
-    const empRows = await this.db.select().from(tables.employees)
-      .where(eq(tables.employees.orgId, orgId));
-    const empMap = new Map(empRows.map((e) => [e.id, e]));
+  /**
+   * Get clinical call metrics without loading all calls into memory.
+   * Queries only calls matching clinical categories with their analysis JSONB data.
+   */
+  async getClinicalCallMetrics(orgId: string, clinicalCategories: string[]): Promise<{
+    totalEncounters: number;
+    completed: number;
+    notesWithData: Array<{
+      clinicalNote: any;
+      uploadedAt: string | null;
+    }>;
+  }> {
+    // Count total encounters matching clinical categories
+    const [totalRow] = await this.db.select({
+      count: sql<number>`count(*)::int`,
+    }).from(tables.calls)
+      .where(and(
+        eq(tables.calls.orgId, orgId),
+        inArray(tables.calls.callCategory!, clinicalCategories),
+      ));
 
-    return rows
-      .filter((r) => r.employeeId && empMap.has(r.employeeId))
-      .map((r) => {
-        const emp = empMap.get(r.employeeId!)!;
-        return {
-          id: emp.id,
-          name: emp.name,
-          role: emp.role || undefined,
-          avgPerformanceScore: r.avgScore ? Math.round(r.avgScore * 100) / 100 : null,
-          totalCalls: r.totalCalls,
-        };
-      });
+    // Count completed encounters
+    const [completedRow] = await this.db.select({
+      count: sql<number>`count(*)::int`,
+    }).from(tables.calls)
+      .where(and(
+        eq(tables.calls.orgId, orgId),
+        eq(tables.calls.status, "completed"),
+        inArray(tables.calls.callCategory!, clinicalCategories),
+      ));
+
+    // Fetch only completed clinical calls that have analyses with clinical notes
+    // This is a JOIN on two tables, not loading ALL calls + ALL analyses
+    const noteRows = await this.db.select({
+      clinicalNote: tables.callAnalyses.clinicalNote,
+      uploadedAt: tables.calls.uploadedAt,
+    }).from(tables.calls)
+      .innerJoin(tables.callAnalyses, eq(tables.calls.id, tables.callAnalyses.callId))
+      .where(and(
+        eq(tables.calls.orgId, orgId),
+        eq(tables.calls.status, "completed"),
+        inArray(tables.calls.callCategory!, clinicalCategories),
+        sql`${tables.callAnalyses.clinicalNote} is not null`,
+      ));
+
+    return {
+      totalEncounters: totalRow?.count || 0,
+      completed: completedRow?.count || 0,
+      notesWithData: noteRows.map(r => ({
+        clinicalNote: r.clinicalNote as any,
+        uploadedAt: r.uploadedAt?.toISOString() || null,
+      })),
+    };
+  }
+
+  /**
+   * Get attested clinical notes without loading all calls.
+   * Returns only analyses with providerAttested clinical notes for matching categories.
+   */
+  async getAttestedClinicalNotes(orgId: string, clinicalCategories: string[]): Promise<Array<{
+    clinicalNote: any;
+    uploadedAt: string | null;
+  }>> {
+    const rows = await this.db.select({
+      clinicalNote: tables.callAnalyses.clinicalNote,
+      uploadedAt: tables.calls.uploadedAt,
+    }).from(tables.calls)
+      .innerJoin(tables.callAnalyses, eq(tables.calls.id, tables.callAnalyses.callId))
+      .where(and(
+        eq(tables.calls.orgId, orgId),
+        eq(tables.calls.status, "completed"),
+        inArray(tables.calls.callCategory!, clinicalCategories),
+        sql`${tables.callAnalyses.clinicalNote} is not null`,
+        sql`(${tables.callAnalyses.clinicalNote}->>'providerAttested')::boolean = true`,
+      ))
+      .orderBy(desc(tables.calls.uploadedAt));
+
+    return rows.map(r => ({
+      clinicalNote: r.clinicalNote,
+      uploadedAt: r.uploadedAt?.toISOString() || null,
+    }));
   }
 
   // --- Search (PostgreSQL text search across transcripts, analysis, and topics) ---
@@ -551,9 +644,43 @@ export class PostgresStorage implements IStorage {
 
     if (callIds.size === 0) return [];
 
-    // Fetch full details for matching calls
-    const all = await this.getCallsWithDetails(orgId);
-    return all.filter((c) => callIds.has(c.id));
+    // Fetch only the matching calls with their details (not all calls)
+    const matchedCallIds = Array.from(callIds);
+    const callRows = await this.db.select().from(tables.calls)
+      .where(and(
+        eq(tables.calls.orgId, orgId),
+        inArray(tables.calls.id, matchedCallIds),
+      ))
+      .orderBy(desc(tables.calls.uploadedAt));
+
+    if (callRows.length === 0) return [];
+
+    const empIdsNeeded = Array.from(new Set(callRows.map((c) => c.employeeId).filter(Boolean))) as string[];
+
+    const [empRows, txRows, sentRows, analysisRows] = await Promise.all([
+      empIdsNeeded.length > 0
+        ? this.db.select().from(tables.employees).where(inArray(tables.employees.id, empIdsNeeded))
+        : Promise.resolve([]),
+      this.db.select().from(tables.transcripts).where(inArray(tables.transcripts.callId, matchedCallIds)),
+      this.db.select().from(tables.sentimentAnalyses).where(inArray(tables.sentimentAnalyses.callId, matchedCallIds)),
+      this.db.select().from(tables.callAnalyses).where(inArray(tables.callAnalyses.callId, matchedCallIds)),
+    ]);
+
+    const empMap = new Map(empRows.map((e) => [e.id, this.mapEmployee(e)]));
+    const txMap = new Map(txRows.map((t) => [t.callId, this.mapTranscript(t)]));
+    const sentMap = new Map(sentRows.map((s) => [s.callId, this.mapSentiment(s)]));
+    const analysisMap = new Map(analysisRows.map((a) => [a.callId, this.mapAnalysis(a)]));
+
+    return callRows.map((row) => {
+      const call = this.mapCall(row);
+      return {
+        ...call,
+        employee: call.employeeId ? empMap.get(call.employeeId) : undefined,
+        transcript: txMap.get(call.id),
+        sentiment: sentMap.get(call.id),
+        analysis: normalizeAnalysis(analysisMap.get(call.id)),
+      };
+    });
   }
 
   // --- Audio operations (delegates to blob storage) ---

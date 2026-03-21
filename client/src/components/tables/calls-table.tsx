@@ -379,7 +379,7 @@ export default function CallsTable() {
                       </div>
                       <div className="flex items-center gap-1">
                         <span className="font-medium">{call.employee.name ?? 'Unknown'}</span>
-                        <Select onValueChange={(empId) => assignMutation.mutate({ callId: call.id, employeeId: empId })}>
+                        <Select onValueChange={(empId) => assignMutation.mutate({ callId: call.id, employeeId: empId })} disabled={assignMutation.isPending}>
                           <SelectTrigger className="w-7 h-7 p-0 border-0 bg-transparent">
                             <UserCheck className="w-3 h-3 text-muted-foreground" />
                           </SelectTrigger>
@@ -392,7 +392,7 @@ export default function CallsTable() {
                       </div>
                     </div>
                   ) : (
-                    <Select onValueChange={(empId) => assignMutation.mutate({ callId: call.id, employeeId: empId })}>
+                    <Select onValueChange={(empId) => assignMutation.mutate({ callId: call.id, employeeId: empId })} disabled={assignMutation.isPending}>
                       <SelectTrigger className="w-40 border-dashed text-muted-foreground">
                         <SelectValue placeholder="Assign employee" />
                       </SelectTrigger>

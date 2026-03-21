@@ -22,6 +22,7 @@ import {
 describe("insertCallAnalysisSchema", () => {
   it("accepts valid complete analysis", () => {
     const result = insertCallAnalysisSchema.safeParse({
+      orgId: "test-org",
       callId: "call-123",
       performanceScore: "7.5",
       summary: "Good call",
@@ -38,6 +39,7 @@ describe("insertCallAnalysisSchema", () => {
 
   it("accepts minimal analysis (only callId required)", () => {
     const result = insertCallAnalysisSchema.safeParse({
+      orgId: "test-org",
       callId: "call-456",
     });
     assert.ok(result.success);
@@ -45,6 +47,7 @@ describe("insertCallAnalysisSchema", () => {
 
   it("rejects missing callId", () => {
     const result = insertCallAnalysisSchema.safeParse({
+      orgId: "test-org",
       performanceScore: "5.0",
     });
     assert.ok(!result.success);
@@ -52,18 +55,21 @@ describe("insertCallAnalysisSchema", () => {
 
   it("validates sub-score ranges", () => {
     const valid = insertCallAnalysisSchema.safeParse({
+      orgId: "test-org",
       callId: "call-789",
       subScores: { compliance: 10, customerExperience: 0, communication: 5.5, resolution: 10 },
     });
     assert.ok(valid.success);
 
     const invalid = insertCallAnalysisSchema.safeParse({
+      orgId: "test-org",
       callId: "call-789",
       subScores: { compliance: 11 }, // > 10
     });
     assert.ok(!invalid.success);
 
     const invalidNeg = insertCallAnalysisSchema.safeParse({
+      orgId: "test-org",
       callId: "call-789",
       subScores: { compliance: -1 }, // < 0
     });
@@ -72,6 +78,7 @@ describe("insertCallAnalysisSchema", () => {
 
   it("allows undefined for all optional fields on old data", () => {
     const result = insertCallAnalysisSchema.safeParse({
+      orgId: "test-org",
       callId: "old-call",
       performanceScore: "6.0",
       summary: "An older call",
@@ -87,6 +94,7 @@ describe("insertCallAnalysisSchema", () => {
 describe("insertCoachingSessionSchema", () => {
   it("accepts valid coaching session", () => {
     const result = insertCoachingSessionSchema.safeParse({
+      orgId: "test-org",
       employeeId: "emp-1",
       assignedBy: "mgr-1",
       title: "Improve greeting compliance",
@@ -103,6 +111,7 @@ describe("insertCoachingSessionSchema", () => {
 
   it("defaults status to pending", () => {
     const result = insertCoachingSessionSchema.safeParse({
+      orgId: "test-org",
       employeeId: "emp-1",
       assignedBy: "mgr-1",
       title: "General coaching",
@@ -113,6 +122,7 @@ describe("insertCoachingSessionSchema", () => {
 
   it("defaults category to general", () => {
     const result = insertCoachingSessionSchema.safeParse({
+      orgId: "test-org",
       employeeId: "emp-1",
       assignedBy: "mgr-1",
       title: "General coaching",
@@ -123,6 +133,7 @@ describe("insertCoachingSessionSchema", () => {
 
   it("validates status enum", () => {
     const result = insertCoachingSessionSchema.safeParse({
+      orgId: "test-org",
       employeeId: "emp-1",
       assignedBy: "mgr-1",
       title: "Test",
@@ -135,6 +146,7 @@ describe("insertCoachingSessionSchema", () => {
 describe("insertAccessRequestSchema", () => {
   it("accepts valid request", () => {
     const result = insertAccessRequestSchema.safeParse({
+      orgId: "test-org",
       name: "John Doe",
       email: "john@example.com",
       reason: "Need access to review calls",
@@ -145,6 +157,7 @@ describe("insertAccessRequestSchema", () => {
 
   it("rejects invalid email", () => {
     const result = insertAccessRequestSchema.safeParse({
+      orgId: "test-org",
       name: "John",
       email: "not-an-email",
     });
@@ -153,6 +166,7 @@ describe("insertAccessRequestSchema", () => {
 
   it("rejects empty name", () => {
     const result = insertAccessRequestSchema.safeParse({
+      orgId: "test-org",
       name: "",
       email: "john@example.com",
     });
@@ -196,6 +210,7 @@ describe("insertUserSchema", () => {
 describe("insertEmployeeSchema", () => {
   it("accepts valid employee", () => {
     const result = insertEmployeeSchema.safeParse({
+      orgId: "test-org",
       name: "Jane Smith",
       email: "jane@company.com",
       role: "Senior Agent",
@@ -205,6 +220,7 @@ describe("insertEmployeeSchema", () => {
 
   it("accepts employee without status (optional field)", () => {
     const result = insertEmployeeSchema.safeParse({
+      orgId: "test-org",
       name: "New Employee",
       email: "new@company.com",
     });
@@ -214,6 +230,7 @@ describe("insertEmployeeSchema", () => {
 
   it("accepts explicit status value", () => {
     const result = insertEmployeeSchema.safeParse({
+      orgId: "test-org",
       name: "Inactive Employee",
       email: "inactive@company.com",
       status: "Inactive",
@@ -232,13 +249,12 @@ describe("insertEmployeeSchema", () => {
     assert.equal(result.data.orgId, "org-123");
   });
 
-  it("accepts without orgId (backward compat)", () => {
+  it("rejects without orgId (now required)", () => {
     const result = insertEmployeeSchema.safeParse({
       name: "Jane Smith",
       email: "jane@acme.com",
     });
-    assert.ok(result.success);
-    assert.equal(result.data.orgId, undefined);
+    assert.ok(!result.success, "Should reject employee without orgId");
   });
 });
 
@@ -441,20 +457,34 @@ describe("orgId field across insert schemas", () => {
     assert.ok(result.success);
   });
 
-  it("all insert schemas work without orgId (backward compat)", () => {
-    // Verify most insert schemas don't require orgId (insertUserSchema now requires it)
+  it("all insert schemas require orgId", () => {
+    // Verify all insert schemas require orgId
     const results = [
+      insertCallSchema.safeParse({ orgId: "test-org", status: "pending" }),
+      insertCallAnalysisSchema.safeParse({ orgId: "test-org", callId: "c1" }),
+      insertTranscriptSchema.safeParse({ orgId: "test-org", callId: "c1" }),
+      insertSentimentAnalysisSchema.safeParse({ orgId: "test-org", callId: "c1" }),
+      insertCoachingSessionSchema.safeParse({ orgId: "test-org", employeeId: "e1", assignedBy: "m1", title: "T" }),
+      insertAccessRequestSchema.safeParse({ orgId: "test-org", name: "J", email: "j@x.com" }),
+      insertUserSchema.safeParse({ orgId: "org-1", username: "u", passwordHash: "h", name: "N" }),
+      insertEmployeeSchema.safeParse({ orgId: "test-org", name: "E", email: "e@x.com" }),
+    ];
+    results.forEach((r, i) => {
+      assert.ok(r.success, `Insert schema ${i} failed with orgId: ${JSON.stringify(r.error?.issues)}`);
+    });
+
+    // Verify schemas reject missing orgId
+    const withoutOrgId = [
       insertCallSchema.safeParse({ status: "pending" }),
       insertCallAnalysisSchema.safeParse({ callId: "c1" }),
       insertTranscriptSchema.safeParse({ callId: "c1" }),
       insertSentimentAnalysisSchema.safeParse({ callId: "c1" }),
       insertCoachingSessionSchema.safeParse({ employeeId: "e1", assignedBy: "m1", title: "T" }),
       insertAccessRequestSchema.safeParse({ name: "J", email: "j@x.com" }),
-      insertUserSchema.safeParse({ orgId: "org-1", username: "u", passwordHash: "h", name: "N" }),
       insertEmployeeSchema.safeParse({ name: "E", email: "e@x.com" }),
     ];
-    results.forEach((r, i) => {
-      assert.ok(r.success, `Insert schema ${i} failed without orgId: ${JSON.stringify(r.error?.issues)}`);
+    withoutOrgId.forEach((r, i) => {
+      assert.ok(!r.success, `Insert schema ${i} should reject missing orgId`);
     });
   });
 });

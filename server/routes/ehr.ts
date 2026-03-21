@@ -62,7 +62,7 @@ export function registerEhrRoutes(app: Express): void {
       }
 
       // Decrypt API key for admin display, redact for non-admins
-      const isAdmin = (req as any).user?.role === "admin";
+      const isAdmin = req.user?.role === "admin";
       const decryptedKey = ehrConfig.apiKey ? decryptField(ehrConfig.apiKey) : undefined;
       res.json({
         configured: true,
@@ -331,6 +331,15 @@ export function registerEhrRoutes(app: Express): void {
       // Require attestation before pushing to EHR
       if (!analysis.clinicalNote.providerAttested) {
         res.status(400).json({ message: "Clinical note must be attested before pushing to EHR" });
+        return;
+      }
+
+      // Require patient consent before sharing clinical data externally (HIPAA)
+      if (!analysis.clinicalNote.consentObtained) {
+        res.status(400).json({
+          message: "Patient consent must be recorded before pushing notes to EHR",
+          code: "OBS-CLINICAL-020",
+        });
         return;
       }
 

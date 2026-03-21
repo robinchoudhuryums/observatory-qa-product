@@ -326,18 +326,25 @@ export function registerSsoRoutes(app: Express): void {
           return res.redirect(`/?error=${message}`);
         }
 
-        req.login(user, (loginErr) => {
-          if (loginErr) {
-            logger.error({ err: loginErr }, "SAML SSO session creation error");
+        // Regenerate session to prevent session fixation
+        req.session.regenerate((regenErr) => {
+          if (regenErr) {
+            logger.error({ err: regenErr }, "SAML SSO session regeneration error");
             return res.redirect("/?error=sso_login_error");
           }
+          req.login(user, (loginErr) => {
+            if (loginErr) {
+              logger.error({ err: loginErr }, "SAML SSO session creation error");
+              return res.redirect("/?error=sso_login_error");
+            }
 
-          logger.info(
-            { userId: user.id, orgId: user.orgId },
-            "SAML SSO login successful"
-          );
+            logger.info(
+              { userId: user.id, orgId: user.orgId },
+              "SAML SSO login successful"
+            );
 
-          res.redirect("/dashboard");
+            res.redirect("/dashboard");
+          });
         });
       }
     )(req, res, next);

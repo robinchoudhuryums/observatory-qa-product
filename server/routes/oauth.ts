@@ -150,12 +150,19 @@ export function registerOAuthRoutes(app: Express): void {
         const message = encodeURIComponent(info?.message || "Authentication failed");
         return res.redirect(`/?error=${message}`);
       }
-      req.login(user, (loginErr) => {
-        if (loginErr) {
-          logger.error({ err: loginErr }, "Google OAuth login error");
+      // Regenerate session to prevent session fixation
+      req.session.regenerate((regenErr) => {
+        if (regenErr) {
+          logger.error({ err: regenErr }, "Google OAuth session regeneration error");
           return res.redirect("/?error=login_error");
         }
-        res.redirect("/");
+        req.login(user, (loginErr) => {
+          if (loginErr) {
+            logger.error({ err: loginErr }, "Google OAuth login error");
+            return res.redirect("/?error=login_error");
+          }
+          res.redirect("/");
+        });
       });
     })(req, res, next);
   });

@@ -162,7 +162,7 @@ declare global {
       name: string;
       role: string;
       orgId: string;
-      orgSlug: string;
+      orgSlug?: string;
     }
     interface Request {
       /** Organization ID extracted from authenticated user session */

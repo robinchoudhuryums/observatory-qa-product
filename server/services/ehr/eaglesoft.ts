@@ -26,6 +26,7 @@ import type {
   EhrTreatmentPlan,
   EhrSyncResult,
 } from "./types.js";
+import { ehrRequest } from "./request.js";
 
 export class EaglesoftAdapter implements IEhrAdapter {
   readonly system = "eaglesoft" as const;
@@ -41,20 +42,11 @@ export class EaglesoftAdapter implements IEhrAdapter {
 
   private async request<T>(config: EhrConnectionConfig, method: string, path: string, body?: unknown): Promise<T> {
     const url = `${config.baseUrl.replace(/\/$/, "")}${path}`;
-    const headers = this.buildHeaders(config);
-
-    const response = await fetch(url, {
-      method,
-      headers,
-      body: body ? JSON.stringify(body) : undefined,
+    return ehrRequest<T>({
+      method, url, body,
+      headers: this.buildHeaders(config),
+      systemLabel: "Eaglesoft",
     });
-
-    if (!response.ok) {
-      const errorText = await response.text().catch(() => "Unknown error");
-      throw new Error(`Eaglesoft eDex API error ${response.status}: ${errorText}`);
-    }
-
-    return response.json() as Promise<T>;
   }
 
   async testConnection(config: EhrConnectionConfig): Promise<{ connected: boolean; version?: string; error?: string }> {

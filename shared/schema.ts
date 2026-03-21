@@ -99,7 +99,7 @@ export const userSchema = insertUserSchema.extend({
 
 // --- EMPLOYEE SCHEMAS ---
 export const insertEmployeeSchema = z.object({
-  orgId: z.string().optional(),
+  orgId: z.string(),
   name: z.string(),
   role: z.string().optional(),
   email: z.string(),
@@ -216,8 +216,12 @@ export const clinicalNoteSchema = z.object({
   missingSections: z.array(z.string()).optional(),
   patientConsentObtained: z.boolean().optional(),
   providerAttested: z.boolean().default(false),
+  // Optimistic locking for concurrent edit detection
+  version: z.number().optional(),
   // Attestation & audit metadata (HIPAA-required)
   attestedBy: z.string().optional(),
+  attestedById: z.string().optional(),
+  attestedNpi: z.string().optional(),
   attestedAt: z.string().optional(),
   consentRecordedBy: z.string().optional(),
   consentRecordedAt: z.string().optional(),
@@ -250,12 +254,12 @@ export type CallCategory = typeof CALL_CATEGORIES[number]["value"];
 
 // --- CALL SCHEMAS ---
 export const insertCallSchema = z.object({
-  orgId: z.string().optional(),
+  orgId: z.string(),
   employeeId: z.string().optional(),
   fileName: z.string().optional(),
   filePath: z.string().optional(),
   fileHash: z.string().optional(),
-  status: z.string().default("pending"),
+  status: z.enum(["pending", "processing", "completed", "failed"]).default("pending"),
   duration: z.number().optional(),
   assemblyAiId: z.string().optional(),
   callCategory: z.string().optional(),
@@ -278,7 +282,7 @@ export const transcriptWordSchema = z.object({
 });
 
 export const insertTranscriptSchema = z.object({
-  orgId: z.string().optional(),
+  orgId: z.string(),
   callId: z.string(),
   text: z.string().optional(),
   confidence: z.string().optional(),
@@ -301,9 +305,9 @@ export const sentimentSegmentSchema = z.object({
 });
 
 export const insertSentimentAnalysisSchema = z.object({
-  orgId: z.string().optional(),
+  orgId: z.string(),
   callId: z.string(),
-  overallSentiment: z.string().optional(),
+  overallSentiment: z.enum(["positive", "neutral", "negative"]).optional(),
   overallScore: z.string().optional(),
   segments: z.array(sentimentSegmentSchema).optional(),
 });
@@ -338,7 +342,7 @@ export const confidenceFactorsSchema = z.object({
 });
 
 export const insertCallAnalysisSchema = z.object({
-  orgId: z.string().optional(),
+  orgId: z.string(),
   callId: z.string(),
   performanceScore: z.string().optional(),
   talkTimeRatio: z.string().optional(),
@@ -396,7 +400,7 @@ export type CallAnalysis = z.infer<typeof callAnalysisSchema>;
 
 // --- ACCESS REQUEST SCHEMAS ---
 export const insertAccessRequestSchema = z.object({
-  orgId: z.string().optional(),
+  orgId: z.string(),
   name: z.string().min(1),
   email: z.string().email(),
   reason: z.string().optional(),
@@ -417,7 +421,7 @@ export type AccessRequest = z.infer<typeof accessRequestSchema>;
 
 // --- INVITATION SCHEMAS ---
 export const insertInvitationSchema = z.object({
-  orgId: z.string().optional(),
+  orgId: z.string(),
   email: z.string().email(),
   role: z.enum(["viewer", "manager", "admin"]).default("viewer"),
   invitedBy: z.string(),
@@ -439,7 +443,7 @@ export type Invitation = z.infer<typeof invitationSchema>;
 
 // --- API KEY SCHEMAS ---
 export const insertApiKeySchema = z.object({
-  orgId: z.string().optional(),
+  orgId: z.string(),
   name: z.string().min(1),
   keyHash: z.string(), // SHA-256 hash of the key (never store plaintext)
   keyPrefix: z.string(), // First 8 chars for display (e.g., "obs_k_ab")
@@ -736,7 +740,7 @@ export const COACHING_CATEGORIES = [
 ] as const;
 
 export const insertCoachingSessionSchema = z.object({
-  orgId: z.string().optional(),
+  orgId: z.string(),
   employeeId: z.string(),
   callId: z.string().optional(),
   assignedBy: z.string(),

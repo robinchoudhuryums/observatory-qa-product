@@ -95,6 +95,7 @@ describe("API Routes", () => {
     it("rejects call analysis with invalid subScores", async () => {
       const { insertCallAnalysisSchema } = await import("../shared/schema");
       const result = insertCallAnalysisSchema.safeParse({
+        orgId: "test-org",
         callId: "test-123",
         subScores: { compliance: 15 }, // > max of 10
       });
@@ -104,6 +105,7 @@ describe("API Routes", () => {
     it("validates call tags schema", async () => {
       const { insertCallSchema } = await import("../shared/schema");
       const result = insertCallSchema.safeParse({
+        orgId: "test-org",
         tags: ["escalation", "upsell"],
       });
       assert.strictEqual(result.success, true);

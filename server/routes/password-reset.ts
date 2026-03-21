@@ -19,11 +19,12 @@ import { logger } from "../services/logger";
 // In production with PostgreSQL, tokens are stored in the password_reset_tokens table
 const memoryTokens = new Map<string, {
   userId: string;
+  orgId: string;
   expiresAt: Date;
   usedAt?: Date;
 }>();
 
-async function storeResetToken(userId: string, tokenHash: string, expiresAt: Date): Promise<void> {
+async function storeResetToken(userId: string, orgId: string, tokenHash: string, expiresAt: Date): Promise<void> {
   // Try PostgreSQL first
   try {
     const { getDatabase } = await import("../db/index");
@@ -42,10 +43,10 @@ async function storeResetToken(userId: string, tokenHash: string, expiresAt: Dat
   } catch {
     // DB not available — fall through to in-memory
   }
-  memoryTokens.set(tokenHash, { userId, expiresAt });
+  memoryTokens.set(tokenHash, { userId, orgId, expiresAt });
 }
 
-async function validateAndConsumeToken(tokenHash: string): Promise<string | null> {
+async function validateAndConsumeToken(tokenHash: string): Promise<{ userId: string; orgId: string } | null> {
   // Try PostgreSQL first
   try {
     const { getDatabase } = await import("../db/index");
@@ -65,7 +66,7 @@ async function validateAndConsumeToken(tokenHash: string): Promise<string | null
       await db.update(passwordResetTokens)
         .set({ usedAt: new Date() })
         .where(eq(passwordResetTokens.id, row.id));
-      return row.userId;
+      return { userId: row.userId, orgId: (row as any).orgId || "" };
     }
   } catch {
     // DB not available — fall through to in-memory
@@ -80,7 +81,7 @@ async function validateAndConsumeToken(tokenHash: string): Promise<string | null
     return null;
   }
   entry.usedAt = new Date();
-  return entry.userId;
+  return { userId: entry.userId, orgId: entry.orgId };
 }
 
 export function registerPasswordResetRoutes(app: Express): void {
@@ -112,7 +113,7 @@ export function registerPasswordResetRoutes(app: Express): void {
       const tokenHash = createHash("sha256").update(rawToken).digest("hex");
       const expiresAt = new Date(Date.now() + 60 * 60 * 1000); // 1 hour
 
-      await storeResetToken(user.id, tokenHash, expiresAt);
+      await storeResetToken(user.id, user.orgId, tokenHash, expiresAt);
 
       // Build reset URL — use the request origin or a configured base URL
       const baseUrl = process.env.APP_BASE_URL
@@ -145,22 +146,22 @@ export function registerPasswordResetRoutes(app: Express): void {
       }
 
       const tokenHash = createHash("sha256").update(token).digest("hex");
-      const userId = await validateAndConsumeToken(tokenHash);
+      const result = await validateAndConsumeToken(tokenHash);
 
-      if (!userId) {
+      if (!result) {
         return res.status(400).json({ message: "Invalid or expired reset token" });
       }
 
-      // Update the user's password
-      const user = await storage.getUser(userId);
+      // Update the user's password using org-scoped lookup
+      const user = await storage.getUser(result.userId);
       if (!user) {
         return res.status(400).json({ message: "Invalid or expired reset token" });
       }
 
       const passwordHash = await hashPassword(newPassword);
-      await storage.updateUser(user.orgId, userId, { passwordHash });
+      await storage.updateUser(user.orgId, result.userId, { passwordHash });
 
-      logger.info({ userId }, "Password reset successfully");
+      logger.info({ userId: result.userId }, "Password reset successfully");
       res.json({ message: "Password has been reset. You can now log in with your new password." });
     } catch (error) {
       logger.error({ err: error }, "Password reset failed");

@@ -14,7 +14,8 @@
  * Bedrock caches system prompts across requests with the same prefix,
  * reducing input token costs by 25-40% for repeated analysis calls.
  */
-import { createHmac, createHash } from "crypto";
+import { createHash } from "crypto";
+import { hmac, hmacHex, getSignatureKey, sha256Hex } from "./aws-credentials";
 import type { AIAnalysisProvider, CallAnalysis } from "./ai-provider";
 import { buildSystemPrompt, buildUserMessage, parseJsonResponse } from "./ai-provider";
 import { getAwsCredentials, type AwsCredentials } from "./aws-credentials";
@@ -280,23 +281,5 @@ export class BedrockProvider implements AIAnalysisProvider {
   }
 }
 
-// --- Crypto helpers ---
-
-function sha256(data: string): string {
-  return createHash("sha256").update(data, "utf8").digest("hex");
-}
-
-function hmac(key: Buffer | string, data: string): Buffer {
-  return createHmac("sha256", key).update(data, "utf8").digest();
-}
-
-function hmacHex(key: Buffer | string, data: string): string {
-  return createHmac("sha256", key).update(data, "utf8").digest("hex");
-}
-
-function getSignatureKey(key: string, dateStamp: string, region: string, service: string): Buffer {
-  const kDate = hmac(`AWS4${key}`, dateStamp);
-  const kRegion = hmac(kDate, region);
-  const kService = hmac(kRegion, service);
-  return hmac(kService, "aws4_request");
-}
+// Crypto helpers (sha256Hex, hmac, hmacHex, getSignatureKey) imported from aws-credentials.ts
+const sha256 = sha256Hex; // Local alias for existing usage

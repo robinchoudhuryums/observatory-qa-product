@@ -6,7 +6,7 @@ import { assemblyAIService } from "../services/assemblyai";
 import { broadcastCallUpdate } from "../services/websocket";
 import { insertPromptTemplateSchema, orgSettingsSchema, PLAN_DEFINITIONS, type OrgSettings } from "@shared/schema";
 import { logger } from "../services/logger";
-import { queryAuditLogs, verifyAuditChain } from "../services/audit-log";
+import { queryAuditLogs, verifyAuditChain, logPhiAccess, auditContext } from "../services/audit-log";
 import { safeInt, withRetry } from "./helpers";
 import { enqueueReanalysis } from "../services/queue";
 import { getWafStats, blockIp, unblockIp } from "../middleware/waf";
@@ -150,7 +150,8 @@ export function registerAdminRoutes(app: Express): void {
             const { analysis } = assemblyAIService.processTranscriptData(
               { id: "", status: "completed", text: transcriptText, words: call.transcript?.words as any },
               aiAnalysis,
-              call.id
+              call.id,
+              req.orgId!
             );
 
             if (aiAnalysis.sub_scores) {
@@ -338,7 +339,17 @@ export function registerAdminRoutes(app: Express): void {
 
       const updatedSettings = { ...(org.settings || {}), ...parsed.data } as OrgSettings;
       const updated = await storage.updateOrganization(req.orgId!, { settings: updatedSettings });
-      logger.info({ org: req.orgId }, "Organization settings updated");
+
+      // Audit log for HIPAA — track all org configuration changes
+      const changedFields = Object.keys(parsed.data);
+      logPhiAccess({
+        ...auditContext(req),
+        event: "org_settings_update",
+        resourceType: "organization",
+        resourceId: req.orgId!,
+        detail: JSON.stringify({ changedFields }),
+      });
+      logger.info({ org: req.orgId, changedFields }, "Organization settings updated");
       res.json(updated);
     } catch (error) {
       logger.error({ err: error }, "Failed to update organization settings");
