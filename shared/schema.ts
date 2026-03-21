@@ -710,6 +710,10 @@ export const usageRecordSchema = z.object({
 export type UsageRecord = z.infer<typeof usageRecordSchema>;
 
 // --- ROLE DEFINITIONS ---
+// Role hierarchy: super_admin (4) > admin (3) > manager (2) > viewer (1)
+// super_admin is a platform-level role configured via the SUPER_ADMIN_USERS env var
+// Format: username:password:displayName (comma-separated for multiple)
+// Super admins are NOT scoped to any single org — they can manage ALL organizations.
 export const USER_ROLES = [
   {
     value: "viewer" as const,
@@ -725,6 +729,11 @@ export const USER_ROLES = [
     value: "admin" as const,
     label: "Administrator",
     description: "Full access. Manage users, approve access requests, bulk import, delete calls, and configure system settings.",
+  },
+  {
+    value: "super_admin" as const,
+    label: "Super Administrator",
+    description: "Platform-level admin. Can manage ALL organizations, view platform-wide stats, and impersonate org admins for debugging.",
   },
 ] as const;
 

@@ -50,3 +50,13 @@ declare namespace Express {
     orgId?: string;
   }
 }
+
+// Extend express-session to include super-admin impersonation flag
+declare module "express-session" {
+  interface SessionData {
+    /** When a super admin is impersonating an org, this holds the target org's ID */
+    impersonatingOrgId?: string;
+    /** The original org ID before impersonation started */
+    originalOrgId?: string;
+  }
+}

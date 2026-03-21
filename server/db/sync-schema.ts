@@ -15,6 +15,23 @@ export async function syncSchema(db: Database): Promise<void> {
   logger.info("Running schema sync...");
 
   try {
+    // Check if Drizzle migrations have been applied.
+    // If so, the migration system owns the schema — skip idempotent DDL.
+    const hasMigrations = await db.execute(sql`
+      SELECT EXISTS (
+        SELECT 1 FROM information_schema.tables
+        WHERE table_schema = 'drizzle' AND table_name = '__drizzle_migrations'
+      ) AS has_migrations
+    `).then((result) => {
+      const rows = result.rows as Array<{ has_migrations: boolean }>;
+      return rows[0]?.has_migrations === true;
+    }).catch(() => false);
+
+    if (hasMigrations) {
+      logger.info("Drizzle migrations detected — skipping sync-schema DDL");
+      return;
+    }
+
     // Enable pgvector if available (required for RAG)
     await db.execute(sql`CREATE EXTENSION IF NOT EXISTS vector`).catch(() => {
       logger.warn("pgvector extension not available — RAG features will be disabled");

@@ -1,3 +1,8 @@
+// OpenTelemetry must be initialised before any other imports that should be
+// auto-instrumented (HTTP, Express, pg).  The call is a no-op when
+// OTEL_ENABLED !== "true", so existing deployments are unaffected.
+import { initTelemetry, shutdownTelemetry } from "./services/telemetry";
+
 import express, { type Request, Response, NextFunction } from "express";
 import { registerRoutes } from "./routes/index";
 import { setupVite, serveStatic, log } from "./vite";
@@ -5,35 +10,56 @@ import { setupAuth } from "./auth";
 import { storage, initPostgresStorage } from "./storage";
 import { setupWebSocket } from "./services/websocket";
 import { logger } from "./services/logger";
-import { initRedis, checkRateLimit, closeRedis } from "./services/redis";
+import { initRedis, checkRateLimit, closeRedis, getRedisStatus } from "./services/redis";
 import { initQueues, enqueueRetention, closeQueues } from "./services/queue";
 import { initEmail, sendEmail, buildQuotaAlertEmail } from "./services/email";
 import { isPhiEncryptionEnabled } from "./services/phi-encryption";
 import { wafMiddleware } from "./middleware/waf";
+import { tracingMiddleware } from "./middleware/tracing";
 import { PLAN_DEFINITIONS, type PlanTier } from "@shared/schema";
 
 const app = express();
 
-// --- In-memory rate limiter (fallback when Redis unavailable) ---
-const rateLimitMap = new Map<string, { count: number; resetTime: number }>();
+// --- In-memory sliding window rate limiter (fallback when Redis unavailable) ---
+// Tracks individual request timestamps per key for accurate sliding window behavior
+const rateLimitMap = new Map<string, number[]>();
 function rateLimitKey(req: Request, includeOrg: boolean): string {
   const orgPart = includeOrg && req.orgId ? `:org:${req.orgId}` : "";
   return `${req.ip}:${req.path}${orgPart}`;
+}
+
+function setRateLimitHeaders(res: Response, limit: number, remaining: number, resetSeconds: number): void {
+  res.setHeader("X-RateLimit-Limit", limit.toString());
+  res.setHeader("X-RateLimit-Remaining", Math.max(0, remaining).toString());
+  res.setHeader("X-RateLimit-Reset", Math.ceil(resetSeconds).toString());
 }
 
 function inMemoryRateLimit(windowMs: number, maxRequests: number, includeOrg = false) {
   return (req: Request, res: Response, next: NextFunction) => {
     const key = rateLimitKey(req, includeOrg);
     const now = Date.now();
-    const entry = rateLimitMap.get(key);
-    if (!entry || now > entry.resetTime) {
-      rateLimitMap.set(key, { count: 1, resetTime: now + windowMs });
-      return next();
-    }
-    entry.count++;
-    if (entry.count > maxRequests) {
+    const windowStart = now - windowMs;
+
+    // Get existing timestamps and filter out expired ones
+    let timestamps = rateLimitMap.get(key) || [];
+    timestamps = timestamps.filter(ts => ts > windowStart);
+
+    const resetSeconds = timestamps.length > 0
+      ? (timestamps[0] + windowMs - now) / 1000
+      : windowMs / 1000;
+
+    if (timestamps.length >= maxRequests) {
+      rateLimitMap.set(key, timestamps);
+      setRateLimitHeaders(res, maxRequests, 0, resetSeconds);
+      res.setHeader("Retry-After", Math.ceil(resetSeconds).toString());
       return res.status(429).json({ message: "Too many requests. Please try again later." });
     }
+
+    // Record this request
+    timestamps.push(now);
+    rateLimitMap.set(key, timestamps);
+
+    setRateLimitHeaders(res, maxRequests, maxRequests - timestamps.length, resetSeconds);
     return next();
   };
 }
@@ -44,15 +70,17 @@ let redisAvailable = false;
 function distributedRateLimit(windowMs: number, maxRequests: number, includeOrg = false) {
   return async (req: Request, res: Response, next: NextFunction) => {
     if (!redisAvailable) {
-      // Fall back to in-memory
+      // Fall back to in-memory sliding window
       return inMemoryRateLimit(windowMs, maxRequests, includeOrg)(req, res, next);
     }
 
     const key = rateLimitKey(req, includeOrg);
     try {
       const result = await checkRateLimit(key, windowMs, maxRequests);
+      const resetSeconds = Math.ceil(result.resetMs / 1000);
+      setRateLimitHeaders(res, maxRequests, result.remaining, resetSeconds);
       if (!result.allowed) {
-        res.setHeader("Retry-After", Math.ceil(result.resetMs / 1000).toString());
+        res.setHeader("Retry-After", resetSeconds.toString());
         return res.status(429).json({ message: "Too many requests. Please try again later." });
       }
       return next();
@@ -66,8 +94,15 @@ function distributedRateLimit(windowMs: number, maxRequests: number, includeOrg 
 // Clean up expired in-memory rate limit entries every 5 minutes
 const rateLimitCleanupTimer = setInterval(() => {
   const now = Date.now();
-  rateLimitMap.forEach((entry, key) => {
-    if (now > entry.resetTime) rateLimitMap.delete(key);
+  rateLimitMap.forEach((timestamps, key) => {
+    // Remove keys where all timestamps have expired (oldest possible window is 1 hour for registration)
+    const maxWindowMs = 60 * 60 * 1000;
+    const filtered = timestamps.filter(ts => ts > now - maxWindowMs);
+    if (filtered.length === 0) {
+      rateLimitMap.delete(key);
+    } else {
+      rateLimitMap.set(key, filtered);
+    }
   });
 }, 5 * 60 * 1000);
 
@@ -201,7 +236,10 @@ app.post("/api/auth/forgot-password", distributedRateLimit(15 * 60 * 1000, 5) as
 app.post("/api/auth/reset-password", distributedRateLimit(15 * 60 * 1000, 5) as any);
 // HIPAA: Read rate limiting to prevent bulk data exfiltration
 // Org-scoped so one tenant's usage doesn't block another on shared IPs
-app.use("/api/export", distributedRateLimit(60 * 1000, 5, true) as any);
+app.get("/api/calls", distributedRateLimit(60 * 1000, 100, true) as any);
+app.post("/api/calls/upload", distributedRateLimit(60 * 1000, 30, true) as any);
+app.use("/api/export", distributedRateLimit(60 * 1000, 10, true) as any);
+app.post("/api/onboarding/rag/search", distributedRateLimit(60 * 1000, 20, true) as any);
 app.use("/api/calls", distributedRateLimit(60 * 1000, 60, true) as any);
 app.use("/api/employees", distributedRateLimit(60 * 1000, 60, true) as any);
 app.use("/api/clinical", distributedRateLimit(60 * 1000, 60, true) as any);
@@ -210,17 +248,27 @@ app.use("/api/ehr", distributedRateLimit(60 * 1000, 30, true) as any);
 (async () => {
   // --- Infrastructure initialization ---
 
+  // 0. Initialize OpenTelemetry (must be early to instrument HTTP, Express, pg)
+  await initTelemetry();
+
   // 1. Initialize Redis (sessions, rate limiting, pub/sub, queue backend)
   const redis = initRedis();
   redisAvailable = redis !== null;
   if (redisAvailable) {
     logger.info("Redis available — using distributed sessions, rate limiting, and job queues");
   } else if (process.env.NODE_ENV === "production") {
-    logger.error(
-      "REDIS_URL not configured in production. In-memory sessions will be lost on restart " +
-      "and rate limiting will not work across instances. Set REDIS_URL to continue."
-    );
-    process.exit(1);
+    if (process.env.REQUIRE_REDIS === "true") {
+      logger.error(
+        "REDIS_URL not configured in production with REQUIRE_REDIS=true. In-memory sessions will be lost on restart " +
+        "and rate limiting will not work across instances. Set REDIS_URL to continue."
+      );
+      process.exit(1);
+    } else {
+      logger.warn(
+        "WARNING: Running in production without Redis. Rate limiting is in-memory only (single-instance). " +
+        "Set REDIS_URL for distributed rate limiting."
+      );
+    }
   }
 
   // 2. Initialize PostgreSQL storage if configured
@@ -257,6 +305,9 @@ app.use("/api/ehr", distributedRateLimit(60 * 1000, 30, true) as any);
 
   // Authentication (must come before routes) - async to hash env var passwords on startup
   await setupAuth(app);
+
+  // OpenTelemetry: request tracing (trace IDs, span attributes, duration metrics)
+  app.use(tracingMiddleware);
 
   const server = await registerRoutes(app);
 
@@ -475,6 +526,8 @@ app.use("/api/ehr", distributedRateLimit(60 * 1000, 30, true) as any);
         const { closeRagWorkerPool } = await import("./services/rag-worker");
         await closeRagWorkerPool();
       } catch { /* not initialized */ }
+      // Flush any pending OpenTelemetry spans/metrics
+      await shutdownTelemetry();
       process.exit(0);
     };
     process.on("SIGTERM", shutdown);

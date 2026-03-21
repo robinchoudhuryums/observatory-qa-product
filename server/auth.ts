@@ -58,6 +58,11 @@ function clearFailedAttempts(username: string): void {
  * Format: username:password:role:displayName:orgSlug (comma-separated for multiple users)
  * The orgSlug field maps to an organization's slug. If omitted, defaults to DEFAULT_ORG_SLUG env var or "default".
  * Example: admin:SecurePass123!:admin:Admin User:ums,viewer:ViewerPass456:viewer:Jane Doe:ums
+ *
+ * Super admins are defined via the SUPER_ADMIN_USERS environment variable.
+ * Format: username:password:displayName (comma-separated for multiple)
+ * Super admins get role "super_admin" and are assigned to the first available org (platform-level).
+ * Example: superadmin:SuperPass123!:Platform Admin
  */
 
 interface EnvUser {
@@ -123,6 +128,42 @@ async function loadUsersFromEnv(): Promise<void> {
 }
 
 /**
+ * Load super-admin users from SUPER_ADMIN_USERS env var.
+ * Format: username:password:displayName (comma-separated)
+ * Super admins get role "super_admin" and are assigned to a "platform" org.
+ */
+async function loadSuperAdminsFromEnv(): Promise<void> {
+  const superAdminUsersRaw = process.env.SUPER_ADMIN_USERS;
+  if (!superAdminUsersRaw) return;
+
+  const defaultOrgSlug = process.env.DEFAULT_ORG_SLUG || "default";
+  const entries = superAdminUsersRaw.split(",").map((s) => s.trim()).filter(Boolean);
+
+  for (const entry of entries) {
+    const parts = entry.split(":");
+    if (parts.length < 2) {
+      logger.warn({ entry }, "Skipping malformed SUPER_ADMIN_USERS entry");
+      continue;
+    }
+
+    const [username, password, displayName] = parts;
+    const name = displayName || username;
+    const passwordHash = await hashPassword(password);
+
+    envUsers.push({
+      id: randomBytes(8).toString("hex"),
+      username,
+      passwordHash,
+      name,
+      role: "super_admin",
+      orgSlug: defaultOrgSlug, // Will be resolved to an orgId; super admins bypass org scoping via middleware
+    });
+
+    logger.info({ username, role: "super_admin" }, "Loaded super-admin from SUPER_ADMIN_USERS");
+  }
+}
+
+/**
  * Resolve orgSlug → orgId for all loaded env users.
  * Called after storage is initialized so we can look up org records.
  * If an org doesn't exist yet, it will be auto-created (for backward compat).
@@ -177,6 +218,8 @@ export let sessionMiddleware: RequestHandler;
 export async function setupAuth(app: Express) {
   // Load users from environment variables on startup
   await loadUsersFromEnv();
+  // Load super-admin users from SUPER_ADMIN_USERS env var
+  await loadSuperAdminsFromEnv();
   // Resolve org slugs to org IDs (auto-creates orgs if needed)
   await resolveUserOrgIds();
 
@@ -199,7 +242,7 @@ export async function setupAuth(app: Express) {
   // Prefer Redis session store (distributed, survives restarts)
   // Falls back to MemoryStore if Redis unavailable
   const redisStore = createRedisSessionStore(session);
-  let sessionStore: session.Store;
+  let sessionStore: any;
   if (redisStore) {
     sessionStore = redisStore;
     logger.info("Using Redis session store (distributed, persistent)");
@@ -209,7 +252,8 @@ export async function setupAuth(app: Express) {
     logger.info("Using in-memory session store (non-persistent)");
   }
 
-  sessionMiddleware = session({
+  // Cast needed: @opentelemetry/auto-instrumentations-node pulls in conflicting @types/express-session
+  sessionMiddleware = (session as any)({
     secret: sessionSecret,
     resave: false,
     saveUninitialized: false,
@@ -402,8 +446,9 @@ export const requireAuth: RequestHandler = (req, res, next) => {
 };
 
 // HIPAA: Role-based access control middleware
-// Roles hierarchy: admin > manager > viewer
+// Roles hierarchy: super_admin > admin > manager > viewer
 const ROLE_HIERARCHY: Record<string, number> = {
+  super_admin: 4,
   admin: 3,
   manager: 2,
   viewer: 1,
@@ -446,9 +491,37 @@ export async function resolveUserOrgId(userId: string): Promise<string | undefin
 }
 
 export const injectOrgContext: RequestHandler = (req: Request, res: Response, next: NextFunction) => {
+  // Super admins impersonating an org use the session's impersonated orgId
+  const session = req.session as any;
+  if (session?.impersonatingOrgId && req.user?.role === "super_admin") {
+    req.orgId = session.impersonatingOrgId;
+    return next();
+  }
+
   if (!req.user?.orgId) {
     return res.status(401).json({ message: "No organization context in session" });
   }
   req.orgId = req.user.orgId;
   next();
+};
+
+/**
+ * Check if the current request user is a super admin.
+ */
+export function isSuperAdmin(req: Request): boolean {
+  return req.isAuthenticated() && req.user?.role === "super_admin";
+}
+
+/**
+ * Middleware that requires the current user to be a super admin.
+ * Returns 403 if not authenticated or not a super admin.
+ */
+export const requireSuperAdmin: RequestHandler = (req: Request, res: Response, next: NextFunction) => {
+  if (!req.isAuthenticated() || !req.user) {
+    return res.status(401).json({ message: "Authentication required", errorCode: "OBS-AUTH-003" });
+  }
+  if (req.user.role !== "super_admin") {
+    return res.status(403).json({ message: "Super admin access required", errorCode: "OBS-AUTH-006" });
+  }
+  return next();
 };
