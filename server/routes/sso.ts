@@ -137,8 +137,8 @@ export async function setupSamlAuth(): Promise<boolean> {
 
             const { org } = config;
 
-            // Try to find existing user by email/username
-            let user = await storage.getUserByUsername(email);
+            // Try to find existing user by email/username within this org
+            let user = await storage.getUserByUsername(email, org.id);
 
             if (user) {
               // Verify user belongs to this org
@@ -219,6 +219,7 @@ export async function setupSamlAuth(): Promise<boolean> {
         ) => {
           // SLO (Single Logout) — just acknowledge the logout
           if (profile?.nameID) {
+            // SLO: look up user — no org context available, search globally
             const user = await storage.getUserByUsername(profile.nameID);
             if (user) {
               const org = await storage.getOrganization(user.orgId);

@@ -215,8 +215,8 @@ export function registerAdminRoutes(app: Express): void {
         return res.status(400).json({ message: "Invalid role" });
       }
 
-      // Check if username already exists
-      const existing = await storage.getUserByUsername(username);
+      // Check if username already exists within this org
+      const existing = await storage.getUserByUsername(username, req.orgId!);
       if (existing) {
         return res.status(409).json({ message: "Username already exists" });
       }

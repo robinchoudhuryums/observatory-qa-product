@@ -135,7 +135,7 @@ export interface IStorage {
 
   // User operations
   getUser(id: string): Promise<User | undefined>;
-  getUserByUsername(username: string): Promise<User | undefined>;
+  getUserByUsername(username: string, orgId?: string): Promise<User | undefined>;
   createUser(user: InsertUser): Promise<User>;
   listUsersByOrg(orgId: string): Promise<User[]>;
   updateUser(orgId: string, id: string, updates: Partial<User>): Promise<User | undefined>;

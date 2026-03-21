@@ -26,7 +26,9 @@ import {
 export function enforceQuota(eventType: "transcription" | "ai_analysis" | "api_call" | "storage_mb") {
   return async (req: Request, res: Response, next: NextFunction) => {
     const orgId = req.orgId;
-    if (!orgId) return next();
+    if (!orgId) {
+      return res.status(403).json({ message: "Organization context required", code: "ORG_REQUIRED" });
+    }
 
     try {
       const sub = await storage.getSubscription(orgId);
@@ -75,7 +77,9 @@ export function enforceQuota(eventType: "transcription" | "ai_analysis" | "api_c
 export function enforceUserQuota() {
   return async (req: Request, res: Response, next: NextFunction) => {
     const orgId = req.orgId;
-    if (!orgId) return next();
+    if (!orgId) {
+      return res.status(403).json({ message: "Organization context required", code: "ORG_REQUIRED" });
+    }
 
     try {
       const sub = await storage.getSubscription(orgId);
@@ -108,7 +112,9 @@ export function enforceUserQuota() {
 export function requirePlanFeature(feature: keyof import("@shared/schema").PlanLimits, errorMessage?: string) {
   return async (req: Request, res: Response, next: NextFunction) => {
     const orgId = req.orgId;
-    if (!orgId) return next();
+    if (!orgId) {
+      return res.status(403).json({ message: "Organization context required", code: "ORG_REQUIRED" });
+    }
 
     try {
       const sub = await storage.getSubscription(orgId);
@@ -142,7 +148,9 @@ export function requireActiveSubscription() {
     if (req.method === "GET") return next();
 
     const orgId = req.orgId;
-    if (!orgId) return next();
+    if (!orgId) {
+      return res.status(403).json({ message: "Organization context required", code: "ORG_REQUIRED" });
+    }
 
     try {
       const sub = await storage.getSubscription(orgId);

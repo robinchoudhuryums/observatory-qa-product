@@ -78,7 +78,7 @@ export class CloudStorage implements IStorage {
   async getUser(_id: string): Promise<User | undefined> {
     return undefined; // Users come from env vars
   }
-  async getUserByUsername(_username: string): Promise<User | undefined> {
+  async getUserByUsername(_username: string, _orgId?: string): Promise<User | undefined> {
     return undefined; // Users come from env vars
   }
   async createUser(_user: InsertUser): Promise<User> {

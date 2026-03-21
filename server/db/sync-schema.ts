@@ -55,7 +55,9 @@ export async function syncSchema(db: Database): Promise<void> {
     await addColumnIfNotExists(db, "users", "mfa_backup_codes", "JSONB");
     await addColumnIfNotExists(db, "users", "is_active", "BOOLEAN NOT NULL DEFAULT true");
     await addColumnIfNotExists(db, "users", "last_login_at", "TIMESTAMP");
-    await db.execute(sql`CREATE UNIQUE INDEX IF NOT EXISTS users_username_idx ON users (username)`);
+    // Migrate from global username uniqueness to per-org uniqueness
+    await db.execute(sql`DROP INDEX IF EXISTS users_username_idx`);
+    await db.execute(sql`CREATE UNIQUE INDEX IF NOT EXISTS users_org_username_idx ON users (org_id, username)`);
     await db.execute(sql`CREATE INDEX IF NOT EXISTS users_org_id_idx ON users (org_id)`);
 
     // --- Employees ---

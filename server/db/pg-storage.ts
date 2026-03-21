@@ -107,8 +107,10 @@ export class PostgresStorage implements IStorage {
     return rows[0] ? this.mapUser(rows[0]) : undefined;
   }
 
-  async getUserByUsername(username: string): Promise<User | undefined> {
-    const rows = await this.db.select().from(tables.users).where(eq(tables.users.username, username)).limit(1);
+  async getUserByUsername(username: string, orgId?: string): Promise<User | undefined> {
+    const conditions = [eq(tables.users.username, username)];
+    if (orgId) conditions.push(eq(tables.users.orgId, orgId));
+    const rows = await this.db.select().from(tables.users).where(and(...conditions)).limit(1);
     return rows[0] ? this.mapUser(rows[0]) : undefined;
   }
 

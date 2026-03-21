@@ -46,7 +46,7 @@ export async function setupGoogleOAuth(): Promise<boolean> {
               return done(null, false, { message: "No email associated with Google account" });
             }
 
-            // Look up user by username (email)
+            // Look up user by username (email) — no org context yet, search globally
             let user = await storage.getUserByUsername(email);
 
             if (user) {

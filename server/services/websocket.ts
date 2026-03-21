@@ -71,19 +71,15 @@ export function setupWebSocket(server: Server) {
 
 /**
  * Broadcast a call processing update to all connected clients in the same organization.
- * If orgId is provided, only clients belonging to that org receive the message.
- * If orgId is omitted (backward compat), broadcasts to all clients.
+ * orgId is required — updates are always scoped to a single tenant.
  */
-export function broadcastCallUpdate(callId: string, status: string, extra?: Record<string, any>, orgId?: string) {
+export function broadcastCallUpdate(callId: string, status: string, extra: Record<string, any> | undefined, orgId: string) {
   if (!wss) return;
   const message = JSON.stringify({ type: "call_update", callId, status, ...extra });
   wss.clients.forEach((client) => {
     if (client.readyState === WebSocket.OPEN) {
-      // If orgId filtering is active, only send to matching clients
-      if (orgId) {
-        const clientOrg = clientOrgMap.get(client);
-        if (clientOrg && clientOrg !== orgId) return;
-      }
+      const clientOrg = clientOrgMap.get(client);
+      if (clientOrg && clientOrg !== orgId) return;
       try {
         client.send(message);
       } catch (err) {
