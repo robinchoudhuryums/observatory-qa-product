@@ -35,4 +35,4 @@ jobs:
       - name: Verify build artifacts
         run: |
           test -f dist/index.js
-          test -d dist/client
+          test -d dist/public
